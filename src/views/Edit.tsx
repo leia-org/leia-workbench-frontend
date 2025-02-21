@@ -107,7 +107,7 @@ interface HeaderProps {
   loadingEvaluation: boolean;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ onHome, onOpenForm, onEvaluate, formUrl, loadingEvaluation }) => (
+const Header: React.FC<HeaderProps> = memo(({ onHome, onOpenForm, onEvaluate, loadingEvaluation }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <h1 className="text-xl font-semibold text-gray-900">Diagram Editor</h1>
@@ -167,7 +167,7 @@ ErrorMessage.displayName = 'ErrorMessage';
 
 export const Edit = () => {
   const navigate = useNavigate();
-  const { diagramCode, formUrl, interactionId } = useDiagram();
+  const { diagramCode, formUrl } = useDiagram();
   const [code, setCode] = useState(() => {
     const savedCode = localStorage.getItem('mermaid_code');
     if (savedCode) {

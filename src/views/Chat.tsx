@@ -34,7 +34,7 @@ interface Exercise {
 export const Chat = () => {
   const navigate = useNavigate();
   const { experimentCode, studentCode } = useParams();
-  const { setDiagramData, concludeProblem } = useDiagram();
+  const { concludeProblem } = useDiagram();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState('');
   const [loading, setLoading] = useState(true);
