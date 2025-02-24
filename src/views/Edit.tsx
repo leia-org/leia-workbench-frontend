@@ -22,16 +22,18 @@ const defaultCode = `sequenceDiagram
 interface EvaluationModalProps {
   evaluation: string;
   onClose: () => void;
+  onHome: () => void;
+  onOpenForm: () => void;
 }
 
-const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onClose }) => {
+const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onClose, onHome, onOpenForm }) => {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
         <div className="flex justify-between items-center px-6 py-4 border-b">
           <h2 className="text-xl font-semibold text-gray-900">Evaluation Results</h2>
           <button 
-            onClick={onClose}
+            onClick={onHome}
             className="text-gray-400 hover:text-gray-500 transition-colors"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -42,13 +44,22 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onCl
         <div className="px-6 py-4 max-h-[60vh] overflow-y-auto prose prose-blue">
           <ReactMarkdown>{evaluation}</ReactMarkdown>
         </div>
-        <div className="px-6 py-4 border-t flex justify-end">
+        <div className="px-6 py-4 border-t flex justify-end gap-2">
           <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            Close
-          </button>
+          onClick={onHome}
+          className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-600 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          Home
+        </button>
+        <button
+          onClick={onOpenForm}
+          className="px-4 py-1.5 text-sm font-medium text-blue-600 bg-white border border-blue-600 rounded-md hover:bg-blue-50"
+        >
+          Open Form
+        </button>
         </div>
       </div>
     </div>
@@ -105,30 +116,17 @@ interface HeaderProps {
   onEvaluate: () => void;
   formUrl: string;
   loadingEvaluation: boolean;
+  onAlert: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ onHome, onOpenForm, onEvaluate, loadingEvaluation }) => (
+const Header: React.FC<HeaderProps> = memo(({ onHome, onOpenForm, onEvaluate, loadingEvaluation, onAlert }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <h1 className="text-xl font-semibold text-gray-900">Diagram Editor</h1>
       <div className="flex gap-2">
+
         <button
-          onClick={onHome}
-          className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-600 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
-          Home
-        </button>
-        <button
-          onClick={onOpenForm}
-          className="px-4 py-1.5 text-sm font-medium text-blue-600 bg-white border border-blue-600 rounded-md hover:bg-blue-50"
-        >
-          Open Form
-        </button>
-        <button
-          onClick={onEvaluate}
+          onClick={onAlert}
           disabled={loadingEvaluation}
           className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
@@ -167,13 +165,13 @@ ErrorMessage.displayName = 'ErrorMessage';
 
 export const Edit = () => {
   const navigate = useNavigate();
-  const { diagramCode, formUrl } = useDiagram();
+  const { formUrl } = useDiagram();
   const [code, setCode] = useState(() => {
     const savedCode = localStorage.getItem('mermaid_code');
     if (savedCode) {
       return savedCode;
     }
-    return diagramCode || defaultCode;
+    return defaultCode;
   });
   const [mermaidSvg, setMermaidSvg] = useState<string>('');
   const [lastValidSvg, setLastValidSvg] = useState<string>('');
@@ -186,7 +184,9 @@ export const Edit = () => {
   const [loadingEvaluation, setLoadingEvaluation] = useState(false);
   const [evaluation, setEvaluation] = useState<string | null>(null);
   const [showEvaluation, setShowEvaluation] = useState(false);
-
+  const [showAlert, setShowAlert] = useState(false);
+  const [concluded, setConcluded] = useState(false);
+  const [concludedSvg, setConcludedSvg] = useState<string | null>(null);
   useEffect(() => {
     localStorage.setItem('mermaid_code', code);
   }, [code]);
@@ -201,6 +201,15 @@ export const Edit = () => {
       localStorage.removeItem('editor_width');
     };
   }, []);
+
+  const onHome = useCallback(() => {
+    localStorage.clear();
+    navigate('/');
+  }, [navigate]);
+
+  const onOpenForm = useCallback(() => {
+    window.open(formUrl, '_blank');
+  }, [formUrl]);
 
   const handleEditorChange = useCallback((value: string | undefined) => {
     if (value) {
@@ -225,9 +234,37 @@ export const Edit = () => {
     window.open(formUrl, '_blank');
   }, [formUrl]);
 
+  const concludeProblem = useCallback(async () => {
+
+    try {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/interactions/conclude/${sessionId}`,
+        {
+          result: code,
+        }
+      );
+      if (response.status === 200) {
+        setConcluded(true);
+        setShowAlert(false);
+        const { exerciseSolution } = response.data;
+
+        const svg = await mermaid.render('mermaid2-diagram', exerciseSolution);
+        setConcludedSvg(svg.svg);
+        
+      }
+    } catch (error) {
+      console.error('Failed to conclude the problem:', error);
+      throw error;
+    } finally {
+    }
+  }, []);
+
   const getEvaluation = useCallback(async () => {
     setLoadingEvaluation(true);
     try {
+      await concludeProblem();
+
       const sessionId = localStorage.getItem('sessionId');
       const response = await axios.get(
         `${import.meta.env.VITE_APP_BACKEND}/api/interactions/evaluation/${sessionId}`
@@ -236,13 +273,14 @@ export const Edit = () => {
         setEvaluation(response.data.evaluation);
         setShowEvaluation(true);
       }
+
+      
     } catch (error) {
       console.error('Failed to get evaluation:', error);
     } finally {
       setLoadingEvaluation(false);
     }
   }, []);
-
   useEffect(() => {
     const renderMermaid = async () => {
       try {
@@ -297,12 +335,41 @@ export const Edit = () => {
         onHome={handleHome}
         onOpenForm={handleOpenForm}
         onEvaluate={getEvaluation}
+        onAlert={() => setShowAlert(true)}
         formUrl={formUrl}
         loadingEvaluation={loadingEvaluation}
       />
 
-      <main className="flex-1 flex">
+      {showAlert && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
+            <div className="px-6 py-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">¿Are you sure you want to conclude the problem?</h2>
+              <p className="text-gray-600">This action will conclude the problem and you will not be able to continue working on it.</p>
+              <div className="flex justify-end mt-4 gap-2">
+                <button
+                  onClick={() => setShowAlert(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-600 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                onClick={getEvaluation}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Conclude Problem
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="flex-1 flex" style={{ height: !concluded ? '100%' : 'calc(100% - 300px)' }}>
         {/* Editor Panel */}
+        {
+          !concluded ? (
+        
         <div style={{ width: `${editorWidth}%` }} className="h-full relative">
           <Editor
             height="100%"
@@ -321,6 +388,33 @@ export const Edit = () => {
           />
           {error && <ErrorMessage message={error} />}
         </div>
+        ) : (
+          <div style={{ width: `${editorWidth}%` }} className="h-full relative">
+                            <h2 className="text-gray-500 px-4 py-2">Problem Solution</h2>
+            <TransformWrapper
+              initialScale={1}
+              minScale={0.5}
+              maxScale={4}
+              centerOnInit={true}
+              wheel={{ wheelDisabled: true }}
+            >
+
+              <TransformComponent
+                wrapperClass="!w-full !h-full"
+                contentClass="flex items-center justify-center p-4"
+              >
+                {concludedSvg ? (
+                  <div 
+                    dangerouslySetInnerHTML={{ __html: concludedSvg }}
+                    className="transform-component-module_content__uCDPE"
+                  />
+                ) : (
+                  <div className="text-gray-500">Loading concluded diagram...</div>
+                )}
+              </TransformComponent>
+            </TransformWrapper>
+          </div>
+        )}
 
         {/* Resizer */}
         <div
@@ -332,6 +426,13 @@ export const Edit = () => {
 
         {/* Preview Panel */}
         <div style={{ width: `${100 - editorWidth}%` }} className="h-full bg-gray-50 flex flex-col relative">
+        {
+                    concluded ? (
+                      <h2 className="text-gray-500 px-4 py-2">Your Solution</h2>
+                    ) : (
+                      null
+                    )
+        }
           <TransformWrapper
             initialScale={1}
             minScale={0.5}
@@ -345,6 +446,7 @@ export const Edit = () => {
                   wrapperClass="!w-full !h-full"
                   contentClass="flex items-center justify-center p-4"
                 >
+
                   {mermaidSvg ? (
                     <div 
                       dangerouslySetInnerHTML={{ __html: mermaidSvg }}
@@ -360,11 +462,30 @@ export const Edit = () => {
           </TransformWrapper>
         </div>
       </main>
+      {
+        concluded ? (
+          <div className="h-[300px] w-full">
+          <Editor
+            height="100%"
+            defaultLanguage="mermaid"
+            value={code}
+            theme="vs-light"
+            options={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              lineNumbers: 'on',
+            }}
+          />
+          </div>
+        ) : null
+      }
 
       {showEvaluation && evaluation && (
         <EvaluationModal
           evaluation={evaluation}
           onClose={handleCloseEvaluation}
+          onHome={onHome}
+          onOpenForm={onOpenForm}
         />
       )}
     </div>

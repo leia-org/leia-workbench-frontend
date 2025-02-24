@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { SparklesIcon } from '@heroicons/react/24/solid';
+import { UserCircleIcon } from '@heroicons/react/24/solid';
 import axios from 'axios';
 import { useDiagram } from '../context/DiagramContext';
 
@@ -129,22 +129,7 @@ export const Chat = () => {
     if (!messages.length) return;
     
     setConcluding(true);
-    try {
-      const lastUserMessage = [...messages]
-        .reverse()
-        .find(msg => !msg.leia);
-
-      if (!lastUserMessage) {
-        throw new Error('No se encontró código para enviar');
-      }
-
-      await concludeProblem(lastUserMessage.text);
-      navigate('/edit');
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setConcluding(false);
-    }
+    navigate('/edit');
   };
 
   if (loading) {
@@ -244,7 +229,8 @@ export const Chat = () => {
                 msg.leia ? 'bg-blue-50' : 'bg-blue-600'
               }`}>
                 {msg.leia ? (
-                  <SparklesIcon className="w-5 h-5 text-blue-700" />
+                  <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                  
                 ) : (
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
                     <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
@@ -265,7 +251,7 @@ export const Chat = () => {
           {sendingMessage && (
             <div className="flex items-end gap-2">
               <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
-                <SparklesIcon className="w-5 h-5 text-blue-700" />
+                <UserCircleIcon className="w-5 h-5 text-blue-700" />
               </div>
               <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3">
                 <TypingAnimation />

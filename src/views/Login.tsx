@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { SparklesIcon } from '@heroicons/react/24/solid';
+import { SparklesIcon, UserCircleIcon } from '@heroicons/react/24/solid';
 import axios from 'axios';
 
 export const Login = () => {
@@ -81,10 +81,10 @@ export const Login = () => {
         <div className="text-center mb-10">
           <div className="flex justify-center mb-6">
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center transform rotate-12 shadow-lg">
-              <SparklesIcon className="w-10 h-10 text-white transform -rotate-12" />
+              <UserCircleIcon className="w-10 h-10 text-white transform -rotate-12" />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome to LEIA</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">LEIA – WorkBench</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -125,7 +125,7 @@ export const Login = () => {
                 required
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none transition-opacity duration-200 ease-in-out opacity-50 group-hover:opacity-100">
-                <SparklesIcon className="w-5 h-5 text-gray-400" />
+                <UserCircleIcon className="w-5 h-5 text-gray-400" />
               </div>
             </div>
           </div>
