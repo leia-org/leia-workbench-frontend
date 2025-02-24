@@ -26,7 +26,7 @@ interface EvaluationModalProps {
   onOpenForm: () => void;
 }
 
-const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onClose, onHome, onOpenForm }) => {
+const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onHome, onOpenForm }) => {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
@@ -119,7 +119,7 @@ interface HeaderProps {
   onAlert: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ onHome, onOpenForm, onEvaluate, loadingEvaluation, onAlert }) => (
+const Header: React.FC<HeaderProps> = memo(({loadingEvaluation, onAlert }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <h1 className="text-xl font-semibold text-gray-900">Diagram Editor</h1>

@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { UserCircleIcon } from '@heroicons/react/24/solid';
 import axios from 'axios';
-import { useDiagram } from '../context/DiagramContext';
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -34,7 +33,6 @@ interface Exercise {
 export const Chat = () => {
   const navigate = useNavigate();
   const { experimentCode, studentCode } = useParams();
-  const { concludeProblem } = useDiagram();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState('');
   const [loading, setLoading] = useState(true);
