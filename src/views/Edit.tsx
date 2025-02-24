@@ -342,7 +342,7 @@ export const Edit = () => {
             {(utils) => (
               <>
                 <TransformComponent
-                  wrapperClass="w-full h-full"
+                  wrapperClass="!w-full !h-full"
                   contentClass="flex items-center justify-center p-4"
                 >
                   {mermaidSvg ? (
