@@ -1,6 +1,5 @@
 import React, { useRef } from 'react';
 import { Editor, OnMount } from '@monaco-editor/react';
-import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api';
 
 interface CreateSidebarProps {
   isOpen: boolean;
@@ -18,8 +17,8 @@ export const CreateSidebar: React.FC<CreateSidebarProps> = ({
   onSave,
 }) => {
   const [editedYaml, setEditedYaml] = React.useState(yaml);
-  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<typeof Monaco | null>(null);
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
