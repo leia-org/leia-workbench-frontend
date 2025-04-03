@@ -62,7 +62,7 @@ export const Chat = () => {
         );
         setMessages(sortedMessages);
         setExercise(response.data.leia.leia.spec.problem.spec);
-        localStorage.setItem('sessionId', response.data.sessionId);
+        localStorage.setItem('sessionId', response.data.session.id);
         
         if (response.data.leia.configuration.mode === 'transcription') {
           navigate('/edit');

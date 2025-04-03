@@ -29,7 +29,7 @@ export const DiagramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const sessionId = localStorage.getItem('sessionId');
       const response = await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/interactions/conclude/${sessionId}`,
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
         {
           result: code,
         }
