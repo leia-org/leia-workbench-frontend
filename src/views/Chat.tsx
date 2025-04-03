@@ -101,7 +101,6 @@ export const Chat = () => {
     scrollToBottom();
 
     try {
-      const sessionId = localStorage.getItem('sessionId');
       const response = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`,
         {
