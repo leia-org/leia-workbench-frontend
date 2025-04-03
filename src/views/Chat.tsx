@@ -17,7 +17,7 @@ const TypingAnimation = () => (
 interface Message {
   text: string;
   timestamp: Date;
-  leia: boolean;
+  isLeia: boolean;
 }
 
 interface Exercise {
@@ -93,7 +93,7 @@ export const Chat = () => {
     const newMessage: Message = {
       text: messageText,
       timestamp,
-      leia: false,
+      isLeia: false,
     };
 
     setMessages(prev => [...prev, newMessage]);
@@ -110,8 +110,7 @@ export const Chat = () => {
 
       if (response.status === 200) {
         response.data.timestamp = Date.now();
-        response.data.leia = true;
-        setMessages(prev => [...prev, response.data.message]);
+        setMessages(prev => [...prev, response.data.text]);
         scrollToBottom();
       }
     } catch (error) {
@@ -221,12 +220,12 @@ export const Chat = () => {
           {messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).map((msg, index) => (
             <div
               key={index}
-              className={`flex items-end gap-2 ${msg.leia ? 'flex-row' : 'flex-row-reverse'}`}
+              className={`flex items-end gap-2 ${msg.isLeia ? 'flex-row' : 'flex-row-reverse'}`}
             >
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                msg.leia ? 'bg-blue-50' : 'bg-blue-600'
+                msg.isLeia ? 'bg-blue-50' : 'bg-blue-600'
               }`}>
-                {msg.leia ? (
+                {msg.isLeia ? (
                   <UserCircleIcon className="w-5 h-5 text-blue-700" />
                   
                 ) : (
@@ -237,7 +236,7 @@ export const Chat = () => {
               </div>
               <div
                 className={`max-w-[80%] px-4 py-2 ${
-                  msg.leia
+                  msg.isLeia
                     ? 'bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md'
                     : 'bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md'
                 }`}
