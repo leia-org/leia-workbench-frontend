@@ -110,6 +110,7 @@ export const Chat = () => {
 
       if (response.status === 200) {
         response.data.timestamp = Date.now();
+        response.data.leia = true;
         setMessages(prev => [...prev, response.data.message]);
         scrollToBottom();
       }
