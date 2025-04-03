@@ -40,27 +40,26 @@ export const Login = () => {
 
     try {
       console.log('Making request to backend...');
-      const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/interactions/start`, {
-        studentIdentifier: studentIdentifier.trim(),
-        experimentCode: experimentCode.trim(),
+      const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions`, {
+        email: studentIdentifier.trim(),
+        code: experimentCode.trim(),
       });
 
       console.log('Response received:', response);
       const data = response.data;
 
       if (response.status === 200 && data) {
-        const { sessionId, studentCode, experimentCode: expCode } = data;
+        const { sessionId } = data;
         setSuccess(true);
         setMessage('Session started successfully!');
 
         // Save to localStorage
         localStorage.setItem('sessionId', sessionId);
-        localStorage.setItem('studentCode', studentCode);
-        localStorage.setItem('experimentCode', expCode);
+
 
         // Redirect after 1 second
         setTimeout(() => {
-          navigate(`/chat/experiment/${expCode}/student/${studentCode}`);
+          navigate(`/chat/${sessionId}`);
         }, 1000);
       } else {
         setSuccess(false);

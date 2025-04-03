@@ -10,7 +10,7 @@ export const router = createBrowserRouter([
     element: <Login />,
   },
   {
-    path: '/chat/experiment/:experimentCode/student/:studentCode',
+    path: '/chat/:sessionId',
     element: <Chat />,
   },
   {

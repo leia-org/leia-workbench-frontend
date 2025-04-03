@@ -32,7 +32,7 @@ interface Exercise {
 
 export const Chat = () => {
   const navigate = useNavigate();
-  const { experimentCode, studentCode } = useParams();
+  const { sessionId } = useParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -53,15 +53,15 @@ export const Chat = () => {
   const loadData = async () => {
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_APP_BACKEND}/api/interactions/data/experiment/${experimentCode}/student/${studentCode}`
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`
       );
 
       if (response.status === 200) {
         setMessages(response.data.messages);
-        setExercise(response.data.exercise);
+        setExercise(response.data.leia.leia.spec.problem.spec);
         localStorage.setItem('sessionId', response.data.sessionId);
         
-        if (response.data.exercise.mode === 'predefined-chat') {
+        if (response.data.leia.configuration.mode === 'transcription') {
           navigate('/edit');
         }
       }
@@ -75,7 +75,7 @@ export const Chat = () => {
 
   useEffect(() => {
     loadData();
-  }, [experimentCode, studentCode]);
+  }, [sessionId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -83,7 +83,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (exercise?.mode === 'predefined-chat') return;
+    if (exercise?.mode === 'transcription') return;
 
     const messageText = newMessageText.trim();
     if (!messageText) return;
@@ -103,14 +103,14 @@ export const Chat = () => {
     try {
       const sessionId = localStorage.getItem('sessionId');
       const response = await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/interactions/message/${sessionId}`,
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`,
         {
-          text: messageText,
-          timestamp,
+          message: messageText
         }
       );
 
       if (response.status === 200) {
+        response.data.timestamp = Date.now();
         setMessages(prev => [...prev, response.data.message]);
         scrollToBottom();
       }
@@ -274,11 +274,11 @@ export const Chat = () => {
               onChange={(e) => setNewMessageText(e.target.value)}
               placeholder="Type a message..."
               className="flex-1 px-2 py-1.5 bg-transparent border-none focus:outline-none text-[15px]"
-              disabled={exercise?.mode === 'predefined-chat'}
+              disabled={exercise?.mode === 'transcription'}
             />
             <button
               type="submit"
-              disabled={exercise?.mode === 'predefined-chat' || !newMessageText.trim()}
+              disabled={exercise?.mode === 'transcription' || !newMessageText.trim()}
               className="px-5 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send
