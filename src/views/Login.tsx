@@ -48,7 +48,7 @@ export const Login = () => {
       console.log('Response received:', response);
       const data = response.data;
 
-      if (response.status === 200 && data) {
+      if (response.status === 201 && data) {
         const { sessionId } = data;
         setSuccess(true);
         setMessage('Session started successfully!');
