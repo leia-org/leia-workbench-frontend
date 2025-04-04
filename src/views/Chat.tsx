@@ -57,9 +57,12 @@ export const Chat = () => {
       );
 
       if (response.status === 200) {
-        setMessages(response.data.messages);
+        const sortedMessages = response.data.messages.sort((a: Message, b: Message) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        setMessages(sortedMessages);
         setExercise(response.data.leia.leia.spec.problem.spec);
-        localStorage.setItem('sessionId', response.data.sessionId);
+        localStorage.setItem('sessionId', response.data.session.id);
         
         if (response.data.leia.configuration.mode === 'transcription') {
           navigate('/edit');
@@ -89,10 +92,9 @@ export const Chat = () => {
     if (!messageText) return;
 
     setNewMessageText('');
-    const timestamp = new Date();
     const newMessage: Message = {
       text: messageText,
-      timestamp,
+      timestamp: new Date(),
       isLeia: false,
     };
 
@@ -109,14 +111,24 @@ export const Chat = () => {
       );
 
       if (response.status === 200) {
-        response.data.timestamp = Date.now();
-        setMessages(prev => [...prev, response.data.text]);
+        const leiaMessage: Message = {
+          text: response.data.message,
+          timestamp: new Date(),
+          isLeia: true,
+        };
+
+        setMessages(prev => [...prev, leiaMessage]);
         scrollToBottom();
       }
     } catch (error) {
-      setMessages(prev => prev.filter(msg => 
-        !(msg.text === newMessage.text && msg.timestamp === newMessage.timestamp)
-      ));
+      setMessages(prev => [
+        ...prev,
+        {
+          text: 'An error occurred while sending the message. Please try again.',
+          timestamp: new Date(),
+          isLeia: true,
+        },
+      ]);
     } finally {
       setSendingMessage(false);
     }
@@ -217,7 +229,7 @@ export const Chat = () => {
 
       <div className="flex-1 overflow-y-auto px-4 pb-24 scroll-smooth">
         <div ref={chatMessagesRef} className="max-w-3xl mx-auto space-y-4 py-4">
-          {messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).map((msg, index) => (
+          {messages.map((msg, index) => (
             <div
               key={index}
               className={`flex items-end gap-2 ${msg.isLeia ? 'flex-row' : 'flex-row-reverse'}`}
@@ -258,7 +270,7 @@ export const Chat = () => {
         </div>
       </div>
 
-      <div className="absolute bottom-[72px] left-0 right-0 h-24 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
+      <div className="absolute bottom-[72px] left-0 right-0 h-24 pointer-events-none"></div>
 
       <div className="absolute bottom-0 left-0 right-0 px-4 pb-6 bg-white">
         <div className="max-w-3xl mx-auto">

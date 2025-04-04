@@ -13,11 +13,36 @@ mermaid.initialize({
   securityLevel: 'loose',
 });
 
-const defaultCode = `sequenceDiagram
-    participant User
-    participant System
-    User->>System: Action
-    System-->>User: Response`;
+const defaultCode = `classDiagram
+    class Person {
+        +String firstName
+        +String lastName
+        +int age
+        +getFullName(): String
+    }
+    class Employee {
+        +int employeeId
+        +calculateSalary(): float
+    }
+    class Client {
+        +int clientId
+        +placeOrder(): void
+    }
+    class Product {
+        +int productId
+        +String description
+        +float price
+    }
+    class Order {
+        +int orderId
+        +Date date
+        +calculateTotal(): float
+    }
+
+    Person <|-- Employee
+    Person <|-- Client
+    Client "1" --> "*" Order : places
+    Order "1" --> "*" Product : contains`;
 
 interface EvaluationModalProps {
   evaluation: string;
@@ -239,24 +264,25 @@ export const Edit = () => {
     try {
       const sessionId = localStorage.getItem('sessionId');
       const response = await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/interactions/conclude/${sessionId}`,
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
         {
           result: code,
         }
       );
       if (response.status === 200) {
+        const updatedDataResponse = await axios.get(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`);
+        console.log(updatedDataResponse.data);
+        const exerciseSolution = updatedDataResponse.data.leia.leia.spec.problem.spec.solution;
+        const svg = await mermaid.render('mermaid2-diagram', exerciseSolution);
         setConcluded(true);
         setShowAlert(false);
-        const { exerciseSolution } = response.data;
 
-        const svg = await mermaid.render('mermaid2-diagram', exerciseSolution);
         setConcludedSvg(svg.svg);
         
       }
     } catch (error) {
       console.error('Failed to conclude the problem:', error);
       throw error;
-    } finally {
     }
   }, []);
 
@@ -267,7 +293,7 @@ export const Edit = () => {
 
       const sessionId = localStorage.getItem('sessionId');
       const response = await axios.get(
-        `${import.meta.env.VITE_APP_BACKEND}/api/interactions/evaluation/${sessionId}`
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/evaluation/`
       );
       if (response.status === 200) {
         setEvaluation(response.data.evaluation);
