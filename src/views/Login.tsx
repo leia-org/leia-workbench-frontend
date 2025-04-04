@@ -89,7 +89,7 @@ export const Login = () => {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <label htmlFor="studentIdentifier" className="block text-sm font-medium text-gray-700">
-              S-Code or Email
+              Email
             </label>
             <div className="relative group">
               <input
@@ -111,7 +111,7 @@ export const Login = () => {
 
           <div className="space-y-2">
             <label htmlFor="experimentCode" className="block text-sm font-medium text-gray-700">
-              X-Code
+              Code
             </label>
             <div className="relative group">
               <input
