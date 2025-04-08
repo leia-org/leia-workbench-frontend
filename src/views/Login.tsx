@@ -98,7 +98,7 @@ export const Login = () => {
                 value={studentIdentifier}
                 onChange={(e) => setStudentIdentifier(e.target.value)}
                 className="block w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ease-in-out bg-gray-50 focus:bg-white group-hover:border-blue-300"
-                placeholder="Enter your S-Code or email"
+                placeholder="Enter your email"
                 required
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none transition-opacity duration-200 ease-in-out opacity-50 group-hover:opacity-100">
@@ -120,7 +120,7 @@ export const Login = () => {
                 value={experimentCode}
                 onChange={(e) => setExperimentCode(e.target.value)}
                 className="block w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ease-in-out bg-gray-50 focus:bg-white group-hover:border-blue-300"
-                placeholder="Enter the X-Code"
+                placeholder="Enter the code"
                 required
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none transition-opacity duration-200 ease-in-out opacity-50 group-hover:opacity-100">

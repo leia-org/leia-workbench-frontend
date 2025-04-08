@@ -51,14 +51,14 @@ interface EvaluationModalProps {
   onOpenForm: () => void;
 }
 
-const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onHome, onOpenForm }) => {
+const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onClose, onHome, onOpenForm }) => {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
         <div className="flex justify-between items-center px-6 py-4 border-b">
           <h2 className="text-xl font-semibold text-gray-900">Evaluation Results</h2>
           <button 
-            onClick={onHome}
+            onClick={onClose}
             className="text-gray-400 hover:text-gray-500 transition-colors"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -361,7 +361,7 @@ export const Edit = () => {
         onHome={handleHome}
         onOpenForm={handleOpenForm}
         onEvaluate={getEvaluation}
-        onAlert={() => setShowAlert(true)}
+        onAlert={() => evaluation ? setShowEvaluation(true) : setShowAlert(true)}
         formUrl={formUrl}
         loadingEvaluation={loadingEvaluation}
       />
