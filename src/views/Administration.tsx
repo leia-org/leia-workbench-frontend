@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Navbar } from '../components/navbar';
+import { Navbar } from '../components/Navbar';
 import axios from 'axios';
 import {
   ClockIcon,
   ArrowPathIcon,
-  IdentificationIcon,
   InformationCircleIcon,
   CalendarDaysIcon,
   PencilSquareIcon,
-  ClipboardIcon,
 } from '@heroicons/react/24/solid';
 
 interface Replication {

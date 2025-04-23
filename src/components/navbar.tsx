@@ -18,7 +18,7 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center space-x-4">
             <span className="text-xl font-semibold text-gray-800">Administration</span>
             <Link
-              to="/"
+              to="/administration"
               className="flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition duration-200"
             >
               <HomeIcon className="h-5 w-5 mr-1" />

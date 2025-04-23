@@ -5,6 +5,7 @@ import { Login } from '../views/Login';
 import { CreateLeia } from '../views/CreateLeia';
 import { AdminLogin } from '../views/AdminLogin';
 import { Administration } from '../views/Administration';
+import { Replication } from '../views/Replication';
 
 export const router = createBrowserRouter([
   {
@@ -33,7 +34,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/replications/:id',
-    element: <Edit />,
+    element: <Replication />,
   },
   {
     path: '*',
