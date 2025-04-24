@@ -70,7 +70,7 @@ export const Administration: React.FC = () => {
         setReplications(response.data);
         console.log('Replications:', response.data);
       } catch (error: any) {
-        if (axios.isAxiosError(error) && error.response?.status === 403) {
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
           setTimeout(() => navigate('/login'), 2000);
         } else {
           console.error('Failed to load replications:', error);
