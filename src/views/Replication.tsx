@@ -115,24 +115,6 @@ export const Replication: React.FC = () => {
     setLocalLeias(updated);
   };
 
-  // Save runnerConfiguration for all leias
-  const saveRunnerConfig = async (idx: number) => {
-    if (!replication) return;
-    const leiaId = localLeias[idx].id;
-    const runnerConfiguration = localLeias[idx].runnerConfiguration;
-
-    try {
-      const resp = await axios.patch(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/leia/${leiaId}/runner-configuration`,
-        { runnerConfiguration },
-        { headers: { Authorization: `Bearer ${adminSecret}` } }
-      );
-      setReplication(resp.data);
-    } catch (err) {
-      console.error('Update error:', err);
-    }
-  };
-
   if (loading || !replication) {
     return (
       <div className="min-h-screen">
@@ -179,7 +161,6 @@ export const Replication: React.FC = () => {
               className="w-24 border-b border-gray-300 focus:outline-none"
               value={replication.duration}
               onChange={(e) => setReplication({ ...replication, duration: Number(e.target.value) })}
-              onBlur={() => updateField('duration', replication.duration)}
             />
             <span className="text-sm text-gray-700">seconds</span>
           </div>
@@ -255,7 +236,6 @@ export const Replication: React.FC = () => {
                 </select>
               </div>
               <button
-                onClick={saveRunnerConfig(idx)}
                 className="mt-2 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
               >
                 Save Runner Config
