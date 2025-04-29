@@ -16,7 +16,9 @@ import {
   EyeIcon,
   LockClosedIcon,
   InformationCircleIcon,
-  XMarkIcon
+  XMarkIcon,
+  ClipboardDocumentCheckIcon,
+  TrashIcon
 } from '@heroicons/react/24/solid';
 
 interface Replication {
@@ -28,6 +30,7 @@ interface Replication {
   code: string;
   createdAt: string;
   updatedAt: string;
+  form: string | undefined | null;
   experiment: {
     name: string;
     leias: Array<{
@@ -52,8 +55,10 @@ export const Replication: React.FC = () => {
   // Modals
   const [newName, setNewName] = useState<string>('');
   const [newDuration, setNewDuration] = useState<string>('');
+  const [newForm, setNewForm] = useState<string>('');
   const [isNewNameModalOpen, setIsNewNameModalOpen] = useState<boolean>(false);
   const [isNewDurationModalOpen, setIsNewDurationModalOpen] = useState<boolean>(false);
+  const [isNewFormModalOpen, setIsNewFormModalOpen] = useState<boolean>(false);
 
   // Side bar
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
@@ -161,6 +166,57 @@ export const Replication: React.FC = () => {
           autoClose: 5000
         });
         console.error('Update error:', err);
+      }
+    }
+  };
+
+  const handleChangeForm = async () => {
+    if (replication && newForm.trim()) {
+      try {
+        const resp = await axios.patch(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/form`,
+          { form: newForm.trim() },
+          { headers: { Authorization: `Bearer ${adminSecret}` } }
+        );
+        setReplication(resp.data);
+        setLocalReplication(structuredClone(resp.data));
+        setNewForm('');
+        setIsNewFormModalOpen(false);
+        toast.success('Replication form updated successfully', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+      } catch (err) {
+        toast.error('Error updating replication form', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+        console.error('Update error:', err);
+      }
+    }
+  };
+
+  const handleDeleteForm = async () => {
+    if (replication) {
+      try {
+        const resp = await axios.delete(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/form`,
+          { headers: { Authorization: `Bearer ${adminSecret}` } }
+        );
+        setReplication(resp.data);
+        setLocalReplication(structuredClone(resp.data));
+        setNewForm('');
+        setIsNewFormModalOpen(false);
+        toast.success('Replication form deleted successfully', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+      } catch (err) {
+        toast.error('Error deleting replication form', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+        console.error('Delete error:', err);
       }
     }
   };
@@ -398,6 +454,33 @@ export const Replication: React.FC = () => {
               </button>
             </div>
             <div className='flex'>
+              <ClipboardDocumentCheckIcon className="h-5 w-5 text-gray-600 mr-2" />
+              <strong>
+                Form:
+              </strong>
+              {replication.form ? (
+                <a href={replication.form} target="_blank" rel="noopener noreferrer" className='mx-2 text-blue-600 hover:underline max-w-xs overflow-hidden truncate'>
+                  {replication.form}
+                </a>
+              ) : (
+                <p className='mx-2 text-gray-500'>No form provided</p>
+              )}
+              <button
+                onClick={() => setIsNewFormModalOpen(true)}
+                className="flex text-center items-center space-x-1 text-blue-600 hover:underline mr-2"
+              >
+                <PencilIcon className="h-4 w-4" />
+                <span className="text-sm">Change</span>
+              </button>
+              <button
+                onClick={() => handleDeleteForm()}
+                className="flex text-center items-center space-x-1 text-red-600 hover:underline"
+              >
+                <TrashIcon className="h-4 w-4" />
+                <span className="text-sm">Delete</span>
+              </button>
+            </div>
+            <div className='flex'>
               <CodeBracketIcon className="h-5 w-5 text-gray-600 mr-2" />
               <strong>
                 Code:
@@ -579,6 +662,52 @@ export const Replication: React.FC = () => {
                 disabled={!newDuration || isNaN(Number(newDuration)) || Number(newDuration) <= 0 || !Number.isInteger(Number(newDuration))}
                 className={`px-4 py-2 rounded-md ${
                   newDuration && !isNaN(Number(newDuration)) && Number(newDuration) > 0 && Number.isInteger(Number(newDuration))
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                    : 'bg-blue-300 text-white cursor-not-allowed'
+                }`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isNewFormModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsNewFormModalOpen(false);
+              setNewForm('');
+            }
+          }}
+        >
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-4">Change Replication Form</h2>
+            <input
+              type="text"
+              value={newForm}
+              onChange={(e) => setNewForm(e.target.value)}
+              placeholder='https://example.com/form'
+              className="w-full border border-gray-300 rounded-md p-2 mb-4"
+            />
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => {
+                  setIsNewFormModalOpen(false);
+                  setNewForm('');
+                }}
+                className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleChangeForm}
+                disabled={!newForm.trim()}
+                className={`px-4 py-2 rounded-md ${
+                  newForm.trim() 
                     ? 'bg-blue-600 hover:bg-blue-700 text-white' 
                     : 'bg-blue-300 text-white cursor-not-allowed'
                 }`}
