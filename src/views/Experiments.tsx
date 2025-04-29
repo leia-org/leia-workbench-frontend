@@ -3,23 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import axios from 'axios';
 import {
-  ClockIcon,
-  ArrowPathIcon,
   InformationCircleIcon,
   CalendarDaysIcon,
   PencilSquareIcon,
+  Squares2X2Icon,
 } from '@heroicons/react/24/solid';
 
-interface Replication {
+interface Experiment {
   id: string;
+  isPublished: boolean;
   name: string;
-  isActive: boolean;
-  duration: number;
-  isRepeatable: boolean;
-  code: string;
+  leias: [{
+    configuration: {
+      mode: string;
+    }
+    leia: string;
+  }];
   createdAt: string;
   updatedAt: string;
-  experiment: { name: string };
 }
 
 const formatTimeAgo = (dateString: string) => {
@@ -47,128 +48,105 @@ const formatTimeAgo = (dateString: string) => {
   return `Now`;
 };
 
-export const Administration: React.FC = () => {
+export const Experiments: React.FC = () => {
   const navigate = useNavigate();
-  const [replications, setReplications] = useState<Replication[]>([]);
+  const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchReplications = async () => {
+    const fetchExperiments = async () => {
       try {
         const adminSecret = localStorage.getItem('adminSecret');
         if (!adminSecret) {
           navigate('/login');
           return;
         }
-        const response = await axios.get<Replication[]>(
-          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
+        const response = await axios.get<Experiment[]>(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
           {
             headers: {
               Authorization: `Bearer ${adminSecret}`,
             },
           }
         );
-        setReplications(response.data);
-        console.log('Replications:', response.data);
+        setExperiments(response.data);
+        console.log('Experiments:', response.data);
       } catch (error: any) {
         if (axios.isAxiosError(error) && error.response?.status === 401) {
           setTimeout(() => navigate('/login'), 2000);
         } else {
-          console.error('Failed to load replications:', error);
+          console.error('Failed to load experiments:', error);
         }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchReplications();
+    fetchExperiments();
   }, [navigate]);
 
   const handleView = (id: string) => {
-    navigate(`/replications/${id}`);
-  };
-
-  const handleCopy = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 4000);
+    navigate(`/experiments/${id}`);
   };
 
   if (loading) {
-    return <div className="text-center py-20">Loading replications...</div>;
+    return <div className="text-center py-20">Loading experiments...</div>;
   }
 
   return (
     <div className="min-h-screen">
       <Navbar/>
+      <h1 className="text-2xl font-bold text-center m-6">
+        <span className="text-blue-400">Select an experiment to </span>
+        <span className="text-blue-600">replicate</span>
+      </h1>
       <div className="m-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {replications.map(rep => {
-          const id = rep.id;
+        {experiments.map(exp => {
+          const id = exp.id;
           return (
             <div key={id} className="relative bg-white rounded-2xl shadow p-4 flex flex-col justify-between hover:shadow-lg transition duration-200">
               <div className='flex justify-between'>
                 {/* Title */}
                 <h2 className="text-lg font-bold truncate my-auto">
-                  {rep.name}
+                  {exp.name}
                 </h2>
                 <div>
                   <span
                     className={
-                      rep.isActive
+                      exp.isPublished
                         ? 'rounded-full px-2 py-1 text-xs font-semibold bg-green-100 text-green-800'
                         : 'rounded-full px-2 py-1 text-xs font-semibold bg-red-100 text-red-800'
                     }
                   >
-                    {rep.isActive ? 'Active' : 'Inactive'}
+                    {exp.isPublished ? 'Published' : 'Unpublished'}
                   </span>
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <div 
-                  className="flex flex-col cursor-pointer"
-                  onClick={() => handleCopy(rep.code, id)}
-                  title="Copy code to clipboard"
-                >
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 transition duration-200">
-                      {rep.code}
-                    </span>
-                    {copiedId === id && (
-                    <span className="text-xs font-bold text-green-600 mt-1">
-                      Copied!
-                    </span>
-                  )}
-                  </div>
-                </div>
+
+              <div className="flex w-full items-center justify-end">
                 <span className="ml-2 text-sm text-gray-400">
                   <CalendarDaysIcon className="w-4 h-4 inline-block" />
-                  {new Date(rep.createdAt).toLocaleDateString()}
+                  {new Date(exp.createdAt).toLocaleDateString()}
                 </span>
               </div>
 
               <div className="mt-4 space-y-1 text-sm text-gray-700">
                 <span className="flex items-center">
                   <InformationCircleIcon className="w-5 h-5 text-gray-500 mr-1" />
-                  <strong>Experiment:</strong>
-                  <p className="ml-2">{rep.experiment.name}</p>
+                  <strong>Leias: </strong>
+                  <p className="ml-2">{exp.leias.length}</p>
                 </span>
                 <span className="flex items-center">
-                  <ClockIcon className="w-5 h-5 text-gray-500 mr-1" />
-                  <strong>Duration:</strong>
+                  <Squares2X2Icon className="w-5 h-5 text-gray-500 mr-1" />
+                  <strong>Modes: </strong>
                   <p className="ml-2">
-                    {Math.floor(rep.duration / 60)}m {rep.duration % 60}s
+                    {[...new Set(exp.leias.map(leia => leia.configuration.mode))].join(', ')}
                   </p>
-                </span>
-                <span className="flex items-center">
-                  <ArrowPathIcon className="w-5 h-5 text-gray-500 mr-1" />
-                  <strong>Repeatable:</strong>
-                  <p className="ml-2">{rep.isRepeatable ? 'yes' : 'no'}</p>
                 </span>
                 <span className="flex items-center">
                   <PencilSquareIcon className="w-5 h-5 text-gray-500 mr-1" />
                   <strong>Last Updated:</strong>
-                  <p className="ml-2">{formatTimeAgo(rep.updatedAt)}</p>
+                  <p className="ml-2">{formatTimeAgo(exp.updatedAt)}</p>
                 </span>
               </div>
 
@@ -176,7 +154,7 @@ export const Administration: React.FC = () => {
                 className="mt-4 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
                 onClick={() => handleView(id)}
               >
-                Details
+                Preview
               </button>
             </div>
           );

@@ -29,7 +29,7 @@ export const Navbar: React.FC = () => {
           {/* Right side */}
           <div className="flex items-center space-x-4">
             <Link
-              to="/replications/new"
+              to="/experiments"
               className="flex items-center px-3 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition duration-200"
             >
               <PlusIcon className="h-5 w-5 mr-1" />
