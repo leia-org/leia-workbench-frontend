@@ -441,7 +441,7 @@ export const Replication: React.FC = () => {
                 <div className="font-medium">{item.leia.metadata.name}</div>
                 <button
                   onClick={() => {
-                    setSideBarData(item.leia.spec)
+                    setSideBarData(item.leia)
                     setIsSidebarOpen(true);
                   }}
                   className="flex items-center space-x-1 text-blue-600 hover:underline"
