@@ -46,6 +46,12 @@ export const Replication: React.FC = () => {
   const adminSecret = localStorage.getItem('adminSecret');
   const [copied, setCopied] = useState<boolean>(false);
 
+  // Modals
+  const [newName, setNewName] = useState<string>('');
+  const [newDuration, setNewDuration] = useState<string>('');
+  const [isNewNameModalOpen, setIsNewNameModalOpen] = useState<boolean>(false);
+  const [isNewDurationModalOpen, setIsNewDurationModalOpen] = useState<boolean>(false);
+
   // Fetch replication on mount
   useEffect(() => {
     const fetchReplication = async () => {
@@ -98,6 +104,58 @@ export const Replication: React.FC = () => {
     navigator.clipboard.writeText(replication?.code || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 4000);
+  };
+
+  const handleRename = async () => {
+    if (replication && newName.trim()) {
+      try {
+        const resp = await axios.patch(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/name`,
+          { name: newName.trim() },
+          { headers: { Authorization: `Bearer ${adminSecret}` } }
+        );
+        setReplication(resp.data);
+        setLocalReplication(structuredClone(resp.data));
+        setNewName('');
+        setIsNewNameModalOpen(false);
+        toast.success('Replication renamed successfully', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+      } catch (err) {
+        toast.error('Error renaming replication', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+        console.error('Rename error:', err);
+      }
+    }
+  };
+
+  const handleChangeDuration = async () => {
+    if (replication && !isNaN(Number(newDuration)) && Number(newDuration) > 0 && Number.isInteger(Number(newDuration))) {
+      try {
+        const resp = await axios.patch(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/duration`,
+          { duration: Number(newDuration) },
+          { headers: { Authorization: `Bearer ${adminSecret}` } }
+        );
+        setReplication(resp.data);
+        setLocalReplication(structuredClone(resp.data));
+        setNewDuration('');
+        setIsNewDurationModalOpen(false);
+        toast.success('Replication duration updated successfully', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+      } catch (err) {
+        toast.error('Error updating replication duration', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+        console.error('Update error:', err);
+      }
+    }
   };
 
   // Regenerate code
@@ -251,7 +309,7 @@ export const Replication: React.FC = () => {
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-bold text-gray-800 mr-2">{replication.name}</h1>
             <button
-              onClick={() => null}
+              onClick={() => setIsNewNameModalOpen(true)}
               className="flex text-center items-center space-x-1 text-blue-600 hover:underline"
             >
               <PencilIcon className="h-4 w-4" />
@@ -325,7 +383,7 @@ export const Replication: React.FC = () => {
                 {Math.floor(replication.duration / 60)}m {replication.duration % 60}s
               </p>
               <button
-                onClick={() => null}
+                onClick={() => setIsNewDurationModalOpen(true)}
                 className="flex text-center items-center space-x-1 text-blue-600 hover:underline mr-2"
               >
                 <PencilIcon className="h-4 w-4" />
@@ -403,21 +461,124 @@ export const Replication: React.FC = () => {
               </div>
               <div className='flex w-full gap-2'>
                 <button
-                  onClick={() => handleLeiaUpdate(idx)}
-                  className="mt-2 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200 w-full"
-                >
-                  Save
-                </button>
-                <button
                   onClick={() => handleLocalLeiaReset(idx)}
-                  className="mt-2 bg-red-600 text-white rounded-lg px-4 py-2 hover:bg-red-700 transition duration-200 w-full"
+                  className="mt-2 bg-gray-400 text-white rounded-lg px-4 py-2 hover:bg-gray-500 transition duration-200 w-full"
                 >
                   Reset
                 </button>
+                <button
+  onClick={() => handleLeiaUpdate(idx)}
+  disabled={
+    JSON.stringify(localReplication.experiment.leias[idx]) ===
+    JSON.stringify(replication.experiment.leias[idx])
+  }
+  className={`mt-2 rounded-lg px-4 py-2 transition duration-200 w-full text-white ${
+    JSON.stringify(localReplication.experiment.leias[idx]) ===
+    JSON.stringify(replication.experiment.leias[idx])
+      ? 'bg-blue-300 cursor-not-allowed'
+      : 'bg-blue-600 hover:bg-blue-700'
+  }`}
+>
+  Save
+</button>
               </div>
             </div>
           ))}
         </div>
+
+        {/* Modals */}
+        {isNewNameModalOpen&& (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsNewNameModalOpen(false);
+              setNewName('');
+            }
+          }}
+        > 
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-4">Rename Replication</h2>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder='name'
+              className="w-full border border-gray-300 rounded-md p-2 mb-4"
+            />
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => {
+                  setIsNewNameModalOpen(false);
+                  setNewName('');
+                }}
+                className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRename}
+                disabled={!newName.trim()}
+                className={`px-4 py-2 rounded-md ${
+                  newName.trim() 
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                    : 'bg-blue-300 text-white cursor-not-allowed'
+                }`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isNewDurationModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsNewDurationModalOpen(false);
+              setNewDuration('');
+            }
+          }}
+        > 
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-4">Change Replication Duration</h2>
+            <input
+              type="text"
+              pattern='[0-9]*'
+              value={newDuration}
+              onChange={(e) => setNewDuration(e.target.value)}
+              placeholder='1800'
+              className="w-full border border-gray-300 rounded-md p-2 mb-4"
+            />
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => {
+                  setIsNewDurationModalOpen(false);
+                  setNewDuration('');
+                }}
+                className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleChangeDuration}
+                disabled={!newDuration || isNaN(Number(newDuration)) || Number(newDuration) <= 0 || !Number.isInteger(Number(newDuration))}
+                className={`px-4 py-2 rounded-md ${
+                  newDuration && !isNaN(Number(newDuration)) && Number(newDuration) > 0 && Number.isInteger(Number(newDuration))
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                    : 'bg-blue-300 text-white cursor-not-allowed'
+                }`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
