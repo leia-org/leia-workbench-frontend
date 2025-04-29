@@ -4,6 +4,8 @@ import axios from 'axios';
 import { Navbar } from '../components/Navbar';
 import Switch from "react-switch";
 import { ToastContainer, toast } from 'react-toastify';
+import SyntaxHighlighter from 'react-syntax-highlighter';
+import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import {
   PencilIcon,
   ClockIcon,
@@ -13,7 +15,8 @@ import {
   PencilSquareIcon,
   EyeIcon,
   LockClosedIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  XMarkIcon
 } from '@heroicons/react/24/solid';
 
 interface Replication {
@@ -51,6 +54,10 @@ export const Replication: React.FC = () => {
   const [newDuration, setNewDuration] = useState<string>('');
   const [isNewNameModalOpen, setIsNewNameModalOpen] = useState<boolean>(false);
   const [isNewDurationModalOpen, setIsNewDurationModalOpen] = useState<boolean>(false);
+
+  // Side bar
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [sideBarData, setSideBarData] = useState<any>(null);
 
   // Fetch replication on mount
   useEffect(() => {
@@ -433,7 +440,10 @@ export const Replication: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="font-medium">{item.leia.metadata.name}</div>
                 <button
-                  onClick={() => alert('View leia content...')}
+                  onClick={() => {
+                    setSideBarData(item.leia.spec)
+                    setIsSidebarOpen(true);
+                  }}
                   className="flex items-center space-x-1 text-blue-600 hover:underline"
                 >
                   <EyeIcon className="h-4 w-4" />
@@ -577,6 +587,26 @@ export const Replication: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Sidebar */}
+      {isSidebarOpen && (
+        <div className="fixed inset-y-0 left-0 w-full bg-white shadow-lg z-50 overflow-auto">
+          <div className="sticky top-0 flex justify-between items-center p-4 border-b bg-white">
+            <h2 className="text-lg font-semibold">Leia Content</h2>
+            <button onClick={() => setIsSidebarOpen(false)}>
+              <XMarkIcon className="h-5 w-5 text-gray-600 hover:text-gray-800" />
+            </button>
+          </div>
+          <SyntaxHighlighter 
+            language="json" 
+            style={docco}
+            customStyle={{ backgroundColor: "white" }}
+            className="p-4"
+          >
+            {JSON.stringify(sideBarData, null, 2)}
+          </SyntaxHighlighter>
         </div>
       )}
       </div>
