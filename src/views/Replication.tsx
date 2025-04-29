@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Navbar } from '../components/Navbar';
+import Switch from "react-switch";
 import {
   PencilIcon,
   ClockIcon,
   CodeBracketIcon,
   ArrowPathIcon,
-  CalendarIcon,
+  CalendarDaysIcon,
+  PencilSquareIcon,
   EyeIcon,
-  CheckIcon,
+  LockClosedIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/solid';
 
 interface Replication {
@@ -37,9 +40,10 @@ export const Replication: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [replication, setReplication] = useState<Replication | null>(null);
-  const [localLeias, setLocalLeias] = useState(replication?.experiment.leias || []);
+  const [localReplication, setLocalReplication] = useState<Replication | null>(null);
   const [loading, setLoading] = useState(true);
   const adminSecret = localStorage.getItem('adminSecret');
+  const [copied, setCopied] = useState<boolean>(false);
 
   // Fetch replication on mount
   useEffect(() => {
@@ -50,7 +54,7 @@ export const Replication: React.FC = () => {
           { headers: { Authorization: `Bearer ${adminSecret}` } }
         );
         setReplication(resp.data);
-        setLocalLeias(resp.data.experiment.leias);
+        setLocalReplication(structuredClone(resp.data));
       } catch (err: any) {
         if (axios.isAxiosError(err) && err.response?.status === 403) {
           setTimeout(() => navigate('/login'), 2000);
@@ -64,6 +68,37 @@ export const Replication: React.FC = () => {
     fetchReplication();
   }, [id, adminSecret, navigate]);
 
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+    let interval = Math.floor(seconds / 31536000);
+    if (interval >= 1) return `${interval} year${interval === 1 ? '' : 's'} ago`;
+  
+    interval = Math.floor(seconds / 2592000);
+    if (interval >= 1) return `${interval} month${interval === 1 ? '' : 's'} ago`;
+  
+    interval = Math.floor(seconds / 86400);
+    if (interval >= 1) return `${interval} day${interval === 1 ? '' : 's'} ago`;
+  
+    interval = Math.floor(seconds / 3600);
+    if (interval >= 1) return `${interval} hour${interval === 1 ? '' : 's'} ago`;
+  
+    interval = Math.floor(seconds / 60);
+    if (interval >= 1) return `${interval} minute${interval === 1 ? '' : 's'} ago`;
+    
+    if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
+
+    return `Now`;
+  };
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(replication?.code || '');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 4000);
+  };
+
   // Regenerate code
   const regenerateCode = async () => {
     try {
@@ -73,6 +108,7 @@ export const Replication: React.FC = () => {
         { headers: { Authorization: `Bearer ${adminSecret}` } }
       );
       setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
     } catch (err) {
       console.error('Regenerate error:', err);
     }
@@ -88,6 +124,7 @@ export const Replication: React.FC = () => {
         { headers: { Authorization: `Bearer ${adminSecret}` } }
       );
       setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
     } catch (err) {
       console.error('Update error:', err);
     }
@@ -103,19 +140,44 @@ export const Replication: React.FC = () => {
         { headers: { Authorization: `Bearer ${adminSecret}` } }
       );
       setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
     } catch (err) {
       console.error('Update error:', err);
     }
   };
 
-  // Local leia runnerConfig change
-  const handleLocalRunnerChange = (index: number, provider: string) => {
-    const updated = [...localLeias];
-    (updated[index] as any).runnerConfiguration = { provider };
-    setLocalLeias(updated);
-  };
+  const handleLocalLeiaChange = (idx: number, key: string, value: any) => {
+    if (localReplication) {
+      const keys = key.split(".")
+      const localReplicationCopy = structuredClone(localReplication) as any
+      let property = localReplicationCopy?.experiment.leias[idx]
+      for (let i = 0; i < keys.length -1; i++) {
+        if (property[keys[i]] === undefined) {
+          console.log("Property "+keys[i]+" not found")
+          return
+        }
+        property = property[keys[i]]
+      }
 
-  if (loading || !replication) {
+      const lastKey = keys.at(-1)
+      if (lastKey) {
+        property[lastKey] = value;
+        setLocalReplication(localReplicationCopy)
+      }
+    }
+  }
+
+  const handleLocalLeiaReset = (idx: number) => {
+    if (localReplication && replication) {
+      console.log("replication: "+replication.experiment.leias[idx].runnerConfiguration.provider)
+      const localReplicationCopy = structuredClone(localReplication)
+      localReplicationCopy.experiment.leias[idx] = replication.experiment.leias[idx]
+      console.log("copy: "+localReplicationCopy.experiment.leias[idx].runnerConfiguration.provider)
+      setLocalReplication(localReplicationCopy)
+    }
+  }
+
+  if (loading || !replication || !localReplication) {
     return (
       <div className="min-h-screen">
         <Navbar />
@@ -127,81 +189,129 @@ export const Replication: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-2">
-            <PencilIcon className="h-5 w-5 text-gray-600" />
-            <input
-              type="text"
-              className="text-2xl font-bold border-b border-gray-300 focus:outline-none"
-              value={replication.name}
-              onChange={(e) => setReplication({ ...replication, name: e.target.value })}
-            />
+            <h1 className="text-2xl font-bold text-gray-800 mr-2">{replication.name}</h1>
+            <button
+              onClick={() => null}
+              className="flex text-center items-center space-x-1 text-blue-600 hover:underline"
+            >
+              <PencilIcon className="h-4 w-4" />
+              <span className="text-sm">Rename</span>
+            </button>
           </div>
-          <div>
-            <label className="flex items-center space-x-1">
-              <CheckIcon className="h-5 w-5 text-green-500" />
-              <input
-                type="checkbox"
+          <div className="flex items-center space-x-8">
+            <label className="text-center flex items-center">
+              <LockClosedIcon className="h-4 w-4 text-gray-600" />
+              <span className='text-sm text-gray-700 mx-2'>Active</span>
+              <Switch
                 checked={replication.isActive}
-                onChange={() => toggleActive()}
-              />
-              <span className="text-sm text-gray-700">Active</span>
+                onChange={toggleActive}
+              ></Switch>
+            </label>
+            <label className="text-center flex items-center">
+              <ArrowPathIcon className="h-4 w-4 text-gray-600" />
+              <span className='text-sm text-gray-700 mx-2'>Repeatable</span>
+              <Switch
+                checked={replication.isRepeatable}
+                onChange={toggleRepeatable}
+              ></Switch>
             </label>
           </div>
         </div>
 
-        {/* Basic details */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex items-center space-x-2">
-            <ClockIcon className="h-5 w-5 text-gray-600" />
-            <input
-              type="number"
-              className="w-24 border-b border-gray-300 focus:outline-none"
-              value={replication.duration}
-              onChange={(e) => setReplication({ ...replication, duration: Number(e.target.value) })}
-            />
-            <span className="text-sm text-gray-700">seconds</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <ArrowPathIcon className="h-5 w-5 text-gray-600" />
-            <label className="flex items-center space-x-1">
-              <input
-                type="checkbox"
-                checked={replication.isRepeatable}
-                onChange={() => toggleRepeatable()}
-              />
-              <span className="text-sm text-gray-700">Repeatable</span>
-            </label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <CodeBracketIcon className="h-5 w-5 text-gray-600" />
-            <span className="font-mono">{replication.code}</span>
-            <button onClick={regenerateCode}>
-              <ArrowPathIcon className="h-5 w-5 text-blue-500 hover:text-blue-700" />
-            </button>
-          </div>
-          <div className="flex items-center space-x-2">
-            <CalendarIcon className="h-5 w-5 text-gray-600" />
-            <div className="text-sm text-gray-700">
-              <div>Created: {new Date(replication.createdAt).toLocaleString()}</div>
-              <div>Updated: {new Date(replication.updatedAt).toLocaleString()}</div>
+        {/*Information*/}
+        <h3 className='text-lg font-semibold'>Replication information</h3>
+        <div className="flex justify-between bg-white p-4 rounded-xl shadow mb-6 mt-2 items-center">
+          <div className="text-sm text-gray-700 space-y-2">
+            <div className='flex'>
+              <CalendarDaysIcon className="h-5 w-5 text-gray-600 mr-2" />
+              <strong>
+                Created:
+              </strong>
+              <p className='ml-2'>
+                {new Date(replication.createdAt).toLocaleString()}
+              </p>
+            </div>
+            <div className='flex'>
+              <PencilSquareIcon className="h-5 w-5 text-gray-600 mr-2" />
+              <strong>
+                Last updated:
+              </strong>
+              <p className='ml-2'>
+                {formatTimeAgo(replication.updatedAt)}
+              </p>
+            </div>
+            <div className='flex'>
+              <InformationCircleIcon className="h-5 w-5 text-gray-600 mr-2" />
+              <strong>
+                Experiment:
+              </strong>
+              <p className='ml-2'>
+                {replication.experiment.name}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Session count and experiment */}
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-gray-800">
-            Experiment: {replication.experiment.name}
+        {/* Basic details */}
+        <h3 className="text-lg font-semibold">Replication configuration</h3>
+        <div className="flex justify-between bg-white p-4 rounded-xl shadow mb-6 mt-2 items-center">
+          <div className="text-sm text-gray-700 space-y-2">
+            <div className='flex'>
+              <ClockIcon className="h-5 w-5 text-gray-600 mr-2" />
+              <strong>
+                Duration:
+              </strong>
+              <p className='mx-2'>
+                {Math.floor(replication.duration / 60)}m {replication.duration % 60}s
+              </p>
+              <button
+                onClick={() => null}
+                className="flex text-center items-center space-x-1 text-blue-600 hover:underline mr-2"
+              >
+                <PencilIcon className="h-4 w-4" />
+                <span className="text-sm">Change</span>
+              </button>
+            </div>
+            <div className='flex'>
+              <CodeBracketIcon className="h-5 w-5 text-gray-600 mr-2" />
+              <strong>
+                Code:
+              </strong>
+              <div 
+                className="flex flex-col cursor-pointer ml-2"
+                onClick={() => handleCopyCode()}
+                title="Copy code to clipboard"
+              >
+                <div className="flex items-center mr-2">
+                  <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 transition duration-200">
+                    {replication.code}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => regenerateCode()}
+                className="flex text-center items-center space-x-1 text-blue-600 hover:underline mr-2"
+              >
+                <ArrowPathIcon className="h-4 w-4" />
+                <span className="text-sm">Regenerate</span>
+              </button>
+              {copied && (
+                <span className="text-xs font-bold text-green-600 mt-1">
+                  Copied!
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Leias section */}
-        <div className="space-y-4">
           <h3 className="text-lg font-semibold">Leia Configurations</h3>
-          {localLeias.map((item, idx) => (
+          <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6 mt-2">
+          {localReplication.experiment.leias.map((item, idx) => (
             <div
               key={idx}
               className="bg-white p-4 rounded-xl shadow flex flex-col space-y-2"
@@ -228,18 +338,26 @@ export const Replication: React.FC = () => {
               </div>
                 <select
                   value={item.runnerConfiguration.provider}
-                  onChange={(e) => handleLocalRunnerChange(idx, e.target.value)}
+                  onChange={(e) => handleLocalLeiaChange(idx, "runnerConfiguration.provider", e.target.value)}
                   className="border border-gray-300 rounded-md p-2"
                 >
                   <option value="default">default</option>
                   <option value="openai-assistant">openai-assistant</option>
                 </select>
               </div>
-              <button
-                className="mt-2 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
-              >
-                Save Runner Config
-              </button>
+              <div className='flex w-full gap-2'>
+                <button
+                  className="mt-2 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200 w-full"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => handleLocalLeiaReset(idx)}
+                  className="mt-2 bg-red-600 text-white rounded-lg px-4 py-2 hover:bg-red-700 transition duration-200 w-full"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
           ))}
         </div>

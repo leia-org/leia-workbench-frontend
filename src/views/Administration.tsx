@@ -41,8 +41,10 @@ const formatTimeAgo = (dateString: string) => {
 
   interval = Math.floor(seconds / 60);
   if (interval >= 1) return `${interval} minute${interval === 1 ? '' : 's'} ago`;
-
-  return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
+  
+  if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
+  
+  return `Now`;
 };
 
 export const Administration: React.FC = () => {
