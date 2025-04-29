@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Navbar } from '../components/Navbar';
 import Switch from "react-switch";
+import { ToastContainer, toast } from 'react-toastify';
 import {
   PencilIcon,
   ClockIcon,
@@ -109,7 +110,15 @@ export const Replication: React.FC = () => {
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
+      toast.success('Code regenerated successfully', {
+        position: "bottom-right",
+        autoClose: 5000
+      });
     } catch (err) {
+      toast.error('Error regenerating code', {
+        position: "bottom-right",
+        autoClose: 5000
+      });
       console.error('Regenerate error:', err);
     }
   };
@@ -125,7 +134,16 @@ export const Replication: React.FC = () => {
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
+      const message = replication.isActive ? 'Replication is now inactive' : 'Replication is now active';
+      toast.success(message, {
+        position: "bottom-right",
+        autoClose: 5000
+      });
     } catch (err) {
+      toast.error('Error toggling active state', {
+        position: "bottom-right",
+        autoClose: 5000
+      });
       console.error('Update error:', err);
     }
   };
@@ -141,7 +159,16 @@ export const Replication: React.FC = () => {
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
+      const message = replication.isRepeatable ? 'Replication is now non-repeatable' : 'Replication is now repeatable';
+      toast.success(message, {
+        position: "bottom-right",
+        autoClose: 5000
+      });
     } catch (err) {
+      toast.error('Error toggling repeatable state', {
+        position: "bottom-right",
+        autoClose: 5000
+      });
       console.error('Update error:', err);
     }
   };
@@ -177,6 +204,34 @@ export const Replication: React.FC = () => {
     }
   }
 
+  const handleLeiaUpdate = async (idx: number) => {
+    if (replication && localReplication) {
+      const replicationId = replication.id
+      const localLeiaId = localReplication.experiment.leias[idx].id
+      const localLeiaRunnerConfiguration = localReplication.experiment.leias[idx].runnerConfiguration
+      
+      try {
+        const resp = await axios.patch(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${replicationId}/leia/${localLeiaId}/runner-configuration`,
+          localLeiaRunnerConfiguration,
+          { headers: { Authorization: `Bearer ${adminSecret}` } }
+        );
+        setReplication(resp.data);
+        setLocalReplication(structuredClone(resp.data));
+        toast.success('Leia configuration updated successfully', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+      } catch (err) {
+        toast.error('Error updating leia configuration', {
+          position: "bottom-right",
+          autoClose: 5000
+        });
+        console.error('Update error:', err);
+      }
+    }
+  };
+
   if (loading || !replication || !localReplication) {
     return (
       <div className="min-h-screen">
@@ -189,6 +244,7 @@ export const Replication: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
+      <ToastContainer />
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -309,7 +365,7 @@ export const Replication: React.FC = () => {
         </div>
 
         {/* Leias section */}
-          <h3 className="text-lg font-semibold">Leia Configurations</h3>
+          <h3 className="text-lg font-semibold">Leia configurations</h3>
           <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6 mt-2">
           {localReplication.experiment.leias.map((item, idx) => (
             <div
@@ -347,6 +403,7 @@ export const Replication: React.FC = () => {
               </div>
               <div className='flex w-full gap-2'>
                 <button
+                  onClick={() => handleLeiaUpdate(idx)}
                   className="mt-2 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200 w-full"
                 >
                   Save
