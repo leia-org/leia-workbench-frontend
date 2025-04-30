@@ -98,31 +98,31 @@ export const Experiment: React.FC = () => {
   return (
     <div className="min-h-screen">
       <div className="fixed inset-y-0 left-0 w-full bg-white shadow-lg z-50 overflow-auto">
-          <div className="sticky top-0 flex justify-between items-center p-4 border-b bg-white">
-            <h2 className="text-lg font-semibold">Experiment preview</h2>
-            <div>
-              <button
-                onClick={() => navigate(-1)}
-                className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition duration-200"
-              >
-                Go back
-              </button>
-              <button
-                onClick={() => setIsCreateReplicationModalOpen(true)}
-                className="ml-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200"
-              >
-                Create Replication
-              </button>
-            </div>
+        <div className="sticky top-0 flex justify-between items-center p-4 border-b bg-white">
+          <h2 className="text-lg font-semibold">Experiment preview</h2>
+          <div>
+            <button
+              onClick={() => navigate(-1)}
+              className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition duration-200"
+            >
+              Go back
+            </button>
+            <button
+              onClick={() => setIsCreateReplicationModalOpen(true)}
+              className="ml-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200"
+            >
+              Create Replication
+            </button>
           </div>
-          <SyntaxHighlighter 
-            language="json" 
-            style={docco}
-            customStyle={{ backgroundColor: "white" }}
-            className="p-4"
-          >
-            {JSON.stringify(experiment, null, 2)}
-          </SyntaxHighlighter>
+        </div>
+        <SyntaxHighlighter 
+          language="json" 
+          style={docco}
+          wrapLongLines={true}
+          showLineNumbers={true}
+        >
+          {JSON.stringify(experiment, null, 2)}
+        </SyntaxHighlighter>
         </div>
         {/* Modals */}
         {isCreateReplicationModalOpen && (

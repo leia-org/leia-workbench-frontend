@@ -731,8 +731,8 @@ export const Replication: React.FC = () => {
           <SyntaxHighlighter 
             language="json" 
             style={docco}
-            customStyle={{ backgroundColor: "white" }}
-            className="p-4"
+            wrapLongLines={true}
+            showLineNumbers={true}
           >
             {JSON.stringify(sideBarData, null, 2)}
           </SyntaxHighlighter>
