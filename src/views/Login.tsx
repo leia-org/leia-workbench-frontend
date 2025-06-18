@@ -17,13 +17,13 @@ export const Login = () => {
     // Get URL parameters
     const sCode = searchParams.get('sCode');
     const email = searchParams.get('email');
-    const xCode = searchParams.get('xCode');
+    const code = searchParams.get('code');
 
     if (sCode || email) {
       setStudentIdentifier(sCode || email || '');
     }
-    if (xCode) {
-      setExperimentCode(xCode);
+    if (code) {
+      setExperimentCode(code);
     }
   }, [searchParams]);
 
