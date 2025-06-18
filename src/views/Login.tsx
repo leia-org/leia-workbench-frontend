@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UserCircleIcon } from '@heroicons/react/24/solid';
-import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
 function generateUID(length: number = 16): string {
@@ -28,7 +27,7 @@ export const Login = () => {
   useEffect(() => {
     // Get URL parameters
     const sCode = searchParams.get('sCode');
-    const email = searchParams.get('email');
+    let email = searchParams.get('email');
     const code = searchParams.get('code');
 
     if (sCode || email) {
