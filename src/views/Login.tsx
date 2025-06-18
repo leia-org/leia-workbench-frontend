@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UserCircleIcon } from '@heroicons/react/24/solid';
+import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+
+function generateUID(length: number = 16): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  let uid = '';
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * chars.length);
+    uid += chars[randomIndex];
+  }
+  return uid;
+}
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -13,6 +24,7 @@ export const Login = () => {
   const [message, setMessage] = useState('');
   const [success, setSuccess] = useState(false);
 
+
   useEffect(() => {
     // Get URL parameters
     const sCode = searchParams.get('sCode');
@@ -20,6 +32,10 @@ export const Login = () => {
     const code = searchParams.get('code');
 
     if (sCode || email) {
+      
+      if(email == "test")
+        email = generateUID()+"@test.com";
+      
       setStudentIdentifier(sCode || email || '');
     }
     if (code) {
