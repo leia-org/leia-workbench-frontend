@@ -36,7 +36,7 @@ export const Login = () => {
         email = generateUID()+"@test.com";
       } else if (email.startsWith("_test_")) {
         let remainder = email.slice(6);
-        email = remainder+generateUID()"@test.com";
+        email = remainder+generateUID()+"@test.com";
       }
   
       
