@@ -32,8 +32,14 @@ export const Login = () => {
 
     if (sCode || email) {
       
-      if(email == "test")
+      if(email == "test"){
         email = generateUID()+"@test.com";
+      } else if (email.startsWith("_test_")) {
+        let remainder = email.slice(6);
+        email = remainder+generateUID()"@test.com";
+      }
+  
+      
       
       setStudentIdentifier(sCode || email || '');
     }
