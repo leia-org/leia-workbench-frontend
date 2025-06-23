@@ -3,6 +3,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UserCircleIcon } from '@heroicons/react/24/solid';
 import axios from 'axios';
 
+function generateUID(length: number = 16): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  let uid = '';
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * chars.length);
+    uid += chars[randomIndex];
+  }
+  return uid;
+}
+
 export const Login = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -13,17 +23,26 @@ export const Login = () => {
   const [message, setMessage] = useState('');
   const [success, setSuccess] = useState(false);
 
+
   useEffect(() => {
     // Get URL parameters
     const sCode = searchParams.get('sCode');
-    const email = searchParams.get('email');
-    const xCode = searchParams.get('xCode');
+    let email = searchParams.get('email');
+    const code = searchParams.get('code');
 
     if (sCode || email) {
+      
+      if(email == "test"){
+        email = generateUID()+"@test.com";
+      } else if ((email !== null) && email.startsWith("_test_")) {
+        let remainder = email.slice(6);
+        email = remainder+generateUID()+"@test.com";
+      }
+      
       setStudentIdentifier(sCode || email || '');
     }
-    if (xCode) {
-      setExperimentCode(xCode);
+    if (code) {
+      setExperimentCode(code);
     }
   }, [searchParams]);
 
