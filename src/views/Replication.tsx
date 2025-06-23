@@ -18,7 +18,9 @@ import {
   InformationCircleIcon,
   XMarkIcon,
   ClipboardDocumentCheckIcon,
-  TrashIcon
+  TrashIcon,
+  DocumentTextIcon,
+  LightBulbIcon
 } from '@heroicons/react/24/solid';
 
 interface Replication {
@@ -34,7 +36,7 @@ interface Replication {
   experiment: {
     name: string;
     leias: Array<{
-      configuration: { mode: string; data?: any };
+      configuration: { mode: string; data?: any; askSolution: boolean; evaluateSolution: boolean };
       leia: { metadata: { name: string }; spec: any };
       runnerConfiguration: { provider: string };
       sessionCount: number;
@@ -294,6 +296,56 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const toggleAskSolution = async (idx: number) => {
+    if (!replication) return;
+    const leiaId = replication.experiment.leias[idx].id
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/leia/${leiaId}/toggle-ask-solution`,
+        {},
+        { headers: { Authorization: `Bearer ${adminSecret}` } }
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      const message = 'Leia configuration updated';
+      toast.success(message, {
+        position: "bottom-right",
+        autoClose: 5000
+      });
+    } catch (err) {
+      toast.error('Error toggling ask solution state', {
+        position: "bottom-right",
+        autoClose: 5000
+      });
+      console.error('Update error:', err);
+    }
+  }
+
+  const toggleEvaluateSolution = async (idx: number) => {
+    if (!replication) return;
+    const leiaId = replication.experiment.leias[idx].id
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/leia/${leiaId}/toggle-evaluate-solution`,
+        {},
+        { headers: { Authorization: `Bearer ${adminSecret}` } }
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      const message = 'Leia configuration updated';
+      toast.success(message, {
+        position: "bottom-right",
+        autoClose: 5000
+      });
+    } catch (err) {
+      toast.error('Error toggling evaluate solution state', {
+        position: "bottom-right",
+        autoClose: 5000
+      });
+      console.error('Update error:', err);
+    }
+  }
+
   const handleLocalLeiaChange = (idx: number, key: string, value: any) => {
     if (localReplication) {
       const keys = key.split(".")
@@ -539,42 +591,65 @@ export const Replication: React.FC = () => {
               <div className="text-sm text-gray-700">
                 Mode: <strong>{item.configuration.mode}</strong>
               </div>
-              <div className="flex items-center space-x-2">
-              <div className="text-sm text-gray-700">
-                Provider: 
+
+              <div className="flex items-center space-x-8">
+                <label className="text-center flex items-center">
+                  <DocumentTextIcon className="h-4 w-4 text-gray-600" />
+                  <span className='text-sm text-gray-700 mx-2'>Student solution</span>
+                  <Switch
+                    checked={item.configuration.askSolution}
+                    onChange={() => toggleAskSolution(idx)}
+                  ></Switch>
+                </label>
+                <label className="text-center flex items-center">
+                  <LightBulbIcon className="h-4 w-4 text-gray-600" />
+                  <span className='text-sm text-gray-700 mx-2'>Automatic evaluation</span>
+                  <Switch
+                    checked={item.configuration.evaluateSolution}
+                    onChange={() => toggleEvaluateSolution(idx)}
+                  ></Switch>
+                </label>
               </div>
-                <select
-                  value={item.runnerConfiguration.provider}
-                  onChange={(e) => handleLocalLeiaChange(idx, "runnerConfiguration.provider", e.target.value)}
-                  className="border border-gray-300 rounded-md p-2"
-                >
-                  <option value="default">default</option>
-                  <option value="openai-assistant">openai-assistant</option>
-                </select>
-              </div>
-              <div className='flex w-full gap-2'>
-                <button
-                  onClick={() => handleLocalLeiaReset(idx)}
-                  className="mt-2 bg-gray-400 text-white rounded-lg px-4 py-2 hover:bg-gray-500 transition duration-200 w-full"
-                >
-                  Reset
-                </button>
-                <button
-  onClick={() => handleLeiaUpdate(idx)}
-  disabled={
-    JSON.stringify(localReplication.experiment.leias[idx]) ===
-    JSON.stringify(replication.experiment.leias[idx])
-  }
-  className={`mt-2 rounded-lg px-4 py-2 transition duration-200 w-full text-white ${
-    JSON.stringify(localReplication.experiment.leias[idx]) ===
-    JSON.stringify(replication.experiment.leias[idx])
-      ? 'bg-blue-300 cursor-not-allowed'
-      : 'bg-blue-600 hover:bg-blue-700'
-  }`}
->
-  Save
-</button>
-              </div>
+              
+              <fieldset className='bg-white p-4 rounded-xl shadow border-solid border border-gray-400'>
+                <legend>Runner</legend>
+                <div className="flex items-center space-x-2">
+                  <div className="text-sm text-gray-700">
+                    Provider: 
+                  </div>
+                    <select
+                      value={item.runnerConfiguration.provider}
+                      onChange={(e) => handleLocalLeiaChange(idx, "runnerConfiguration.provider", e.target.value)}
+                      className="border border-gray-300 rounded-md p-2"
+                    >
+                      <option value="default">default</option>
+                      <option value="openai-assistant">openai-assistant</option>
+                    </select>
+                </div>
+                <div className='flex w-full gap-2'>
+                  <button
+                    onClick={() => handleLocalLeiaReset(idx)}
+                    className="mt-2 bg-gray-400 text-white rounded-lg px-4 py-2 hover:bg-gray-500 transition duration-200 w-full"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    onClick={() => handleLeiaUpdate(idx)}
+                    disabled={
+                      JSON.stringify(localReplication.experiment.leias[idx]) ===
+                      JSON.stringify(replication.experiment.leias[idx])
+                    }
+                    className={`mt-2 rounded-lg px-4 py-2 transition duration-200 w-full text-white ${
+                      JSON.stringify(localReplication.experiment.leias[idx]) ===
+                      JSON.stringify(replication.experiment.leias[idx])
+                        ? 'bg-blue-300 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    Save
+                  </button>
+                </div>
+              </fieldset>
             </div>
           ))}
         </div>
