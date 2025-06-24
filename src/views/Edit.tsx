@@ -56,7 +56,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onCl
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
         <div className="flex justify-between items-center px-6 py-4 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">Evaluation Results</h2>
+          <h2 className="text-xl font-semibold text-gray-900">Solution Submitted</h2>
           <button 
             onClick={onClose}
             className="text-gray-400 hover:text-gray-500 transition-colors"
@@ -147,7 +147,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = memo(({loadingEvaluation, onAlert }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
-      <h1 className="text-xl font-semibold text-gray-900">Diagram Editor</h1>
+      <h1 className="text-xl font-semibold text-gray-900">Editor</h1>
       <div className="flex gap-2">
 
         <button
@@ -161,7 +161,7 @@ const Header: React.FC<HeaderProps> = memo(({loadingEvaluation, onAlert }) => (
               Evaluating...
             </>
           ) : (
-            'Evaluate'
+            'Send Solution'
           )}
         </button>
       </div>
@@ -188,9 +188,38 @@ const ErrorMessage: React.FC<ErrorMessageProps> = memo(({ message }) => (
 
 ErrorMessage.displayName = 'ErrorMessage';
 
+interface Exercise {
+  description: string;
+}
+
+interface Configuration {
+  mode: string;
+  askSolution: boolean;
+  evaluateSolution: boolean;
+}
+
+interface Replication {
+  name: string;
+  duration: number;
+  isActive: boolean;
+  isRepeatable: boolean;
+  code: string;
+  form: string;
+}
+
+interface Session {
+  isTest: boolean;
+  startedAt: string;
+  finishedAt: string | null | undefined;
+  isRunnerInitialized: boolean;
+  result: string | null | undefined;
+  evaluation: string | null | undefined;
+  score: number | null | undefined;
+}
+
 export const Edit = () => {
   const navigate = useNavigate();
-  const { formUrl } = useDiagram();
+  const [formUrl, setFormUrl] = useState<string| null>(null);
   const [code, setCode] = useState(() => {
     const savedCode = localStorage.getItem('mermaid_code');
     if (savedCode) {
@@ -212,6 +241,42 @@ export const Edit = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [concluded, setConcluded] = useState(false);
   const [concludedSvg, setConcludedSvg] = useState<string | null>(null);
+  const [exercise, setExercise] = useState<Exercise | null>(null);
+  const [configuration, setConfiguration] = useState<Configuration | null>(null);
+  const [replication, setReplication] = useState<Replication | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // Load initial data from localStorage
+  useEffect(() => {
+    const savedExercise = localStorage.getItem('exercise');
+    const savedConfiguration = localStorage.getItem('configuration');
+    const savedReplication = localStorage.getItem('replication');
+    const savedSession = localStorage.getItem('session');
+    const savedSessionId = localStorage.getItem('sessionId');
+    if (savedExercise) {
+      const parsedExercise = JSON.parse(savedExercise);
+      setExercise(parsedExercise);
+    }
+    if (savedConfiguration) {
+      const parsedConfiguration = JSON.parse(savedConfiguration);
+      setConfiguration(parsedConfiguration);
+    }
+    if (savedReplication) {
+      const parsedReplication = JSON.parse(savedReplication);
+      setReplication(parsedReplication);
+      setFormUrl(parsedReplication.form);
+    }
+    if (savedSession) {
+      const parsedSession = JSON.parse(savedSession);
+      setSession(parsedSession);
+      setSessionId(parsedSession.id);
+    }
+    if (savedSessionId) {
+      setSessionId(savedSessionId);
+    }
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('mermaid_code', code);
   }, [code]);
@@ -233,7 +298,9 @@ export const Edit = () => {
   }, [navigate]);
 
   const onOpenForm = useCallback(() => {
-    window.open(formUrl, '_blank');
+    if (formUrl) {
+      window.open(formUrl, '_blank');
+    }
   }, [formUrl]);
 
   const handleEditorChange = useCallback((value: string | undefined) => {
@@ -256,7 +323,9 @@ export const Edit = () => {
   }, [navigate]);
 
   const handleOpenForm = useCallback(() => {
-    window.open(formUrl, '_blank');
+    if (formUrl) {
+      window.open(formUrl, '_blank');
+    }
   }, [formUrl]);
 
   const concludeProblem = useCallback(async () => {
@@ -284,29 +353,31 @@ export const Edit = () => {
       console.error('Failed to conclude the problem:', error);
       throw error;
     }
-  }, []);
+  }, [code]);
 
   const getEvaluation = useCallback(async () => {
     setLoadingEvaluation(true);
     try {
       await concludeProblem();
-
-      const sessionId = localStorage.getItem('sessionId');
-      const response = await axios.get(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/evaluation/`
-      );
-      if (response.status === 200) {
-        setEvaluation(response.data.evaluation);
+      console.log(configuration);
+      if (configuration?.evaluateSolution) {
+        const response = await axios.get(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/evaluation/`
+        );
+        if (response.status === 200) {
+          setEvaluation(response.data.evaluation);
+          setShowEvaluation(true);
+        }
+      } else {
+        setEvaluation('Solution submitted successfully.');
         setShowEvaluation(true);
       }
-
-      
     } catch (error) {
       console.error('Failed to get evaluation:', error);
     } finally {
       setLoadingEvaluation(false);
     }
-  }, []);
+  }, [concludeProblem, configuration, sessionId]);
   useEffect(() => {
     const renderMermaid = async () => {
       try {
@@ -362,7 +433,7 @@ export const Edit = () => {
         onOpenForm={handleOpenForm}
         onEvaluate={getEvaluation}
         onAlert={() => evaluation ? setShowEvaluation(true) : setShowAlert(true)}
-        formUrl={formUrl}
+        formUrl={formUrl || ''}
         loadingEvaluation={loadingEvaluation}
       />
 

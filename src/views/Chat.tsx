@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { UserCircleIcon } from '@heroicons/react/24/solid';
 import axios from 'axios';
@@ -21,14 +21,35 @@ interface Message {
 }
 
 interface Exercise {
-  title: string;
   description: string;
-  mode: string;
-  data?: {
-    linkEs?: string;
-    linkEn?: string;
-  };
 }
+
+interface Configuration {
+  mode: string;
+  askSolution: boolean;
+  evaluateSolution: boolean;
+}
+
+interface Replication {
+  name: string;
+  duration: number;
+  isActive: boolean;
+  isRepeatable: boolean;
+  code: string;
+  form: string;
+}
+
+interface Session {
+  isTest: boolean;
+  startedAt: string;
+  finishedAt: string | null | undefined;
+  isRunnerInitialized: boolean;
+  result: string | null | undefined;
+  evaluation: string | null | undefined;
+  score: number | null | undefined;
+}
+
+
 
 export const Chat = () => {
   const navigate = useNavigate();
@@ -40,7 +61,12 @@ export const Chat = () => {
   const [concluding, setConcluding] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
+  const [configuration, setConfiguration] = useState<Configuration | null>(null);
+  const [replication, setReplication] = useState<Replication | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [redirectingIn, setRedirectingIn] = useState(6);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -50,23 +76,33 @@ export const Chat = () => {
     }
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const response = await axios.get(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`
       );
 
       if (response.status === 200) {
+        setExercise(response.data.leia.leia.spec.problem.spec);
+        setConfiguration(response.data.leia.configuration);
+        setReplication(response.data.replication);
+        setSession(response.data.session);
+        localStorage.setItem('sessionId', response.data.session.id);
+        localStorage.setItem('exercise', JSON.stringify(response.data.leia.leia.spec.problem.spec));
+        localStorage.setItem('configuration', JSON.stringify(response.data.leia.configuration));
+        localStorage.setItem('replication', JSON.stringify(response.data.replication));
+        localStorage.setItem('session', JSON.stringify(response.data.session));
+        console.log('session', response.data.session);
+        if (response.data.leia.configuration?.mode === 'transcription') {
+          console.log('test')
+          navigate('/edit');
+        }
+
         const sortedMessages = response.data.messages.sort((a: Message, b: Message) =>
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         );
         setMessages(sortedMessages);
-        setExercise(response.data.leia.leia.spec.problem.spec);
-        localStorage.setItem('sessionId', response.data.session.id);
-        
-        if (response.data.leia.configuration.mode === 'transcription') {
-          navigate('/edit');
-        }
+
       }
     } catch (error: any) {
       setLoadError(error.response?.data?.error || 'An unexpected error occurred');
@@ -74,11 +110,11 @@ export const Chat = () => {
     setTimeout(() => {
       setLoading(false);
     }, 1000);
-  };
+  }, [sessionId, navigate]);
 
   useEffect(() => {
     loadData();
-  }, [sessionId]);
+  }, [loadData]);
 
   useEffect(() => {
     scrollToBottom();
@@ -86,7 +122,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (exercise?.mode === 'transcription') return;
+    if (configuration?.mode === 'transcription') return;
 
     const messageText = newMessageText.trim();
     if (!messageText) return;
@@ -134,12 +170,48 @@ export const Chat = () => {
     }
   };
 
-  const handleFinishInterview = async () => {
+  const handleFinishConversation = async () => {
     if (!messages.length) return;
-    
     setConcluding(true);
-    navigate('/edit');
+    if (configuration?.askSolution) {
+      navigate('/edit');
+    } else {
+      try {
+        const response = await axios.post(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`
+        );
+
+        if (response.status === 200) {
+          const updatedSession = response.data;
+          setSession(updatedSession);
+          setShowSuccessModal(true);
+        }
+      } catch (error: any) {
+        setLoadError(error.response?.data?.error || 'An unexpected error occurred');
+      } finally {
+        setConcluding(false);
+      }
+    }
+    
   };
+
+  useEffect(() => {
+    if (session?.finishedAt && !showSuccessModal) {
+      // Start countdown and redirect
+      const timer = setInterval(() => {
+        setRedirectingIn(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            navigate('/');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      return () => clearInterval(timer);
+    }
+  }, [session, showSuccessModal, navigate]);
 
   if (loading) {
     return (
@@ -199,7 +271,7 @@ export const Chat = () => {
       )}
 
       <header className="flex justify-between items-center px-4 py-3 border-b">
-        <h1 className="text-lg font-semibold text-gray-900">{exercise?.title} Interview</h1>
+        <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         <div className="flex gap-2">
           <button 
             onClick={() => setShowInstructions(true)}
@@ -211,7 +283,7 @@ export const Chat = () => {
             Instructions
           </button>
           <button 
-            onClick={handleFinishInterview}
+            onClick={handleFinishConversation}
             disabled={concluding || !messages.length}
             className="px-4 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
@@ -221,7 +293,7 @@ export const Chat = () => {
                 Processing...
               </>
             ) : (
-              'Finish Interview'
+              'Finish Conversation'
             )}
           </button>
         </div>
@@ -285,11 +357,11 @@ export const Chat = () => {
               onChange={(e) => setNewMessageText(e.target.value)}
               placeholder="Type a message..."
               className="flex-1 px-2 py-1.5 bg-transparent border-none focus:outline-none text-[15px]"
-              disabled={exercise?.mode === 'transcription'}
+              disabled={configuration?.mode === 'transcription'}
             />
             <button
               type="submit"
-              disabled={exercise?.mode === 'transcription' || !newMessageText.trim()}
+              disabled={configuration?.mode === 'transcription' || !newMessageText.trim()}
               className="px-5 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send
@@ -297,6 +369,85 @@ export const Chat = () => {
           </form>
         </div>
       </div>
+
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
+            <div className="flex justify-between items-center px-6 py-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Session Completed</h2>
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Success!</h3>
+              <p className="text-gray-600 text-center mb-4">
+                {replication?.form 
+                  ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
+                  : "Your session has been successfully completed."
+                }
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  navigate('/');
+                }}
+                className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                Home
+              </button>
+              {replication?.form && (
+                <button
+                  onClick={() => window.open(replication.form, '_blank')}
+                  className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  Open Form
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {session?.finishedAt && !showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Session Already Completed</h3>
+              <p className="text-gray-600 text-center mb-4">
+                This session has already been completed. You will be redirected to the home page in {redirectingIn} seconds.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}; 
+};
