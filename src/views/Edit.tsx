@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDiagram } from '../context/DiagramContext';
 import Editor from '@monaco-editor/react';
 import mermaid from 'mermaid';
 import axios from 'axios';
@@ -188,33 +187,10 @@ const ErrorMessage: React.FC<ErrorMessageProps> = memo(({ message }) => (
 
 ErrorMessage.displayName = 'ErrorMessage';
 
-interface Exercise {
-  description: string;
-}
-
 interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
-}
-
-interface Replication {
-  name: string;
-  duration: number;
-  isActive: boolean;
-  isRepeatable: boolean;
-  code: string;
-  form: string;
-}
-
-interface Session {
-  isTest: boolean;
-  startedAt: string;
-  finishedAt: string | null | undefined;
-  isRunnerInitialized: boolean;
-  result: string | null | undefined;
-  evaluation: string | null | undefined;
-  score: number | null | undefined;
 }
 
 export const Edit = () => {
@@ -241,36 +217,21 @@ export const Edit = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [concluded, setConcluded] = useState(false);
   const [concludedSvg, setConcludedSvg] = useState<string | null>(null);
-  const [exercise, setExercise] = useState<Exercise | null>(null);
   const [configuration, setConfiguration] = useState<Configuration | null>(null);
-  const [replication, setReplication] = useState<Replication | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Load initial data from localStorage
   useEffect(() => {
-    const savedExercise = localStorage.getItem('exercise');
     const savedConfiguration = localStorage.getItem('configuration');
     const savedReplication = localStorage.getItem('replication');
-    const savedSession = localStorage.getItem('session');
     const savedSessionId = localStorage.getItem('sessionId');
-    if (savedExercise) {
-      const parsedExercise = JSON.parse(savedExercise);
-      setExercise(parsedExercise);
-    }
     if (savedConfiguration) {
       const parsedConfiguration = JSON.parse(savedConfiguration);
       setConfiguration(parsedConfiguration);
     }
     if (savedReplication) {
       const parsedReplication = JSON.parse(savedReplication);
-      setReplication(parsedReplication);
       setFormUrl(parsedReplication.form);
-    }
-    if (savedSession) {
-      const parsedSession = JSON.parse(savedSession);
-      setSession(parsedSession);
-      setSessionId(parsedSession.id);
     }
     if (savedSessionId) {
       setSessionId(savedSessionId);
