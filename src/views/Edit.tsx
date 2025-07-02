@@ -47,7 +47,7 @@ interface EvaluationModalProps {
   evaluation: string;
   onClose: () => void;
   onHome: () => void;
-  onOpenForm: () => void;
+  onOpenForm?: () => void;
 }
 
 const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onClose, onHome, onOpenForm }) => {
@@ -78,12 +78,15 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(({ evaluation, onCl
           </svg>
           Home
         </button>
-        <button
+        
+        {onOpenForm && (
+          <button
           onClick={onOpenForm}
           className="px-4 py-1.5 text-sm font-medium text-blue-600 bg-white border border-blue-600 rounded-md hover:bg-blue-50"
         >
           Open Form
         </button>
+        )}
         </div>
       </div>
     </div>
@@ -543,7 +546,7 @@ export const Edit = () => {
           evaluation={evaluation}
           onClose={handleCloseEvaluation}
           onHome={onHome}
-          onOpenForm={onOpenForm}
+          onOpenForm={formUrl ? onOpenForm : undefined}
         />
       )}
     </div>
