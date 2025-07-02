@@ -160,7 +160,7 @@ export const Chat = () => {
       setMessages(prev => [
         ...prev,
         {
-          text: 'An error occurred while sending the message. Please try again.',
+          text: 'Your message is taking a bit longer to send. Retry?',
           timestamp: new Date(),
           isLeia: true,
         },
