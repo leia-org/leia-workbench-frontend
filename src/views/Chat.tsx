@@ -384,7 +384,7 @@ export const Chat = () => {
 
       {/* Área de mensajes con mejor layout móvil */}
       <div 
-        className="flex-1 overflow-y-auto px-4 pb-20 scroll-smooth bg-gray-50 chat-messages"
+        className="flex-1 overflow-y-auto px-4 pb-20 md:pb-32 scroll-smooth bg-gray-50 chat-messages"
         style={{ 
           height: mobileUtils.isMobile() ? `${mobileUtils.getMobileViewportHeight() - 120}px` : 'auto',
           minHeight: '400px',
