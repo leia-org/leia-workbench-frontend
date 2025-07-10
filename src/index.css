@@ -17,4 +17,106 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  /* Mejoras para dispositivos móviles */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  /* Permitir selección de texto en inputs */
+  -webkit-touch-callout: default;
+}
+
+/* Permitir selección de texto en elementos específicos */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  -khtml-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Mejoras para scroll en iOS */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Estilos específicos para dispositivos móviles */
+@media (max-width: 768px) {
+  /* Mejorar el scroll en móviles */
+  .scroll-smooth {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+  
+  /* Evitar zoom en inputs en iOS */
+  input[type="text"], 
+  input[type="email"], 
+  input[type="password"], 
+  textarea {
+    font-size: 16px !important;
+  }
+  
+  /* Mejorar la experiencia táctil */
+  button, 
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Mejorar el espaciado en móviles */
+  .space-y-4 > * + * {
+    margin-top: 1rem;
+  }
+}
+
+/* Estilos para mejorar la experiencia en pantallas pequeñas */
+@media (max-width: 480px) {
+  /* Ajustar padding en móviles muy pequeños */
+  .px-4 {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  
+  /* Mejorar el tamaño de texto en móviles */
+  .text-\[15px\] {
+    font-size: 14px;
+  }
+}
+
+/* Estilos para mejorar la accesibilidad en dispositivos táctiles */
+@media (hover: none) and (pointer: coarse) {
+  /* Mejorar el feedback táctil */
+  button:hover {
+    transform: none;
+  }
+  
+  /* Mejorar el tamaño de los elementos interactivos */
+  button, 
+  [role="button"],
+  input,
+  textarea {
+    min-height: 44px;
+  }
+}
+
+/* Estilos específicos para tooltips en móviles */
+@media (max-width: 768px) {
+  /* Mejorar la visibilidad del tooltip en móviles */
+  .tooltip-mobile {
+    position: fixed;
+    bottom: 120px;
+    left: 1rem;
+    right: 1rem;
+    z-index: 50;
+  }
+  
+  /* Mejorar el tamaño de los botones en tooltips */
+  .tooltip-mobile button {
+    min-height: 48px;
+    font-size: 14px;
+    padding: 12px 16px;
+  }
 } 
