@@ -93,6 +93,7 @@ export const Chat = () => {
   // Función para copiar texto al input
   const copyToInput = (text: string) => {
     setNewMessageText(text);
+    setShowTooltip(false);
     inputRef.current?.focus();
   };
 
