@@ -148,6 +148,13 @@ input, textarea, [contenteditable] {
     background: #f9fafb;
   }
   
+  /* Estilos para desktop */
+  @media (min-width: 768px) {
+    .chat-messages {
+      padding-bottom: 120px;
+    }
+  }
+  
   .chat-input {
     position: fixed;
     bottom: 0;
