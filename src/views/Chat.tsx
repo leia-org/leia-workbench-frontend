@@ -153,13 +153,7 @@ export const Chat = () => {
     };
   }, []);
 
-  // Scroll automático mejorado cuando se agregan mensajes
-  useEffect(() => {
-    if (messages.length > 0) {
-      // Scroll suave al final cuando se cargan mensajes inicialmente
-      scrollToBottom(false);
-    }
-  }, [messages, scrollToBottom]);
+
 
   // Scroll automático cuando aparece una nueva respuesta de Leia
   useEffect(() => {
@@ -169,10 +163,20 @@ export const Chat = () => {
         // Pequeño delay para asegurar que el DOM se ha actualizado
         setTimeout(() => {
           scrollToLeiaMessage(lastMessage.id!);
-        }, 100);
+        }, 150);
       }
     }
   }, [messages, scrollToLeiaMessage]);
+
+  // Scroll automático mejorado para móviles
+  useEffect(() => {
+    if (messages.length > 0) {
+      // Scroll suave al final cuando se cargan mensajes inicialmente
+      setTimeout(() => {
+        scrollToBottom(false);
+      }, 100);
+    }
+  }, [messages, scrollToBottom]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,7 +303,7 @@ export const Chat = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white">
+    <div className="flex flex-col h-screen bg-white chat-container">
       {/* Meta viewport para móviles */}
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       
@@ -356,8 +360,8 @@ export const Chat = () => {
               </>
             ) : (
               <>
-                <span className="hidden sm:inline">Finish</span>
-                <span className="sm:hidden">Done</span>
+                <span className="hidden sm:inline">Finish Session</span>
+                <span className="sm:hidden">Finish Session</span>
               </>
             )}
           </button>
@@ -366,10 +370,11 @@ export const Chat = () => {
 
       {/* Área de mensajes con mejor layout móvil */}
       <div 
-        className="flex-1 overflow-y-auto px-4 pb-32 scroll-smooth bg-gray-50"
+        className="flex-1 overflow-y-auto px-4 pb-40 scroll-smooth bg-gray-50 chat-messages"
         style={{ 
-          height: mobileUtils.isMobile() ? `${mobileUtils.getMobileViewportHeight() - 200}px` : 'auto',
-          minHeight: '400px'
+          height: mobileUtils.isMobile() ? `${mobileUtils.getMobileViewportHeight() - 180}px` : 'auto',
+          minHeight: '400px',
+          maxHeight: mobileUtils.isMobile() ? 'calc(100vh - 200px)' : 'none'
         }}
       >
         <div ref={chatMessagesRef} className="max-w-3xl mx-auto space-y-4 py-4">
@@ -416,11 +421,11 @@ export const Chat = () => {
       </div>
 
       {/* Espacio para evitar que el input tape el contenido */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 pb-6 bg-white border-t border-gray-200">
+      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-white border-t border-gray-200 z-10 chat-input">
         <div className="max-w-3xl mx-auto relative">
           {/* Tooltip de mensaje de ejemplo */}
           {showTooltip && messages.length === 0 && (
-            <div className="absolute bottom-full mb-2 left-0 right-0 z-20 tooltip-mobile">
+            <div className="absolute bottom-full mb-4 left-0 right-0 z-20 tooltip-mobile">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 shadow-lg max-w-sm mx-auto">
                 <div className="flex items-start gap-2">
                   <div className="flex-shrink-0">

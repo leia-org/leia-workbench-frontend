@@ -119,4 +119,27 @@ input, textarea, [contenteditable] {
     font-size: 14px;
     padding: 12px 16px;
   }
+  
+  /* Mejorar el layout del chat en móviles */
+  .chat-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 120px;
+  }
+  
+  .chat-input {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+  }
 } 
