@@ -435,7 +435,7 @@ export const Chat = () => {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm text-blue-800 mb-2">
-                      <strong>Ejemplo de mensaje:</strong>
+                      <strong>Message example:</strong>
                     </p>
                     <button
                       onClick={() => copyToInput("Hi, my name is (...) and I am here to (...), nice to meet you!")}
@@ -444,7 +444,7 @@ export const Chat = () => {
                       "Hi, my name is (...) and I am here to (...), nice to meet you!"
                     </button>
                     <p className="text-xs text-blue-600 mt-1">
-                      Haz clic para copiar al input
+                      Click to copy to input
                     </p>
                   </div>
                   <button
