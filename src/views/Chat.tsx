@@ -169,6 +169,19 @@ export const Chat = () => {
     }
   }, [messages, scrollToLeiaMessage]);
 
+  // Scroll automático cuando el usuario envía un mensaje
+  useEffect(() => {
+    if (messages.length > 0 && !messages[messages.length - 1].isLeia) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.id) {
+        // Pequeño delay para asegurar que el DOM se ha actualizado
+        setTimeout(() => {
+          scrollToLeiaMessage(lastMessage.id!);
+        }, 100);
+      }
+    }
+  }, [messages, scrollToLeiaMessage]);
+
   // Scroll automático mejorado para móviles
   useEffect(() => {
     if (messages.length > 0) {
