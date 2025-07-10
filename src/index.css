@@ -100,6 +100,19 @@ input, textarea, [contenteditable] {
   textarea {
     min-height: 44px;
   }
+  
+  /* Estilos específicos para Android */
+  .chat-container {
+    background: #f9fafb !important;
+  }
+  
+  .chat-messages {
+    background: #f9fafb !important;
+  }
+  
+  .chat-input {
+    background: #f9fafb !important;
+  }
 }
 
 /* Estilos específicos para tooltips en móviles */
@@ -125,12 +138,14 @@ input, textarea, [contenteditable] {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    background: #f9fafb;
   }
   
   .chat-messages {
     flex: 1;
     overflow-y: auto;
     padding-bottom: 120px;
+    background: #f9fafb;
   }
   
   .chat-input {
@@ -141,5 +156,11 @@ input, textarea, [contenteditable] {
     z-index: 10;
     background: #f9fafb;
     border-top: none;
+    min-height: 80px;
+  }
+  
+  /* Asegurar que el body tenga el fondo correcto */
+  body {
+    background: #f9fafb;
   }
 } 

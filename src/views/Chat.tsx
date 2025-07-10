@@ -386,9 +386,10 @@ export const Chat = () => {
       <div 
         className="flex-1 overflow-y-auto px-4 pb-40 scroll-smooth bg-gray-50 chat-messages"
         style={{ 
-          height: mobileUtils.isMobile() ? `${mobileUtils.getMobileViewportHeight() - 180}px` : 'auto',
+          height: mobileUtils.isMobile() ? `${mobileUtils.getMobileViewportHeight() - 120}px` : 'auto',
           minHeight: '400px',
-          maxHeight: mobileUtils.isMobile() ? 'calc(100vh - 200px)' : 'none'
+          maxHeight: mobileUtils.isMobile() ? 'calc(100vh - 140px)' : 'none',
+          background: '#f9fafb'
         }}
       >
         <div ref={chatMessagesRef} className="max-w-3xl mx-auto space-y-4 py-4">
