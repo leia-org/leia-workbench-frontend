@@ -144,7 +144,7 @@ input, textarea, [contenteditable] {
   .chat-messages {
     flex: 1;
     overflow-y: auto;
-    padding-bottom: 120px;
+    padding-bottom: 80px;
     background: #f9fafb;
   }
   
@@ -156,7 +156,7 @@ input, textarea, [contenteditable] {
     z-index: 10;
     background: #f9fafb;
     border-top: none;
-    min-height: 80px;
+    min-height: 60px;
   }
   
   /* Asegurar que el body tenga el fondo correcto */
