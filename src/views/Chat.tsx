@@ -421,11 +421,11 @@ export const Chat = () => {
       </div>
 
       {/* Espacio para evitar que el input tape el contenido */}
-      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-white border-t border-gray-200 z-10 chat-input">
+      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-gray-50 z-10 chat-input">
         <div className="max-w-3xl mx-auto relative">
           {/* Tooltip de mensaje de ejemplo */}
           {showTooltip && messages.length === 0 && (
-            <div className="absolute bottom-full mb-4 left-0 right-0 z-20 tooltip-mobile">
+            <div className="absolute bottom-full mb-2 left-0 right-0 z-20">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 shadow-lg max-w-sm mx-auto">
                 <div className="flex items-start gap-2">
                   <div className="flex-shrink-0">
