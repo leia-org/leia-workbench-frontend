@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { UserCircleIcon, KeyIcon } from "@heroicons/react/24/solid";
+import { KeyIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 
 function generateUID(length: number = 16): string {
