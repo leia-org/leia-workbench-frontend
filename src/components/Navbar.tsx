@@ -1,13 +1,17 @@
-import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { HomeIcon, PlusIcon, ArrowRightEndOnRectangleIcon } from '@heroicons/react/24/solid';
+import React from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  HomeIcon,
+  PlusIcon,
+  ArrowRightEndOnRectangleIcon,
+} from "@heroicons/react/24/solid";
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    localStorage.removeItem('adminSecret');
-    navigate('/login');
+    localStorage.removeItem("adminSecret");
+    navigate("/login");
   };
 
   return (
@@ -16,7 +20,16 @@ export const Navbar: React.FC = () => {
         <div className="flex justify-between h-16 items-center">
           {/* Left side */}
           <div className="flex items-center space-x-4">
-            <span className="text-xl font-semibold text-gray-800">Administration</span>
+            <div className="flex items-center space-x-2">
+              <img
+                src="/logo/leia_main_dark.png"
+                alt="LEIA Logo"
+                className="w-6 h-6"
+              />
+              <span className="text-xl font-semibold text-gray-800">
+                Administration
+              </span>
+            </div>
             <Link
               to="/administration"
               className="flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition duration-200"

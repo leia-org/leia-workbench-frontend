@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { UserCircleIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, KeyIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 
 function generateUID(length: number = 16): string {
@@ -33,7 +33,7 @@ export const Login = () => {
       if (email == "test") {
         email = generateUID() + "@test.com";
       } else if (email !== null && email.startsWith("_test_")) {
-        let remainder = email.slice(6);
+        const remainder = email.slice(6);
         email = remainder + generateUID() + "@test.com";
       }
 
@@ -102,12 +102,14 @@ export const Login = () => {
         <div className="text-center mb-10">
           <div className="flex justify-center mb-6">
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center transform rotate-12 shadow-lg">
-              <UserCircleIcon className="w-10 h-10 text-white transform -rotate-12" />
+              <img
+                src="/logo/leia_main_white.png"
+                alt="LEIA Logo"
+                className="w-10 h-10 transform -rotate-12"
+              />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            LEIA – Workbench
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Workbench</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -159,7 +161,7 @@ export const Login = () => {
                 required
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none transition-opacity duration-200 ease-in-out opacity-50 group-hover:opacity-100">
-                <UserCircleIcon className="w-5 h-5 text-gray-400" />
+                <KeyIcon className="w-5 h-5 text-gray-400" />
               </div>
             </div>
           </div>
