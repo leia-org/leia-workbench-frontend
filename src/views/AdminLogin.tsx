@@ -1,26 +1,26 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Cog6ToothIcon } from '@heroicons/react/24/solid';
-import axios from 'axios';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Cog6ToothIcon } from "@heroicons/react/24/solid";
+import axios from "axios";
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
 
-  const [adminCode, setAdminCode] = useState('');
+  const [adminCode, setAdminCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminCode.trim()) {
       setSuccess(false);
-      setMessage('Please enter the administrator code');
+      setMessage("Please enter the administrator code");
       return;
     }
 
     setLoading(true);
-    setMessage('');
+    setMessage("");
 
     try {
       const response = await axios.post(
@@ -30,24 +30,25 @@ export const AdminLogin: React.FC = () => {
 
       if (response.status === 200 && response.data) {
         setSuccess(true);
-        setMessage('Authentication successful! Redirecting...');
+        setMessage("Authentication successful! Redirecting...");
 
         // Save to localStorage
-        localStorage.setItem('adminSecret', adminCode.trim());
+        localStorage.setItem("adminSecret", adminCode.trim());
 
         // Redirect after a short delay
         setTimeout(() => {
-          navigate('/administration');
+          navigate("/administration");
         }, 1000);
       } else {
         setSuccess(false);
-        setMessage('Invalid code. Please try again.');
+        setMessage("Invalid code. Please try again.");
       }
     } catch (error: any) {
-      console.error('Validation error:', error);
+      console.error("Validation error:", error);
       setSuccess(false);
       setMessage(
-        error.response?.data?.message || 'Authentication error. Please try again.'
+        error.response?.data?.message ||
+          "Authentication error. Please try again."
       );
     } finally {
       setLoading(false);
@@ -63,12 +64,15 @@ export const AdminLogin: React.FC = () => {
               <Cog6ToothIcon className="w-10 h-10 text-white transform -rotate-12" />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">LEIA – Admin Panel</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Panel</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <label htmlFor="adminCode" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="adminCode"
+              className="block text-sm font-medium text-gray-700"
+            >
               Administrator Code
             </label>
             <div className="relative group">
@@ -90,7 +94,9 @@ export const AdminLogin: React.FC = () => {
           {message && (
             <div
               className={`${
-                success ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+                success
+                  ? "bg-green-50 text-green-600"
+                  : "bg-red-50 text-red-600"
               } text-sm rounded-lg p-3 flex items-center transition-all duration-200 ease-in-out`}
             >
               <svg
@@ -117,13 +123,15 @@ export const AdminLogin: React.FC = () => {
             {loading ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             ) : (
-              'Sign In'
+              "Sign In"
             )}
           </button>
         </form>
       </div>
 
-      <p className="mt-8 text-center text-sm text-gray-500">Powered by the LEIA team</p>
+      <p className="mt-8 text-center text-sm text-gray-500">
+        Powered by the LEIA team
+      </p>
     </div>
   );
 };
