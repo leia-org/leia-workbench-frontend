@@ -8,6 +8,7 @@ import { Administration } from '../views/Administration';
 import { Replication } from '../views/Replication';
 import { Experiments } from '../views/Experiments';
 import { Experiment } from '../views/Experiment';
+import { Conversations } from '../views/Conversations';
 
 export const router = createBrowserRouter([
   {
@@ -37,6 +38,10 @@ export const router = createBrowserRouter([
   {
     path: '/replications/:id',
     element: <Replication />,
+  },
+  {
+    path: '/replications/:id/conversations',
+    element: <Conversations />,
   },
   {
     path: '/experiments',
