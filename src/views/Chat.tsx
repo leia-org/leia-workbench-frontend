@@ -76,6 +76,8 @@ export const Chat = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showTooltip, setShowTooltip] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -202,14 +204,52 @@ export const Chat = () => {
   }, [messages, scrollToLeiaMessage]);
 
   // Scroll automático mejorado para móviles
+  // Auto-scroll disabled - users can manually scroll
+  // useEffect(() => {
+  //   if (messages.length > 0) {
+  //     // Scroll suave al final cuando se cargan mensajes inicialmente
+  //     setTimeout(() => {
+  //       scrollToBottom(false);
+  //     }, 100);
+  //   }
+  // }, [messages, scrollToBottom]);
+
+  // Detectar si el usuario está arriba y hay mensajes nuevos
+  useEffect(() => {
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = chatContainer;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+      if (isNearBottom) {
+        setShowScrollButton(false);
+        setHasNewMessages(false);
+      } else {
+        setShowScrollButton(true);
+      }
+    };
+
+    chatContainer.addEventListener('scroll', handleScroll);
+    return () => chatContainer.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Mostrar botón cuando hay mensajes nuevos y el usuario no está abajo
   useEffect(() => {
     if (messages.length > 0) {
-      // Scroll suave al final cuando se cargan mensajes inicialmente
-      setTimeout(() => {
-        scrollToBottom(false);
-      }, 100);
+      const chatContainer = chatMessagesRef.current;
+      if (chatContainer) {
+        const { scrollTop, scrollHeight, clientHeight } = chatContainer;
+        const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+        if (!isNearBottom) {
+          setHasNewMessages(true);
+          setShowScrollButton(true);
+        }
+      }
     }
-  }, [messages, scrollToBottom]);
+  }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,7 +271,8 @@ export const Chat = () => {
 
     setMessages((prev) => [...prev, newMessage]);
     setSendingMessage(true);
-    scrollToBottom();
+    // Auto-scroll disabled
+    // scrollToBottom();
 
     try {
       const response = await axios.post(
@@ -573,6 +614,36 @@ export const Chat = () => {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Scroll to bottom button */}
+          {showScrollButton && (
+            <div className="fixed bottom-32 right-8 z-10 animate-in fade-in slide-in-from-bottom-2">
+              <button
+                onClick={() => {
+                  scrollToBottom(true);
+                  setHasNewMessages(false);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg flex items-center gap-2 transition-all"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                  />
+                </svg>
+                {hasNewMessages && (
+                  <span className="text-sm font-medium">New messages</span>
+                )}
+              </button>
             </div>
           )}
 
