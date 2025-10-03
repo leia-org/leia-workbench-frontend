@@ -79,7 +79,7 @@ export const Chat = () => {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
 
   // Función mejorada para scroll automático usando utilidades
@@ -105,6 +105,27 @@ export const Chat = () => {
     setNewMessageText(text);
     setShowTooltip(false);
     inputRef.current?.focus();
+  };
+
+  const handleTextareaResize = useCallback(() => {
+    const textarea = inputRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 150);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, []);
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setNewMessageText(e.target.value);
+    handleTextareaResize();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
   };
 
   const loadData = useCallback(async () => {
@@ -262,6 +283,10 @@ export const Chat = () => {
     setShowTooltip(false);
 
     setNewMessageText("");
+
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
     const newMessage: Message = {
       text: messageText,
       timestamp: new Date(),
@@ -651,14 +676,16 @@ export const Chat = () => {
             onSubmit={handleSubmit}
             className="flex gap-2 bg-white rounded-lg p-3 shadow-lg border border-gray-200"
           >
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
               value={newMessageText}
-              onChange={(e) => setNewMessageText(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0"
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message... (Shift+Enter for new line)"
+              className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
+              style={{ minHeight: '40px', maxHeight: '150px' }}
               disabled={configuration?.mode === "transcription"}
+              rows={1}
             />
             <button
               type="submit"
@@ -666,7 +693,7 @@ export const Chat = () => {
                 configuration?.mode === "transcription" ||
                 !newMessageText.trim()
               }
-              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 self-end"
             >
               Send
             </button>
