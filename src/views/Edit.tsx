@@ -5,6 +5,7 @@ import mermaid from "mermaid";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { FormatEditor } from "../components/FormatEditor";
 
 mermaid.initialize({
   startOnLoad: true,
@@ -271,6 +272,7 @@ interface Configuration {
 export const Edit = () => {
   const navigate = useNavigate();
   const [formUrl, setFormUrl] = useState<string | null>(null);
+  const [solutionFormat, setSolutionFormat] = useState<string>('mermaid');
   const [code, setCode] = useState(() => {
     const savedCode = localStorage.getItem("mermaid_code");
     if (savedCode) {
@@ -302,6 +304,8 @@ export const Edit = () => {
     const savedConfiguration = localStorage.getItem("configuration");
     const savedReplication = localStorage.getItem("replication");
     const savedSessionId = localStorage.getItem("sessionId");
+    const savedExercise = localStorage.getItem("exercise");
+
     if (savedConfiguration) {
       const parsedConfiguration = JSON.parse(savedConfiguration);
       setConfiguration(parsedConfiguration);
@@ -312,6 +316,11 @@ export const Edit = () => {
     }
     if (savedSessionId) {
       setSessionId(savedSessionId);
+    }
+    if (savedExercise) {
+      const parsedExercise = JSON.parse(savedExercise);
+      const format = parsedExercise.solutionFormat || 'mermaid';
+      setSolutionFormat(format);
     }
   }, []);
 
@@ -520,22 +529,12 @@ export const Edit = () => {
         {/* Editor Panel */}
         {!concluded ? (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
-            <Editor
-              height="100%"
-              defaultLanguage="mermaid"
+            <FormatEditor
               value={code}
               onChange={handleEditorChange}
-              theme="vs-light"
-              options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                lineNumbers: "on",
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                wordWrap: "on",
-              }}
+              format={solutionFormat}
+              onError={(err) => setError(err)}
             />
-            {error && <ErrorMessage message={error} />}
           </div>
         ) : (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
@@ -612,16 +611,11 @@ export const Edit = () => {
       </main>
       {concluded ? (
         <div className="h-[300px] w-full">
-          <Editor
-            height="100%"
-            defaultLanguage="mermaid"
+          <FormatEditor
             value={code}
-            theme="vs-light"
-            options={{
-              minimap: { enabled: false },
-              fontSize: 14,
-              lineNumbers: "on",
-            }}
+            onChange={handleEditorChange}
+            format={solutionFormat}
+            onError={(err: any) => setError(err)}
           />
         </div>
       ) : null}
