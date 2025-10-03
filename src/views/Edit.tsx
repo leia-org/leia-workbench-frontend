@@ -631,7 +631,7 @@ export const Edit = () => {
           evaluation={evaluation}
           onClose={handleCloseEvaluation}
           onHome={onHome}
-          onOpenForm={formUrl ? onOpenForm : undefined}
+          onOpenForm={formUrl && (formUrl.startsWith('http://') || formUrl.startsWith('https://')) ? onOpenForm : undefined}
         />
       )}
     </div>

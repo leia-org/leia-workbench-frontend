@@ -680,7 +680,7 @@ export const Chat = () => {
                 </svg>
                 Home
               </button>
-              {replication?.form && (
+              {replication?.form && (replication.form.startsWith('http://') || replication.form.startsWith('https://')) && (
                 <button
                   onClick={() => window.open(replication.form, "_blank")}
                   className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
