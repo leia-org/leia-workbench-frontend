@@ -6,6 +6,7 @@ import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { FormatEditor } from "../components/FormatEditor";
+import { FormatPreview } from "../components/FormatPreview";
 
 mermaid.initialize({
   startOnLoad: true,
@@ -432,6 +433,13 @@ export const Edit = () => {
   }, [concludeProblem, configuration, sessionId]);
   useEffect(() => {
     const renderMermaid = async () => {
+      if (solutionFormat !== 'mermaid') {
+        // For non-mermaid formats, clear mermaid preview
+        setMermaidSvg('');
+        setError(null);
+        return;
+      }
+
       try {
         const { svg } = await mermaid.render("mermaid-diagram", code);
         setMermaidSvg(svg);
@@ -451,7 +459,7 @@ export const Edit = () => {
     };
 
     renderMermaid();
-  }, [code]);
+  }, [code, solutionFormat]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -574,39 +582,15 @@ export const Edit = () => {
         />
 
         {/* Preview Panel */}
-        <div
-          style={{ width: `${100 - editorWidth}%` }}
-          className="h-full bg-gray-50 flex flex-col relative"
-        >
-          {concluded ? (
-            <h2 className="text-gray-500 px-4 py-2">Your Solution</h2>
-          ) : null}
-          <TransformWrapper
-            initialScale={1}
-            minScale={0.5}
-            maxScale={4}
-            centerOnInit={true}
-            wheel={{ wheelDisabled: true }}
-          >
-            {(utils) => (
-              <>
-                <TransformComponent
-                  wrapperClass="!w-full !h-full"
-                  contentClass="flex items-center justify-center p-4"
-                >
-                  {mermaidSvg ? (
-                    <div
-                      dangerouslySetInnerHTML={{ __html: mermaidSvg }}
-                      className="transform-component-module_content__uCDPE"
-                    />
-                  ) : (
-                    <div className="text-gray-500">Loading preview...</div>
-                  )}
-                </TransformComponent>
-                <DiagramControls {...utils} />
-              </>
-            )}
-          </TransformWrapper>
+        <div style={{ width: `${100 - editorWidth}%` }} className="h-full">
+          <FormatPreview
+            code={code}
+            format={solutionFormat}
+            mermaidSvg={mermaidSvg}
+            error={error}
+            concluded={concluded}
+            renderControls={(utils) => <DiagramControls {...utils} />}
+          />
         </div>
       </main>
       {concluded ? (
