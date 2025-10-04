@@ -106,7 +106,9 @@ export const LiveDashboard = () => {
       const includeFinished = filter === "all" || filter === "finished";
 
       const response = await axios.get(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/spectator/replications/${replicationId}/sessions?includeFinished=${includeFinished}`,
+        `${
+          import.meta.env.VITE_APP_BACKEND
+        }/api/v1/spectator/replications/${replicationId}/sessions?includeFinished=${includeFinished}`,
         {
           headers: {
             Authorization: `Bearer ${adminSecret}`,
@@ -128,7 +130,9 @@ export const LiveDashboard = () => {
       try {
         const adminSecret = localStorage.getItem("adminSecret");
         const response = await axios.get(
-          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${replicationId}`,
+          `${
+            import.meta.env.VITE_APP_BACKEND
+          }/api/v1/replications/${replicationId}`,
           {
             headers: {
               Authorization: `Bearer ${adminSecret}`,
@@ -164,33 +168,39 @@ export const LiveDashboard = () => {
       newSocket.emit("dashboard:join", replicationId);
     });
 
-    newSocket.on("session:message", (data: { sessionId: string; message: any }) => {
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === data.sessionId
-            ? {
-                ...session,
-                messageCount: session.messageCount + 1,
-                lastMessage: data.message,
-              }
-            : session
-        )
-      );
-    });
+    newSocket.on(
+      "session:message",
+      (data: { sessionId: string; message: any }) => {
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.id === data.sessionId
+              ? {
+                  ...session,
+                  messageCount: session.messageCount + 1,
+                  lastMessage: data.message,
+                }
+              : session
+          )
+        );
+      }
+    );
 
-    newSocket.on("session:finished", (data: { sessionId: string; finishedAt: string }) => {
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === data.sessionId
-            ? {
-                ...session,
-                finishedAt: data.finishedAt,
-                isActive: false,
-              }
-            : session
-        )
-      );
-    });
+    newSocket.on(
+      "session:finished",
+      (data: { sessionId: string; finishedAt: string }) => {
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.id === data.sessionId
+              ? {
+                  ...session,
+                  finishedAt: data.finishedAt,
+                  isActive: false,
+                }
+              : session
+          )
+        );
+      }
+    );
 
     newSocket.on("disconnect", () => {
       console.log("WebSocket disconnected");
@@ -204,15 +214,22 @@ export const LiveDashboard = () => {
     };
   }, [replicationId]);
 
-  const handleWatch = (sessionId: string) => {
-    navigate(`/spectate/${sessionId}`);
+  const handleWatch = async (sessionId: string) => {
+    try {
+      const link = await handleShareLink(sessionId, false);
+      window.open(link, "_blank");
+    } catch (error) {
+      console.error("Failed to open watch link:", error);
+    }
   };
 
-  const handleShareLink = async (sessionId: string) => {
+  const handleShareLink = async (sessionId: string, open: boolean = true) => {
     try {
       const adminSecret = localStorage.getItem("adminSecret");
       const response = await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/spectator/sessions/${sessionId}/token`,
+        `${
+          import.meta.env.VITE_APP_BACKEND
+        }/api/v1/spectator/sessions/${sessionId}/token`,
         { expiresIn: 3600 },
         {
           headers: {
@@ -220,9 +237,9 @@ export const LiveDashboard = () => {
           },
         }
       );
-
+      if (!open) return response.data.spectateUrl;
       setCopyModal({
-        isOpen: true,
+        isOpen: open,
         url: response.data.spectateUrl,
       });
     } catch (err: any) {
