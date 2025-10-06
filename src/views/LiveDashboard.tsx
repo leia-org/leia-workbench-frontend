@@ -312,16 +312,6 @@ export const LiveDashboard = () => {
             >
               Active ({sessions.filter((s) => s.isActive).length})
             </button>
-            <button
-              onClick={() => setFilter("finished")}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                filter === "finished"
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-              }`}
-            >
-              Finished ({sessions.filter((s) => !s.isActive).length})
-            </button>
           </div>
         </div>
       </div>

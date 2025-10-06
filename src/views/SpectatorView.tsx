@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { io, Socket } from "socket.io-client";
 import { scrollUtils } from "../lib/utils";
@@ -173,93 +174,98 @@ export const SpectatorView = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-white">
       {/* Header */}
-      <header className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-4 shadow-lg">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-semibold">
-                🔴 SPECTATOR MODE
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <span>⏱️ {getElapsedTime()}</span>
-                <span>•</span>
-                <span>💬 {messages.length} messages</span>
-                <span>•</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    isActive
-                      ? "bg-green-500 text-white"
-                      : "bg-gray-500 text-white"
-                  }`}
-                >
-                  {isActive ? "Active" : "Finished"}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={handleCopyLink}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                copied
-                  ? "bg-green-500 text-white"
-                  : "bg-white/10 hover:bg-white/20 backdrop-blur-sm"
+      <header className="flex justify-between items-center px-4 py-3 border-b bg-white sticky top-0 z-10">
+        <div className="flex items-center space-x-3">
+          <img
+            src="/logo/leia_main_dark.png"
+            alt="LEIA Logo"
+            className="w-6 h-6"
+          />
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-gray-900">Spectator Mode</h1>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                isActive
+                  ? "bg-green-100 text-green-700"
+                  : "bg-gray-100 text-gray-700"
               }`}
             >
-              {copied ? "✓ Link Copied!" : "🔗 Copy Spectate Link"}
-            </button>
+              {isActive ? "Active" : "Finished"}
+            </span>
           </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
+            <span>{getElapsedTime()}</span>
+            <span>•</span>
+            <span>{messages.length} messages</span>
+          </div>
+          <button
+            onClick={handleCopyLink}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              copied
+                ? "bg-green-600 text-white"
+                : "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
+            }`}
+          >
+            {copied ? "✓ Copied!" : "Copy Link"}
+          </button>
         </div>
       </header>
 
       {/* Messages */}
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-y-auto px-4 pb-6 bg-gray-50">
         <div
           ref={messagesContainerRef}
-          className="h-full overflow-y-auto px-6 py-6"
+          className="max-w-3xl mx-auto space-y-4 py-4"
         >
-          <div className="max-w-4xl mx-auto space-y-4">
-            {messages.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-500">No messages yet...</p>
-              </div>
-            ) : (
-              messages.map((message, index) => (
+          {messages.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No messages yet...</p>
+            </div>
+          ) : (
+            messages.map((message, index) => (
+              <div
+                key={message.id || index}
+                className={`flex items-end gap-2 ${
+                  message.isLeia ? "flex-row" : "flex-row-reverse"
+                }`}
+              >
                 <div
-                  key={message.id || index}
-                  className={`flex ${message.isLeia ? "justify-start" : "justify-end"}`}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    message.isLeia ? "bg-blue-50" : "bg-blue-600"
+                  }`}
                 >
-                  <div
-                    className={`max-w-[70%] rounded-2xl px-4 py-3 ${
-                      message.isLeia
-                        ? "bg-white border border-gray-200 shadow-sm"
-                        : "bg-blue-600 text-white"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-medium">
-                        {message.isLeia ? "🤖 LEIA" : "👤 User"}
-                      </span>
-                      <span
-                        className={`text-xs ${
-                          message.isLeia ? "text-gray-400" : "text-blue-100"
-                        }`}
-                      >
-                        {message.timestamp.toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {message.text}
-                    </p>
-                  </div>
+                  {message.isLeia ? (
+                    <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-5 h-5 text-white"
+                    >
+                      <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
+                    </svg>
+                  )}
                 </div>
-              ))
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+                <div
+                  className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
+                    message.isLeia
+                      ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm"
+                      : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
+                  }`}
+                >
+                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                    {message.text}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={messagesEndRef} />
         </div>
       </main>
 
