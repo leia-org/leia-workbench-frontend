@@ -31,6 +31,8 @@ export const Conversations: React.FC = () => {
   const [replicationName, setReplicationName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [editingScore, setEditingScore] = useState<string | null>(null);
+  const [scoreValue, setScoreValue] = useState<string>('');
   const adminSecret = localStorage.getItem('adminSecret');
 
   useEffect(() => {
@@ -88,6 +90,45 @@ export const Conversations: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
+  };
+
+  const handleEditScore = (sessionId: string, currentScore: number | null) => {
+    setEditingScore(sessionId);
+    setScoreValue(currentScore?.toString() || '');
+  };
+
+  const handleSaveScore = async (sessionId: string) => {
+    try {
+      const score = parseFloat(scoreValue);
+      if (isNaN(score) || score < 0 || score > 100) {
+        alert('Please enter a valid score between 0 and 100');
+        return;
+      }
+
+      await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/sessions/${sessionId}/score`,
+        { score },
+        { headers: { Authorization: `Bearer ${adminSecret}` } }
+      );
+
+      // Update local state
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === sessionId ? { ...conv, score } : conv
+        )
+      );
+
+      setEditingScore(null);
+      setScoreValue('');
+    } catch (err) {
+      console.error('Error updating score:', err);
+      alert('Failed to update score');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingScore(null);
+    setScoreValue('');
   };
 
   if (loading) {
@@ -206,10 +247,61 @@ export const Conversations: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      {session.score !== null && (
-                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                          Score: {session.score}
-                        </span>
+                      {editingScore === session.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={scoreValue}
+                            onChange={(e) => setScoreValue(e.target.value)}
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSaveScore(session.id);
+                            }}
+                            className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition-colors"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelEdit();
+                            }}
+                            className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                            Score: {session.score ?? 'N/A'}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditScore(session.id, session.score);
+                            }}
+                            className="text-gray-500 hover:text-blue-600 transition-colors"
+                            title="Edit score"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-4 w-4"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                            </svg>
+                          </button>
+                        </div>
                       )}
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                         session.finishedAt
