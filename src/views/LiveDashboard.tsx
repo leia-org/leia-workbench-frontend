@@ -92,23 +92,22 @@ export const LiveDashboard = () => {
   const [filter, setFilter] = useState<"all" | "active" | "finished">("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [, setSocket] = useState<Socket | null>(null);
   const [replicationName, setReplicationName] = useState("");
   const [copyModal, setCopyModal] = useState<{ isOpen: boolean; url: string }>({
     isOpen: false,
     url: "",
   });
 
-  // Fetch sessions
+  // Fetch sessions - Always fetch all sessions (active and finished)
   const fetchSessions = useCallback(async () => {
     try {
       const adminSecret = localStorage.getItem("adminSecret");
-      const includeFinished = filter === "all" || filter === "finished";
 
       const response = await axios.get(
         `${
           import.meta.env.VITE_APP_BACKEND
-        }/api/v1/spectator/replications/${replicationId}/sessions?includeFinished=${includeFinished}`,
+        }/api/v1/spectator/replications/${replicationId}/sessions`,
         {
           headers: {
             Authorization: `Bearer ${adminSecret}`,
@@ -122,7 +121,7 @@ export const LiveDashboard = () => {
       setError(err.response?.data?.message || "Failed to load sessions");
       setLoading(false);
     }
-  }, [replicationId, filter]);
+  }, [replicationId]); // Removed filter dependency since we always fetch all sessions
 
   // Get replication name
   useEffect(() => {
@@ -311,6 +310,16 @@ export const LiveDashboard = () => {
               }`}
             >
               Active ({sessions.filter((s) => s.isActive).length})
+            </button>
+            <button
+              onClick={() => setFilter("finished")}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                filter === "finished"
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              Finished ({sessions.filter((s) => !s.isActive).length})
             </button>
           </div>
         </div>
