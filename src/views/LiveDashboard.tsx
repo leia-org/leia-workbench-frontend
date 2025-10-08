@@ -92,7 +92,6 @@ export const LiveDashboard = () => {
   const [filter, setFilter] = useState<"all" | "active" | "finished">("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [, setSocket] = useState<Socket | null>(null);
   const [replicationName, setReplicationName] = useState("");
   const [copyModal, setCopyModal] = useState<{ isOpen: boolean; url: string }>({
     isOpen: false,
