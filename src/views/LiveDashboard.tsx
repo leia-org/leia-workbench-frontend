@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { io, Socket } from "socket.io-client";
+import { io } from "socket.io-client";
 import { SessionCard } from "../components/SessionCard";
 
 interface LiveSession {
@@ -92,7 +92,6 @@ export const LiveDashboard = () => {
   const [filter, setFilter] = useState<"all" | "active" | "finished">("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [replicationName, setReplicationName] = useState("");
   const [copyModal, setCopyModal] = useState<{ isOpen: boolean; url: string }>({
     isOpen: false,
@@ -205,8 +204,6 @@ export const LiveDashboard = () => {
     newSocket.on("disconnect", () => {
       console.log("WebSocket disconnected");
     });
-
-    setSocket(newSocket);
 
     return () => {
       newSocket.emit("dashboard:leave", replicationId);
