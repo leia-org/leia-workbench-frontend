@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
-import Editor from "@monaco-editor/react";
 import mermaid from "mermaid";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";

@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
-import { io, Socket } from "socket.io-client";
-import { scrollUtils } from "../lib/utils";
+import { io } from "socket.io-client";
 
 interface Message {
   text: string;
@@ -32,7 +31,6 @@ export const SpectatorView = () => {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isActive, setIsActive] = useState(true);
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [copied, setCopied] = useState(false);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -40,7 +38,7 @@ export const SpectatorView = () => {
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
-      scrollUtils.scrollToElement(messagesEndRef.current);
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, []);
 
@@ -122,8 +120,6 @@ export const SpectatorView = () => {
     newSocket.on("disconnect", () => {
       console.log("Spectator WebSocket disconnected");
     });
-
-    setSocket(newSocket);
 
     return () => {
       newSocket.emit("spectate:leave", sessionId);
