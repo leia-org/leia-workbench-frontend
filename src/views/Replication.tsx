@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Navbar } from '../components/Navbar';
 import Switch from "react-switch";
@@ -431,7 +431,14 @@ export const Replication: React.FC = () => {
               <span className="text-sm">Rename</span>
             </button>
           </div>
-          <div className="flex items-center space-x-8">
+          <div className="flex items-center space-x-4">
+            <Link
+              to={`/replications/${id}/conversations`}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              <DocumentTextIcon className="h-4 w-4" />
+              View Conversations
+            </Link>
             <label className="text-center flex items-center">
               <LockClosedIcon className="h-4 w-4 text-gray-600" />
               <span className='text-sm text-gray-700 mx-2'>Active</span>

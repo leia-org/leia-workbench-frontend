@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
-import Editor from "@monaco-editor/react";
 import mermaid from "mermaid";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { FormatEditor } from "../components/FormatEditor";
+import { FormatPreview } from "../components/FormatPreview";
 
 mermaid.initialize({
   startOnLoad: true,
@@ -271,6 +272,7 @@ interface Configuration {
 export const Edit = () => {
   const navigate = useNavigate();
   const [formUrl, setFormUrl] = useState<string | null>(null);
+  const [solutionFormat, setSolutionFormat] = useState<string>('mermaid');
   const [code, setCode] = useState(() => {
     const savedCode = localStorage.getItem("mermaid_code");
     if (savedCode) {
@@ -302,6 +304,8 @@ export const Edit = () => {
     const savedConfiguration = localStorage.getItem("configuration");
     const savedReplication = localStorage.getItem("replication");
     const savedSessionId = localStorage.getItem("sessionId");
+    const savedExercise = localStorage.getItem("exercise");
+
     if (savedConfiguration) {
       const parsedConfiguration = JSON.parse(savedConfiguration);
       setConfiguration(parsedConfiguration);
@@ -312,6 +316,11 @@ export const Edit = () => {
     }
     if (savedSessionId) {
       setSessionId(savedSessionId);
+    }
+    if (savedExercise) {
+      const parsedExercise = JSON.parse(savedExercise);
+      const format = parsedExercise.solutionFormat || 'mermaid';
+      setSolutionFormat(format);
     }
   }, []);
 
@@ -423,6 +432,13 @@ export const Edit = () => {
   }, [concludeProblem, configuration, sessionId]);
   useEffect(() => {
     const renderMermaid = async () => {
+      if (solutionFormat !== 'mermaid') {
+        // For non-mermaid formats, clear mermaid preview
+        setMermaidSvg('');
+        setError(null);
+        return;
+      }
+
       try {
         const { svg } = await mermaid.render("mermaid-diagram", code);
         setMermaidSvg(svg);
@@ -442,7 +458,7 @@ export const Edit = () => {
     };
 
     renderMermaid();
-  }, [code]);
+  }, [code, solutionFormat]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -520,22 +536,12 @@ export const Edit = () => {
         {/* Editor Panel */}
         {!concluded ? (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
-            <Editor
-              height="100%"
-              defaultLanguage="mermaid"
+            <FormatEditor
               value={code}
               onChange={handleEditorChange}
-              theme="vs-light"
-              options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                lineNumbers: "on",
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                wordWrap: "on",
-              }}
+              format={solutionFormat}
+              onError={(err) => setError(err)}
             />
-            {error && <ErrorMessage message={error} />}
           </div>
         ) : (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
@@ -575,53 +581,24 @@ export const Edit = () => {
         />
 
         {/* Preview Panel */}
-        <div
-          style={{ width: `${100 - editorWidth}%` }}
-          className="h-full bg-gray-50 flex flex-col relative"
-        >
-          {concluded ? (
-            <h2 className="text-gray-500 px-4 py-2">Your Solution</h2>
-          ) : null}
-          <TransformWrapper
-            initialScale={1}
-            minScale={0.5}
-            maxScale={4}
-            centerOnInit={true}
-            wheel={{ wheelDisabled: true }}
-          >
-            {(utils) => (
-              <>
-                <TransformComponent
-                  wrapperClass="!w-full !h-full"
-                  contentClass="flex items-center justify-center p-4"
-                >
-                  {mermaidSvg ? (
-                    <div
-                      dangerouslySetInnerHTML={{ __html: mermaidSvg }}
-                      className="transform-component-module_content__uCDPE"
-                    />
-                  ) : (
-                    <div className="text-gray-500">Loading preview...</div>
-                  )}
-                </TransformComponent>
-                <DiagramControls {...utils} />
-              </>
-            )}
-          </TransformWrapper>
+        <div style={{ width: `${100 - editorWidth}%` }} className="h-full">
+          <FormatPreview
+            code={code}
+            format={solutionFormat}
+            mermaidSvg={mermaidSvg}
+            error={error}
+            concluded={concluded}
+            renderControls={(utils) => <DiagramControls {...utils} />}
+          />
         </div>
       </main>
       {concluded ? (
         <div className="h-[300px] w-full">
-          <Editor
-            height="100%"
-            defaultLanguage="mermaid"
+          <FormatEditor
             value={code}
-            theme="vs-light"
-            options={{
-              minimap: { enabled: false },
-              fontSize: 14,
-              lineNumbers: "on",
-            }}
+            onChange={handleEditorChange}
+            format={solutionFormat}
+            onError={(err: any) => setError(err)}
           />
         </div>
       ) : null}
@@ -631,7 +608,7 @@ export const Edit = () => {
           evaluation={evaluation}
           onClose={handleCloseEvaluation}
           onHome={onHome}
-          onOpenForm={formUrl ? onOpenForm : undefined}
+          onOpenForm={formUrl && (formUrl.startsWith('http://') || formUrl.startsWith('https://')) ? onOpenForm : undefined}
         />
       )}
     </div>

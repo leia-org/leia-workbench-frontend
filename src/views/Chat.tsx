@@ -76,8 +76,10 @@ export const Chat = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showTooltip, setShowTooltip] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
 
   // Función mejorada para scroll automático usando utilidades
@@ -103,6 +105,27 @@ export const Chat = () => {
     setNewMessageText(text);
     setShowTooltip(false);
     inputRef.current?.focus();
+  };
+
+  const handleTextareaResize = useCallback(() => {
+    const textarea = inputRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 150);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, []);
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setNewMessageText(e.target.value);
+    handleTextareaResize();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
   };
 
   const loadData = useCallback(async () => {
@@ -202,14 +225,52 @@ export const Chat = () => {
   }, [messages, scrollToLeiaMessage]);
 
   // Scroll automático mejorado para móviles
+  // Auto-scroll disabled - users can manually scroll
+  // useEffect(() => {
+  //   if (messages.length > 0) {
+  //     // Scroll suave al final cuando se cargan mensajes inicialmente
+  //     setTimeout(() => {
+  //       scrollToBottom(false);
+  //     }, 100);
+  //   }
+  // }, [messages, scrollToBottom]);
+
+  // Detectar si el usuario está arriba y hay mensajes nuevos
+  useEffect(() => {
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = chatContainer;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+      if (isNearBottom) {
+        setShowScrollButton(false);
+        setHasNewMessages(false);
+      } else {
+        setShowScrollButton(true);
+      }
+    };
+
+    chatContainer.addEventListener('scroll', handleScroll);
+    return () => chatContainer.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Mostrar botón cuando hay mensajes nuevos y el usuario no está abajo
   useEffect(() => {
     if (messages.length > 0) {
-      // Scroll suave al final cuando se cargan mensajes inicialmente
-      setTimeout(() => {
-        scrollToBottom(false);
-      }, 100);
+      const chatContainer = chatMessagesRef.current;
+      if (chatContainer) {
+        const { scrollTop, scrollHeight, clientHeight } = chatContainer;
+        const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+        if (!isNearBottom) {
+          setHasNewMessages(true);
+          setShowScrollButton(true);
+        }
+      }
     }
-  }, [messages, scrollToBottom]);
+  }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,6 +283,10 @@ export const Chat = () => {
     setShowTooltip(false);
 
     setNewMessageText("");
+
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
     const newMessage: Message = {
       text: messageText,
       timestamp: new Date(),
@@ -231,7 +296,8 @@ export const Chat = () => {
 
     setMessages((prev) => [...prev, newMessage]);
     setSendingMessage(true);
-    scrollToBottom();
+    // Auto-scroll disabled
+    // scrollToBottom();
 
     try {
       const response = await axios.post(
@@ -576,18 +642,50 @@ export const Chat = () => {
             </div>
           )}
 
+          {/* Scroll to bottom button */}
+          {showScrollButton && (
+            <div className="fixed bottom-32 right-8 z-10 animate-in fade-in slide-in-from-bottom-2">
+              <button
+                onClick={() => {
+                  scrollToBottom(true);
+                  setHasNewMessages(false);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg flex items-center gap-2 transition-all"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                  />
+                </svg>
+                {hasNewMessages && (
+                  <span className="text-sm font-medium">New messages</span>
+                )}
+              </button>
+            </div>
+          )}
+
           <form
             onSubmit={handleSubmit}
             className="flex gap-2 bg-white rounded-lg p-3 shadow-lg border border-gray-200"
           >
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
               value={newMessageText}
-              onChange={(e) => setNewMessageText(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0"
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message... (Shift+Enter for new line)"
+              className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
+              style={{ minHeight: '40px', maxHeight: '150px' }}
               disabled={configuration?.mode === "transcription"}
+              rows={1}
             />
             <button
               type="submit"
@@ -595,7 +693,7 @@ export const Chat = () => {
                 configuration?.mode === "transcription" ||
                 !newMessageText.trim()
               }
-              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 self-end"
             >
               Send
             </button>
@@ -680,7 +778,7 @@ export const Chat = () => {
                 </svg>
                 Home
               </button>
-              {replication?.form && (
+              {replication?.form && (replication.form.startsWith('http://') || replication.form.startsWith('https://')) && (
                 <button
                   onClick={() => window.open(replication.form, "_blank")}
                   className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
