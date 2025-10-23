@@ -154,21 +154,33 @@ export const Chat = () => {
         );
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
-        if (response.data.leia.configuration?.mode === "transcription") {
-          console.log("test");
-          navigate("/edit");
-        }
 
-        const sortedMessages = response.data.messages
-          .sort(
-            (a: Message, b: Message) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-          )
-          .map((msg: Message) => ({
-            ...msg,
-            id: msg.id || generateMessageId(),
-          }));
-        setMessages(sortedMessages);
+        // Load messages from transcription data if mode is transcription
+        if (response.data.leia.configuration?.mode === "transcription") {
+          const transcriptionData = response.data.leia.configuration?.data;
+          if (transcriptionData?.messages && Array.isArray(transcriptionData.messages)) {
+            const transcriptionMessages = transcriptionData.messages.map((msg: any) => ({
+              ...msg,
+              id: msg.id || generateMessageId(),
+              timestamp: msg.timestamp || new Date().toISOString(),
+            }));
+            setMessages(transcriptionMessages);
+          } else {
+            setMessages([]);
+          }
+        } else {
+          // Load regular session messages
+          const sortedMessages = response.data.messages
+            .sort(
+              (a: Message, b: Message) =>
+                new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+            )
+            .map((msg: Message) => ({
+              ...msg,
+              id: msg.id || generateMessageId(),
+            }));
+          setMessages(sortedMessages);
+        }
       }
     } catch (error: any) {
       setLoadError(
@@ -507,6 +519,41 @@ export const Chat = () => {
         </div>
       </header>
 
+      {/* Banner de Transcription Mode */}
+      {configuration?.mode === "transcription" && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
+          <div className="flex items-center justify-center gap-2 text-amber-800">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="w-5 h-5"
+            >
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span className="text-sm font-medium">
+              Transcription View - Read Only
+            </span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="w-5 h-5"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </div>
+        </div>
+      )}
+
       {/* Área de mensajes con mejor layout móvil */}
       <div
         className="flex-1 overflow-y-auto px-4 pb-20 md:pb-32 scroll-smooth bg-gray-50 chat-messages"
@@ -681,7 +728,11 @@ export const Chat = () => {
               value={newMessageText}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
-              placeholder="Type a message... (Shift+Enter for new line)"
+              placeholder={
+                configuration?.mode === "transcription"
+                  ? "Chat is disabled in transcription mode"
+                  : "Type a message... (Shift+Enter for new line)"
+              }
               className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
               style={{ minHeight: '40px', maxHeight: '150px' }}
               disabled={configuration?.mode === "transcription"}
