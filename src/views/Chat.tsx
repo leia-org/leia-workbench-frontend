@@ -36,6 +36,10 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  data: {
+    messages?: Message[];
+    link?: string;
+  };
 }
 
 interface Replication {
@@ -110,7 +114,7 @@ export const Chat = () => {
   const handleTextareaResize = useCallback(() => {
     const textarea = inputRef.current;
     if (textarea) {
-      textarea.style.height = 'auto';
+      textarea.style.height = "auto";
       const newHeight = Math.min(textarea.scrollHeight, 150);
       textarea.style.height = `${newHeight}px`;
     }
@@ -122,7 +126,7 @@ export const Chat = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e as any);
     }
@@ -154,12 +158,16 @@ export const Chat = () => {
         );
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
-        if (response.data.leia.configuration?.mode === "transcription") {
-          console.log("test");
-          navigate("/edit");
+        let messages = response.data.messages;
+
+        if (
+          response.data.leia.configuration?.mode === "transcription" &&
+          response.data.leia.configuration?.data?.messages
+        ) {
+          messages = response.data.leia.configuration.data.messages;
         }
 
-        const sortedMessages = response.data.messages
+        const sortedMessages = messages
           .sort(
             (a: Message, b: Message) =>
               new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -252,8 +260,8 @@ export const Chat = () => {
       }
     };
 
-    chatContainer.addEventListener('scroll', handleScroll);
-    return () => chatContainer.removeEventListener('scroll', handleScroll);
+    chatContainer.addEventListener("scroll", handleScroll);
+    return () => chatContainer.removeEventListener("scroll", handleScroll);
   }, []);
 
   // Mostrar botón cuando hay mensajes nuevos y el usuario no está abajo
@@ -285,7 +293,7 @@ export const Chat = () => {
     setNewMessageText("");
 
     if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = "auto";
     }
     const newMessage: Message = {
       text: messageText,
@@ -335,7 +343,7 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
-    if (!messages.length) return;
+    if (!messages.length && configuration?.mode !== "transcription") return;
     setConcluding(true);
     if (configuration?.askSolution) {
       navigate("/edit");
@@ -489,7 +497,10 @@ export const Chat = () => {
           </button>
           <button
             onClick={handleFinishConversation}
-            disabled={concluding || !messages.length}
+            disabled={
+              concluding ||
+              (!messages.length && configuration?.mode != "transcription")
+            }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {concluding ? (
@@ -499,161 +510,33 @@ export const Chat = () => {
               </>
             ) : (
               <>
-                <span className="hidden sm:inline">Finish Session</span>
-                <span className="sm:hidden">Finish Session</span>
+                <span className="hidden sm:inline">
+                  {configuration?.askSolution
+                    ? "Go to Editor"
+                    : "Finish Session"}
+                </span>
+                <span className="sm:hidden">
+                  {configuration?.askSolution
+                    ? "Go to Editor"
+                    : "Finish Session"}
+                </span>
               </>
             )}
           </button>
         </div>
       </header>
 
-      {/* Área de mensajes con mejor layout móvil */}
-      <div
-        className="flex-1 overflow-y-auto px-4 pb-20 md:pb-32 scroll-smooth bg-gray-50 chat-messages"
-        style={{
-          height: mobileUtils.isMobile()
-            ? `${mobileUtils.getMobileViewportHeight() - 120}px`
-            : "auto",
-          minHeight: "400px",
-          maxHeight: mobileUtils.isMobile() ? "calc(100vh - 140px)" : "none",
-          background: "#f9fafb",
-        }}
-      >
-        <div ref={chatMessagesRef} className="max-w-3xl mx-auto space-y-4 py-4">
-          {messages.map((msg, index) => (
-            <div
-              key={msg.id || index}
-              id={`message-${msg.id || index}`}
-              ref={
-                msg.isLeia && index === messages.length - 1
-                  ? lastLeiaMessageRef
-                  : null
-              }
-              className={`flex items-end gap-2 ${
-                msg.isLeia ? "flex-row" : "flex-row-reverse"
-              }`}
-            >
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  msg.isLeia ? "bg-blue-50" : "bg-blue-600"
-                }`}
-              >
-                {msg.isLeia ? (
-                  <UserCircleIcon className="w-5 h-5 text-blue-700" />
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    className="w-5 h-5 text-white"
-                  >
-                    <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
-                  </svg>
-                )}
-              </div>
-              <div
-                className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
-                  msg.isLeia
-                    ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm"
-                    : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
-                }`}
-              >
-                <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
-                  {msg.text}
-                </p>
-              </div>
-            </div>
-          ))}
-          {sendingMessage && (
-            <div className="flex items-end gap-2">
-              <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                <UserCircleIcon className="w-5 h-5 text-blue-700" />
-              </div>
-              <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
-                <TypingAnimation />
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Espacio para evitar que el input tape el contenido */}
-      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-gray-50 z-10 chat-input">
-        <div className="max-w-3xl mx-auto relative">
-          {/* Tooltip de mensaje de ejemplo */}
-          {showTooltip && messages.length === 0 && (
-            <div className="absolute bottom-full mb-2 left-0 right-0 z-20">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 shadow-lg max-w-sm mx-auto">
-                <div className="flex items-start gap-2">
-                  <div className="flex-shrink-0">
-                    <svg
-                      className="w-5 h-5 text-blue-600 mt-0.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-blue-800 mb-2">
-                      <strong>Message example:</strong>
-                    </p>
-                    <button
-                      onClick={() =>
-                        copyToInput(
-                          "Hi, my name is (...) and I am here to (...), nice to meet you!"
-                        )
-                      }
-                      className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
-                    >
-                      "Hi, my name is (...) and I am here to (...), nice to meet
-                      you!"
-                    </button>
-                    <p className="text-xs text-blue-600 mt-1">
-                      Click to copy to input
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setShowTooltip(false)}
-                    className="flex-shrink-0 text-blue-400 hover:text-blue-600"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Scroll to bottom button */}
-          {showScrollButton && (
-            <div className="fixed bottom-32 right-8 z-10 animate-in fade-in slide-in-from-bottom-2">
-              <button
-                onClick={() => {
-                  scrollToBottom(true);
-                  setHasNewMessages(false);
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg flex items-center gap-2 transition-all"
-              >
+      {/* Contenido principal - Condicional según el modo */}
+      {configuration?.mode === "transcription" &&
+      !configuration?.data?.messages &&
+      configuration?.data?.link ? (
+        /* Vista de transcripción externa */
+        <div className="flex-1 flex items-center justify-center bg-gray-50 px-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
+            <div className="mb-6">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg
-                  className="w-5 h-5"
+                  className="w-8 h-8 text-blue-600"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -662,44 +545,253 @@ export const Chat = () => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                   />
                 </svg>
-                {hasNewMessages && (
-                  <span className="text-sm font-medium">New messages</span>
-                )}
-              </button>
+              </div>
+              <h2 className="text-2xl font-semibold text-gray-900 mb-3">
+                Transcription Exercise
+              </h2>
+              <p className="text-gray-600 mb-6">
+                This exercise is configured in transcription mode. Click the
+                button below to access the external transcription content.
+              </p>
             </div>
-          )}
-
-          <form
-            onSubmit={handleSubmit}
-            className="flex gap-2 bg-white rounded-lg p-3 shadow-lg border border-gray-200"
-          >
-            <textarea
-              ref={inputRef}
-              value={newMessageText}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message... (Shift+Enter for new line)"
-              className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
-              style={{ minHeight: '40px', maxHeight: '150px' }}
-              disabled={configuration?.mode === "transcription"}
-              rows={1}
-            />
             <button
-              type="submit"
-              disabled={
-                configuration?.mode === "transcription" ||
-                !newMessageText.trim()
+              onClick={() =>
+                window.open(
+                  configuration.data.link,
+                  "_blank",
+                  "noopener,noreferrer"
+                )
               }
-              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 self-end"
+              className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center gap-3 shadow-sm"
             >
-              Send
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
+              Open Transcription
             </button>
-          </form>
+          </div>
         </div>
-      </div>
+      ) : (
+        /* Vista de chat normal */
+        <div
+          className="flex-1 overflow-y-auto px-4 pb-20 md:pb-32 scroll-smooth bg-gray-50 chat-messages"
+          style={{
+            height: mobileUtils.isMobile()
+              ? `${mobileUtils.getMobileViewportHeight() - 120}px`
+              : "auto",
+            minHeight: "400px",
+            maxHeight: mobileUtils.isMobile() ? "calc(100vh - 140px)" : "none",
+            background: "#f9fafb",
+          }}
+        >
+          <div
+            ref={chatMessagesRef}
+            className="max-w-3xl mx-auto space-y-4 py-4"
+          >
+            {messages.map((msg, index) => (
+              <div
+                key={msg.id || index}
+                id={`message-${msg.id || index}`}
+                ref={
+                  msg.isLeia && index === messages.length - 1
+                    ? lastLeiaMessageRef
+                    : null
+                }
+                className={`flex items-end gap-2 ${
+                  msg.isLeia ? "flex-row" : "flex-row-reverse"
+                }`}
+              >
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    msg.isLeia ? "bg-blue-50" : "bg-blue-600"
+                  }`}
+                >
+                  {msg.isLeia ? (
+                    <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-5 h-5 text-white"
+                    >
+                      <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
+                    </svg>
+                  )}
+                </div>
+                <div
+                  className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
+                    msg.isLeia
+                      ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm"
+                      : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
+                  }`}
+                >
+                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                    {msg.text}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {sendingMessage && (
+              <div className="flex items-end gap-2">
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                </div>
+                <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
+                  <TypingAnimation />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Input de chat - Solo mostrar si NO es transcripción externa */}
+      {!(
+        configuration?.mode === "transcription" &&
+        !configuration?.data?.messages &&
+        configuration?.data?.link
+      ) && (
+        <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-gray-50 z-10 chat-input">
+          <div className="max-w-3xl mx-auto relative">
+            {/* Tooltip de mensaje de ejemplo */}
+            {showTooltip && messages.length === 0 && (
+              <div className="absolute bottom-full mb-2 left-0 right-0 z-20">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 shadow-lg max-w-sm mx-auto">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-shrink-0">
+                      <svg
+                        className="w-5 h-5 text-blue-600 mt-0.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-blue-800 mb-2">
+                        <strong>Message example:</strong>
+                      </p>
+                      <button
+                        onClick={() =>
+                          copyToInput(
+                            "Hi, my name is (...) and I am here to (...), nice to meet you!"
+                          )
+                        }
+                        className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
+                      >
+                        "Hi, my name is (...) and I am here to (...), nice to
+                        meet you!"
+                      </button>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Click to copy to input
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowTooltip(false)}
+                      className="flex-shrink-0 text-blue-400 hover:text-blue-600"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Scroll to bottom button */}
+            {showScrollButton && (
+              <div className="fixed bottom-32 right-8 z-10 animate-in fade-in slide-in-from-bottom-2">
+                <button
+                  onClick={() => {
+                    scrollToBottom(true);
+                    setHasNewMessages(false);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg flex items-center gap-2 transition-all"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                    />
+                  </svg>
+                  {hasNewMessages && (
+                    <span className="text-sm font-medium">New messages</span>
+                  )}
+                </button>
+              </div>
+            )}
+
+            <form
+              onSubmit={handleSubmit}
+              className="flex gap-2 bg-white rounded-lg p-3 shadow-lg border border-gray-200"
+            >
+              <textarea
+                ref={inputRef}
+                value={newMessageText}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  configuration?.mode === "transcription"
+                    ? "Disabled in transcription exercise"
+                    : "Type a message... (Shift+Enter for new line)"
+                }
+                className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
+                style={{ minHeight: "40px", maxHeight: "150px" }}
+                disabled={configuration?.mode === "transcription"}
+                rows={1}
+              />
+              <button
+                type="submit"
+                disabled={
+                  configuration?.mode === "transcription" ||
+                  !newMessageText.trim()
+                }
+                className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 self-end"
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -778,27 +870,29 @@ export const Chat = () => {
                 </svg>
                 Home
               </button>
-              {replication?.form && (replication.form.startsWith('http://') || replication.form.startsWith('https://')) && (
-                <button
-                  onClick={() => window.open(replication.form, "_blank")}
-                  className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+              {replication?.form &&
+                (replication.form.startsWith("http://") ||
+                  replication.form.startsWith("https://")) && (
+                  <button
+                    onClick={() => window.open(replication.form, "_blank")}
+                    className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                    />
-                  </svg>
-                  Open Form
-                </button>
-              )}
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                      />
+                    </svg>
+                    Open Form
+                  </button>
+                )}
             </div>
           </div>
         </div>
