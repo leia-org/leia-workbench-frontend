@@ -267,12 +267,16 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  data: {
+    messages?: unknown[];
+    link?: string;
+  };
 }
 
 export const Edit = () => {
   const navigate = useNavigate();
   const [formUrl, setFormUrl] = useState<string | null>(null);
-  const [solutionFormat, setSolutionFormat] = useState<string>('mermaid');
+  const [solutionFormat, setSolutionFormat] = useState<string>("mermaid");
   const [code, setCode] = useState(() => {
     const savedCode = localStorage.getItem("mermaid_code");
     if (savedCode) {
@@ -319,7 +323,7 @@ export const Edit = () => {
     }
     if (savedExercise) {
       const parsedExercise = JSON.parse(savedExercise);
-      const format = parsedExercise.solutionFormat || 'mermaid';
+      const format = parsedExercise.solutionFormat || "mermaid";
       setSolutionFormat(format);
     }
   }, []);
@@ -432,9 +436,9 @@ export const Edit = () => {
   }, [concludeProblem, configuration, sessionId]);
   useEffect(() => {
     const renderMermaid = async () => {
-      if (solutionFormat !== 'mermaid') {
+      if (solutionFormat !== "mermaid") {
         // For non-mermaid formats, clear mermaid preview
-        setMermaidSvg('');
+        setMermaidSvg("");
         setError(null);
         return;
       }
@@ -608,7 +612,12 @@ export const Edit = () => {
           evaluation={evaluation}
           onClose={handleCloseEvaluation}
           onHome={onHome}
-          onOpenForm={formUrl && (formUrl.startsWith('http://') || formUrl.startsWith('https://')) ? onOpenForm : undefined}
+          onOpenForm={
+            formUrl &&
+            (formUrl.startsWith("http://") || formUrl.startsWith("https://"))
+              ? onOpenForm
+              : undefined
+          }
         />
       )}
     </div>
