@@ -82,6 +82,8 @@ export const Chat = () => {
   const [showTooltip, setShowTooltip] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [failedMessage, setFailedMessage] = useState<string | null>(null);
+  const [retryingMessage, setRetryingMessage] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -109,6 +111,58 @@ export const Chat = () => {
     setNewMessageText(text);
     setShowTooltip(false);
     inputRef.current?.focus();
+  };
+
+  // Función para reenviar mensaje fallido
+  const retryFailedMessage = async () => {
+    if (!failedMessage || retryingMessage) return;
+
+    setRetryingMessage(true);
+
+    // Primero remover el mensaje de error
+    setMessages((prev) => prev.slice(0, -1));
+
+    setSendingMessage(true);
+
+    // Limpiar el mensaje fallido ya que estamos reintentando
+    setFailedMessage(null);
+
+    try {
+      const response = await axios.post(
+        `${
+          import.meta.env.VITE_APP_BACKEND
+        }/api/v1/interactions/${sessionId}/messages`,
+        {
+          message: failedMessage,
+        }
+      );
+
+      if (response.status === 200) {
+        const leiaMessage: Message = {
+          text: response.data.message,
+          timestamp: new Date(),
+          isLeia: true,
+          id: generateMessageId(),
+        };
+
+        setMessages((prev) => [...prev, leiaMessage]);
+      }
+    } catch (error) {
+      // Si falla de nuevo, guardar el mensaje fallido y mostrar error
+      setFailedMessage(failedMessage);
+      setMessages((prev) => [
+        ...prev,
+        {
+          text: "This message is taking longer than usual.",
+          timestamp: new Date(),
+          isLeia: true,
+          id: generateMessageId(),
+        },
+      ]);
+    } finally {
+      setSendingMessage(false);
+      setRetryingMessage(false);
+    }
   };
 
   const handleTextareaResize = useCallback(() => {
@@ -328,10 +382,11 @@ export const Chat = () => {
         setMessages((prev) => [...prev, leiaMessage]);
       }
     } catch (error) {
+      setFailedMessage(messageText);
       setMessages((prev) => [
         ...prev,
         {
-          text: "Your message is taking a bit longer to send. Retry?",
+          text: "This message is taking longer than usual.",
           timestamp: new Date(),
           isLeia: true,
           id: generateMessageId(),
@@ -642,6 +697,45 @@ export const Chat = () => {
                   <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
                     {msg.text}
                   </p>
+                  {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
+                  {msg.isLeia &&
+                    index === messages.length - 1 &&
+                    failedMessage &&
+                    msg.text.includes(
+                      "This message is taking longer than usual."
+                    ) && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <button
+                          onClick={retryFailedMessage}
+                          disabled={retryingMessage}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {retryingMessage ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Retrying...
+                            </>
+                          ) : (
+                            <>
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                />
+                              </svg>
+                              Retry
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                 </div>
               </div>
             ))}
@@ -782,7 +876,9 @@ export const Chat = () => {
                 type="submit"
                 disabled={
                   configuration?.mode === "transcription" ||
-                  !newMessageText.trim()
+                  !newMessageText.trim() ||
+                  sendingMessage ||
+                  retryingMessage
                 }
                 className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 self-end"
               >
