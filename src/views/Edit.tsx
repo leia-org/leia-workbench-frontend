@@ -394,14 +394,17 @@ export const Edit = () => {
         const updatedDataResponse = await axios.get(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`
         );
-        console.log(updatedDataResponse.data);
         const exerciseSolution =
           updatedDataResponse.data.leia.leia.spec.problem.spec.solution;
-        const svg = await mermaid.render("mermaid2-diagram", exerciseSolution);
+        if (solutionFormat == "mermaid") {
+          const svg = await mermaid.render(
+            "mermaid2-diagram",
+            exerciseSolution
+          );
+          setConcludedSvg(svg.svg);
+        }
         setConcluded(true);
         setShowAlert(false);
-
-        setConcludedSvg(svg.svg);
       }
     } catch (error) {
       console.error("Failed to conclude the problem:", error);
