@@ -396,7 +396,10 @@ export const Edit = () => {
         );
         const exerciseSolution =
           updatedDataResponse.data.leia.leia.spec.problem.spec.solution;
-        if (solutionFormat == "mermaid") {
+        if (
+          updatedDataResponse.data.leia.leia.spec.problem.spec
+            .solutionFormat === "mermaid"
+        ) {
           const svg = await mermaid.render(
             "mermaid2-diagram",
             exerciseSolution
