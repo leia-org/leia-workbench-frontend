@@ -3,6 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
+import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
+import { AudioControls } from "../components/AudioControls";
+
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -26,6 +29,7 @@ interface Message {
   timestamp: Date;
   isLeia: boolean;
   id?: string; // Agregar ID único para anclas
+  sequence?: number;
 }
 
 interface Exercise {
@@ -84,9 +88,38 @@ export const Chat = () => {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
+  const [audioMode, setAudioMode] = useState<'text' | 'audio'>('text');
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
+
+  const realtimeAudio = useRealtimeAudio({
+    sessionId: sessionId || '',
+    enabled: audioMode === 'audio',
+    onTranscriptComplete: useCallback((transcript: string, isLeia: boolean, timestamp: Date, sequence: number) => {
+      const newMessage: Message = {
+        text: transcript,
+        timestamp: timestamp,
+        isLeia,
+        id: generateMessageId(),
+        sequence: sequence,
+      };
+      setMessages((prev) => {
+        const updated = [...prev, newMessage];
+
+        return updated.sort((a, b) => {
+          if (a.sequence !== undefined && b.sequence !== undefined) {
+            return a.sequence - b.sequence;
+          }
+          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        });
+      });
+    }, []),
+    onError: useCallback((error: Error) => {
+      console.error('Realtime audio error:', error);
+      setLoadError(error.message);
+    }, []),
+  });
 
   // Función mejorada para scroll automático usando utilidades
   const scrollToBottom = useCallback((smooth = true) => {
@@ -212,6 +245,11 @@ export const Chat = () => {
         );
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
+
+        if (response.data.leia.configuration?.audioMode === 'realtime') {
+          console.log('Audio mode detected, switching to audio interface');
+          setAudioMode('audio');
+        }
         let messages = response.data.messages;
 
         if (
@@ -640,7 +678,7 @@ export const Chat = () => {
           </div>
         </div>
       ) : (
-        /* Vista de chat normal */
+        /* Vista de chat normal (funciona para texto y audio) */
         <div
           className="flex-1 overflow-y-auto px-4 pb-20 md:pb-32 scroll-smooth bg-gray-50 chat-messages"
           style={{
@@ -865,17 +903,20 @@ export const Chat = () => {
                 placeholder={
                   configuration?.mode === "transcription"
                     ? "Disabled in transcription exercise"
+                    : audioMode === 'audio'
+                    ? "Audio mode enabled - Use the audio controls to speak"
                     : "Type a message... (Shift+Enter for new line)"
                 }
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
-                disabled={configuration?.mode === "transcription"}
+                disabled={configuration?.mode === "transcription" || audioMode === 'audio'}
                 rows={1}
               />
               <button
                 type="submit"
                 disabled={
                   configuration?.mode === "transcription" ||
+                  audioMode === 'audio' ||
                   !newMessageText.trim() ||
                   sendingMessage ||
                   retryingMessage
@@ -1026,6 +1067,20 @@ export const Chat = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Audio Controls Floating Popup - Only shown in audio mode */}
+      {audioMode === 'audio' && (
+        <AudioControls
+          isConnected={realtimeAudio.isConnected}
+          isMuted={realtimeAudio.isMuted}
+          isLeiaSpeaking={realtimeAudio.isLeiaSpeaking}
+          audioElement={realtimeAudio.audioElement}
+          mediaStream={realtimeAudio.mediaStream}
+          leiaAudioStream={realtimeAudio.leiaAudioStream}
+          onToggleMute={realtimeAudio.toggleMute}
+          onEndSession={handleFinishConversation}
+        />
       )}
     </div>
   );
