@@ -49,10 +49,21 @@ interface EvaluationModalProps {
   onClose: () => void;
   onHome: () => void;
   onOpenForm?: () => void;
+  spectateUrl?: string;
 }
 
 const EvaluationModal: React.FC<EvaluationModalProps> = memo(
-  ({ evaluation, onClose, onHome, onOpenForm }) => {
+  ({ evaluation, onClose, onHome, onOpenForm, spectateUrl }) => {
+    const [copied, setCopied] = React.useState(false);
+
+    const handleCopyLink = () => {
+      if (spectateUrl) {
+        navigator.clipboard.writeText(spectateUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    };
+
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
         <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
@@ -82,6 +93,63 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
           <div className="px-6 py-4 max-h-[60vh] overflow-y-auto prose prose-blue">
             <ReactMarkdown>{evaluation}</ReactMarkdown>
           </div>
+
+          {spectateUrl && (
+            <div className="px-6 py-3 bg-blue-50 border-t border-b border-blue-100">
+              <p className="text-sm font-medium text-blue-900 mb-2">
+                Conversation Viewer Link (valid for 1 year)
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={spectateUrl}
+                  className="flex-1 px-3 py-2 text-sm bg-white border border-blue-200 rounded-md text-gray-600 font-mono"
+                />
+                <button
+                  onClick={handleCopyLink}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2"
+                >
+                  {copied ? (
+                    <>
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                      Copy Link
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="px-6 py-4 border-t flex justify-end gap-2">
             <button
               onClick={onHome}
@@ -302,6 +370,7 @@ export const Edit = () => {
     null
   );
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [spectateUrl, setSpectateUrl] = useState<string | null>(null);
 
   // Load initial data from localStorage
   useEffect(() => {
@@ -391,6 +460,11 @@ export const Edit = () => {
         }
       );
       if (response.status === 200) {
+        // Capture spectate URL from response
+        if (response.data.spectateUrl) {
+          setSpectateUrl(response.data.spectateUrl);
+        }
+
         const updatedDataResponse = await axios.get(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`
         );
@@ -624,6 +698,7 @@ export const Edit = () => {
               ? onOpenForm
               : undefined
           }
+          spectateUrl={spectateUrl || undefined}
         />
       )}
     </div>
