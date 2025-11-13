@@ -1,26 +1,40 @@
-import React, { memo } from 'react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import ReactMarkdown from 'react-markdown';
+import React, { memo } from "react";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 
 interface FormatPreviewProps {
   code: string;
   format: string;
-  mermaidSvg?: string;
+  mermaidSvg?: string | null;
   error?: string | null;
-  concluded?: boolean;
   renderControls?: (utils: any) => React.ReactNode;
 }
 
 export const FormatPreview: React.FC<FormatPreviewProps> = memo(
-  ({ code, format, mermaidSvg, error, concluded, renderControls }) => {
+  ({ code, format, mermaidSvg, error }) => {
+    const formattedCode =
+      format === "json"
+        ? (() => {
+            try {
+              return JSON.stringify(JSON.parse(code), null, 2);
+            } catch {
+              return code;
+            }
+          })()
+        : code;
+
+    const language = format;
+    const isCodeFormat =
+      format === "json" ||
+      format === "yaml" ||
+      format === "xml" ||
+      format === "text";
+
     return (
       <div className="h-full bg-gray-50 flex flex-col relative">
-        {concluded ? (
-          <h2 className="text-gray-500 px-4 py-2">Your Solution</h2>
-        ) : null}
-
         {/* Mermaid Preview with Zoom/Pan */}
-        {format === 'mermaid' && (
+        {format === "mermaid" && (
           <TransformWrapper
             initialScale={1}
             minScale={0.5}
@@ -28,29 +42,24 @@ export const FormatPreview: React.FC<FormatPreviewProps> = memo(
             centerOnInit={true}
             wheel={{ wheelDisabled: true }}
           >
-            {(utils) => (
-              <>
-                <TransformComponent
-                  wrapperClass="!w-full !h-full"
-                  contentClass="flex items-center justify-center p-4"
-                >
-                  {mermaidSvg ? (
-                    <div
-                      dangerouslySetInnerHTML={{ __html: mermaidSvg }}
-                      className="transform-component-module_content__uCDPE"
-                    />
-                  ) : (
-                    <div className="text-gray-500">Loading preview...</div>
-                  )}
-                </TransformComponent>
-                {renderControls && renderControls(utils)}
-              </>
-            )}
+            <TransformComponent
+              wrapperClass="!w-full !h-full"
+              contentClass="flex items-center justify-center p-4"
+            >
+              {mermaidSvg ? (
+                <div
+                  dangerouslySetInnerHTML={{ __html: mermaidSvg }}
+                  className="transform-component-module_content__uCDPE"
+                />
+              ) : (
+                <div className="text-gray-500">Loading preview...</div>
+              )}
+            </TransformComponent>
           </TransformWrapper>
         )}
 
         {/* Markdown Preview */}
-        {format === 'markdown' && (
+        {format === "markdown" && (
           <div className="h-full overflow-auto p-6">
             <div className="prose prose-sm max-w-none">
               <ReactMarkdown>{code}</ReactMarkdown>
@@ -59,7 +68,7 @@ export const FormatPreview: React.FC<FormatPreviewProps> = memo(
         )}
 
         {/* HTML Preview */}
-        {format === 'html' && (
+        {format === "html" && (
           <div className="h-full overflow-auto p-6">
             <div className="border rounded bg-white p-4">
               <div dangerouslySetInnerHTML={{ __html: code }} />
@@ -67,28 +76,24 @@ export const FormatPreview: React.FC<FormatPreviewProps> = memo(
           </div>
         )}
 
-        {/* JSON Preview - Formatted */}
-        {format === 'json' && (
+        {/* JSON / YAML / XML / TEXT con syntax highlighting */}
+        {isCodeFormat && (
           <div className="h-full overflow-auto p-6">
             <div className="bg-white border rounded p-4">
-              <pre className="text-sm font-mono whitespace-pre-wrap">
-                {(() => {
-                  try {
-                    return JSON.stringify(JSON.parse(code), null, 2);
-                  } catch {
-                    return code;
-                  }
-                })()}
-              </pre>
-            </div>
-          </div>
-        )}
-
-        {/* YAML, XML, Text - Plain Preview */}
-        {(format === 'yaml' || format === 'xml' || format === 'text') && (
-          <div className="h-full overflow-auto p-6">
-            <div className="bg-white border rounded p-4">
-              <pre className="text-sm font-mono whitespace-pre-wrap">{code}</pre>
+              <SyntaxHighlighter
+                language={language}
+                wrapLongLines
+                customStyle={{
+                  background: "transparent",
+                  margin: 0,
+                  padding: 0,
+                  fontSize: "0.875rem", // text-sm
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                }}
+              >
+                {formattedCode}
+              </SyntaxHighlighter>
             </div>
           </div>
         )}
@@ -119,4 +124,4 @@ export const FormatPreview: React.FC<FormatPreviewProps> = memo(
   }
 );
 
-FormatPreview.displayName = 'FormatPreview';
+FormatPreview.displayName = "FormatPreview";
