@@ -1,5 +1,5 @@
-import React, { useEffect, memo } from 'react';
-import Editor from '@monaco-editor/react';
+import React, { useEffect, memo, useRef, useState } from "react";
+import Editor from "@monaco-editor/react";
 
 interface FormatEditorProps {
   value: string;
@@ -11,15 +11,15 @@ interface FormatEditorProps {
 // Language mapping for Monaco Editor
 const getMonacoLanguage = (format: string): string => {
   const languageMap: Record<string, string> = {
-    text: 'plaintext',
-    mermaid: 'plaintext',
-    yaml: 'yaml',
-    markdown: 'markdown',
-    html: 'html',
-    json: 'json',
-    xml: 'xml',
+    text: "plaintext",
+    mermaid: "plaintext",
+    yaml: "yaml",
+    markdown: "markdown",
+    html: "html",
+    json: "json",
+    xml: "xml",
   };
-  return languageMap[format] || 'plaintext';
+  return languageMap[format] || "plaintext";
 };
 
 // Format-specific editor configurations
@@ -28,32 +28,32 @@ const getEditorConfig = (format: string) => {
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     fontSize: 14,
-    lineNumbers: 'on' as const,
+    lineNumbers: "on" as const,
     automaticLayout: true,
-    wordWrap: 'on' as const,
+    wordWrap: "on" as const,
   };
 
   switch (format) {
-    case 'json':
+    case "json":
       return {
         ...baseConfig,
         formatOnPaste: true,
         formatOnType: true,
-        autoIndent: 'full' as const,
+        autoIndent: "full" as const,
       };
-    case 'yaml':
+    case "yaml":
       return {
         ...baseConfig,
         insertSpaces: true,
         tabSize: 2,
         detectIndentation: true,
       };
-    case 'xml':
-    case 'html':
+    case "xml":
+    case "html":
       return {
         ...baseConfig,
         formatOnPaste: true,
-        autoIndent: 'full' as const,
+        autoIndent: "full" as const,
       };
     default:
       return baseConfig;
@@ -74,8 +74,8 @@ const validators: Record<string, (value: string) => string | null> = {
   yaml: (value: string) => {
     if (!value.trim()) return null;
     // Basic YAML validation (check for common syntax errors)
-    if (value.includes('\t')) {
-      return 'YAML does not support tabs, use spaces for indentation';
+    if (value.includes("\t")) {
+      return "YAML does not support tabs, use spaces for indentation";
     }
     return null;
   },
@@ -83,8 +83,8 @@ const validators: Record<string, (value: string) => string | null> = {
     if (!value.trim()) return null;
     try {
       const parser = new DOMParser();
-      const doc = parser.parseFromString(value, 'text/xml');
-      const error = doc.querySelector('parsererror');
+      const doc = parser.parseFromString(value, "text/xml");
+      const error = doc.querySelector("parsererror");
       if (error) {
         return `Invalid XML: ${error.textContent}`;
       }
@@ -98,7 +98,7 @@ const validators: Record<string, (value: string) => string | null> = {
     // Basic HTML validation
     try {
       const parser = new DOMParser();
-      parser.parseFromString(value, 'text/html');
+      parser.parseFromString(value, "text/html");
       return null;
     } catch (e: any) {
       return `Invalid HTML: ${e.message}`;
@@ -108,16 +108,52 @@ const validators: Record<string, (value: string) => string | null> = {
 
 export const FormatEditor: React.FC<FormatEditorProps> = memo(
   ({ value, onChange, format, onError }) => {
-    // Validate content when it changes
+    const [internalError, setInternalError] = useState<string | null>(null);
+
+    const editorRef = useRef<any>(null);
+    const monacoRef = useRef<any>(null);
+
     useEffect(() => {
       const validator = validators[format];
+      let error: string | null = null;
+
       if (validator) {
-        const error = validator(value);
-        onError?.(error);
-      } else {
-        onError?.(null);
+        error = validator(value);
       }
+
+      setInternalError(error);
+      onError?.(error);
     }, [value, format, onError]);
+
+    useEffect(() => {
+      const monaco = monacoRef.current;
+      const editorInstance = editorRef.current;
+      if (!monaco || !editorInstance) return;
+
+      const model = editorInstance.getModel();
+      if (!model) return;
+
+      if (!internalError) {
+        monaco.editor.setModelMarkers(model, "format-validation", []);
+        return;
+      }
+
+      const lines = model.getLinesContent();
+      const lineCount = lines.length || 1;
+      const lastLine = lineCount;
+      const lastCol = (lines[lineCount - 1]?.length || 0) + 1;
+
+      monaco.editor.setModelMarkers(model, "format-validation", [
+        {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: lastLine,
+          endColumn: lastCol,
+          message: internalError,
+          severity: monaco.MarkerSeverity.Error,
+        },
+      ]);
+    }, [internalError]);
 
     const monacoLanguage = getMonacoLanguage(format);
     const editorConfig = getEditorConfig(format);
@@ -126,14 +162,18 @@ export const FormatEditor: React.FC<FormatEditorProps> = memo(
       <div className="h-full relative">
         <Editor
           value={value}
-          onChange={(val) => onChange(val || '')}
+          onChange={(val) => onChange(val || "")}
           language={monacoLanguage}
           theme="vs-light"
           options={editorConfig}
+          onMount={(editor, monaco) => {
+            editorRef.current = editor;
+            monacoRef.current = monaco;
+          }}
         />
       </div>
     );
   }
 );
 
-FormatEditor.displayName = 'FormatEditor';
+FormatEditor.displayName = "FormatEditor";
