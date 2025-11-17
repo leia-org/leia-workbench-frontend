@@ -246,7 +246,7 @@ export const Chat = () => {
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
 
-        if (response.data.leia.configuration?.audioMode === 'realtime') {
+        if (response.data.leia?.audioMode === 'realtime') {
           console.log('Audio mode detected, switching to audio interface');
           setAudioMode('audio');
         }

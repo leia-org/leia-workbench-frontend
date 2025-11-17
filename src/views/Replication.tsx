@@ -38,7 +38,21 @@ interface Replication {
     leias: Array<{
       configuration: { mode: string; data?: any; askSolution: boolean; evaluateSolution: boolean };
       leia: { metadata: { name: string }; spec: any };
-      runnerConfiguration: { provider: string };
+      runnerConfiguration: {
+        provider: string;
+        audioMode?: 'realtime' | null;
+        realtimeConfig?: {
+          model?: string;
+          voice?: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' | 'marin';
+          instructions?: string;
+          turnDetection?: {
+            type?: 'server_vad' | 'none';
+            threshold?: number;
+            prefix_padding_ms?: number;
+            silence_duration_ms?: number;
+          };
+        };
+      };
       sessionCount: number;
       id: string;
     }>;
@@ -620,9 +634,9 @@ export const Replication: React.FC = () => {
               
               <fieldset className='bg-white p-4 rounded-xl shadow border-solid border border-gray-400'>
                 <legend>Runner</legend>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 mb-3">
                   <div className="text-sm text-gray-700">
-                    Provider: 
+                    Provider:
                   </div>
                     <select
                       value={item.runnerConfiguration.provider}
@@ -633,6 +647,65 @@ export const Replication: React.FC = () => {
                       <option value="openai-assistant">openai-assistant</option>
                     </select>
                 </div>
+
+                {/* Audio Mode Configuration */}
+                <div className="border-t pt-3 mt-3">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <label className="text-sm text-gray-700 font-medium">Audio Mode:</label>
+                    <Switch
+                      checked={item.runnerConfiguration.audioMode === 'realtime'}
+                      onChange={(checked) => {
+                        if (checked) {
+                          handleLocalLeiaChange(idx, "runnerConfiguration.audioMode", 'realtime');
+                          // Initialize default realtimeConfig if not exists
+                          if (!item.runnerConfiguration.realtimeConfig) {
+                            handleLocalLeiaChange(idx, "runnerConfiguration.realtimeConfig", {
+                              model: 'gpt-4o-realtime-preview',
+                              voice: 'marin',
+                              instructions: '',
+                              turnDetection: {
+                                type: 'server_vad',
+                                threshold: 0.5,
+                                prefix_padding_ms: 300,
+                                silence_duration_ms: 500,
+                              },
+                            });
+                          }
+                        } else {
+                          handleLocalLeiaChange(idx, "runnerConfiguration.audioMode", null);
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {item.runnerConfiguration.audioMode === 'realtime' && (
+                    <div className="ml-4 space-y-2 text-sm">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-gray-600">Voice:</span>
+                        <select
+                          value={item.runnerConfiguration.realtimeConfig?.voice || 'marin'}
+                          onChange={(e) => handleLocalLeiaChange(idx, "runnerConfiguration.realtimeConfig.voice", e.target.value)}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        >
+                          <option value="alloy">Alloy</option>
+                          <option value="echo">Echo</option>
+                          <option value="fable">Fable</option>
+                          <option value="onyx">Onyx</option>
+                          <option value="nova">Nova</option>
+                          <option value="shimmer">Shimmer</option>
+                          <option value="marin">Marin</option>
+                        </select>
+                      </div>
+                      <div className="text-xs text-purple-600 flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                        Real-time voice conversation enabled
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className='flex w-full gap-2'>
                   <button
                     onClick={() => handleLocalLeiaReset(idx)}
