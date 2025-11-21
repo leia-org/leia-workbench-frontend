@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import axios from "axios";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import axios, { AxiosRequestConfig } from "axios";
 import { io } from "socket.io-client";
 import { SessionCard } from "../components/SessionCard";
 
@@ -88,6 +88,7 @@ const CopyModal: React.FC<CopyModalProps> = ({ isOpen, url, onClose }) => {
 export const LiveDashboard = () => {
   const { id: replicationId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [filter, setFilter] = useState<"all" | "active" | "finished">("active");
   const [loading, setLoading] = useState(true);
@@ -97,68 +98,147 @@ export const LiveDashboard = () => {
     isOpen: false,
     url: "",
   });
+  const adminSecret = localStorage.getItem("adminSecret");
+  const isAdmin = Boolean(adminSecret);
+  const REPLICATION_TOKENS_KEY = "replicationTokens";
+  const [replicationToken, setReplicationToken] = useState<string | null>(null);
+  const [tokenReady, setTokenReady] = useState(false);
+
+  useEffect(() => {
+    if (!replicationId) return;
+    setTokenReady(false);
+    const tokensRaw = localStorage.getItem(REPLICATION_TOKENS_KEY);
+    let tokens: Record<string, string> = {};
+    if (tokensRaw) {
+      try {
+        const parsed = JSON.parse(tokensRaw);
+        if (parsed && typeof parsed === "object") {
+          tokens = parsed;
+        }
+      } catch {
+        tokens = {};
+      }
+    }
+
+    const searchParams = new URLSearchParams(location.search);
+    const tokenFromQuery = searchParams.get("token");
+
+    if (tokenFromQuery) {
+      tokens[replicationId] = tokenFromQuery;
+      localStorage.setItem(REPLICATION_TOKENS_KEY, JSON.stringify(tokens));
+      setReplicationToken(tokenFromQuery);
+    } else {
+      setReplicationToken(tokens[replicationId] || null);
+    }
+    setTokenReady(true);
+  }, [location.search, replicationId]);
+
+  const buildRequestConfig = useCallback(
+    (config: AxiosRequestConfig = {}) => {
+      const headers = { ...(config.headers || {}) };
+      if (adminSecret) {
+        headers.Authorization = `Bearer ${adminSecret}`;
+      }
+
+      const params = { ...(config.params || {}) };
+      if (replicationToken) {
+        params.token = replicationToken;
+      }
+
+      const finalConfig: AxiosRequestConfig = { ...config };
+      if (Object.keys(headers).length > 0) {
+        finalConfig.headers = headers;
+      }
+      if (Object.keys(params).length > 0) {
+        finalConfig.params = params;
+      }
+      return finalConfig;
+    },
+    [adminSecret, replicationToken]
+  );
 
   // Fetch sessions - Always fetch all sessions (active and finished)
   const fetchSessions = useCallback(async () => {
+    if (!replicationId) return;
     try {
-      const adminSecret = localStorage.getItem("adminSecret");
-
       const response = await axios.get(
         `${
           import.meta.env.VITE_APP_BACKEND
         }/api/v1/spectator/replications/${replicationId}/sessions`,
-        {
-          headers: {
-            Authorization: `Bearer ${adminSecret}`,
-          },
-        }
+        buildRequestConfig()
       );
 
       setSessions(response.data.sessions);
       setLoading(false);
     } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to load sessions");
+      if (axios.isAxiosError(err) && err.response?.status === 403) {
+        if (replicationToken) {
+          setError("Invalid or expired replication token");
+        } else {
+          navigate("/login");
+        }
+      } else {
+        setError(err.response?.data?.message || "Failed to load sessions");
+      }
       setLoading(false);
     }
-  }, [replicationId]); // Removed filter dependency since we always fetch all sessions
+  }, [replicationId, buildRequestConfig, replicationToken, navigate]); // Removed filter dependency since we always fetch all sessions
 
   // Get replication name
   useEffect(() => {
+    if (!tokenReady || !replicationId) return;
     const fetchReplication = async () => {
       try {
-        const adminSecret = localStorage.getItem("adminSecret");
         const response = await axios.get(
           `${
             import.meta.env.VITE_APP_BACKEND
           }/api/v1/replications/${replicationId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${adminSecret}`,
-            },
-          }
+          buildRequestConfig()
         );
         setReplicationName(response.data.name);
-      } catch (err) {
-        console.error("Failed to fetch replication:", err);
+      } catch (err: any) {
+        if (axios.isAxiosError(err) && err.response?.status === 403) {
+          if (replicationToken) {
+            setError("Invalid or expired replication token");
+          } else {
+            navigate("/login");
+          }
+        } else {
+          console.error("Failed to fetch replication:", err);
+          setError("Failed to load replication details");
+        }
       }
     };
     fetchReplication();
-  }, [replicationId]);
+  }, [
+    replicationId,
+    buildRequestConfig,
+    tokenReady,
+    replicationToken,
+    navigate,
+  ]);
 
   // Initial load
   useEffect(() => {
+    if (!tokenReady) return;
     fetchSessions();
-  }, [fetchSessions]);
+  }, [fetchSessions, tokenReady]);
 
   // Setup WebSocket
   useEffect(() => {
-    const adminSecret = localStorage.getItem("adminSecret");
-    if (!adminSecret || !replicationId) return;
+    if (!tokenReady || !replicationId) return;
+
+    const authPayload: Record<string, string> = {};
+    if (adminSecret) {
+      authPayload.adminSecret = adminSecret;
+    } else if (replicationToken) {
+      authPayload.shareToken = replicationToken;
+    } else {
+      return;
+    }
 
     const newSocket = io(import.meta.env.VITE_APP_BACKEND, {
-      auth: {
-        token: adminSecret,
-      },
+      auth: authPayload,
     });
 
     newSocket.on("connect", () => {
@@ -204,11 +284,19 @@ export const LiveDashboard = () => {
       console.log("WebSocket disconnected");
     });
 
+    newSocket.on("dashboard:error", (payload: { message?: string }) => {
+      setError(payload.message || "Real-time access denied");
+    });
+
+    newSocket.on("connect_error", (socketError) => {
+      setError(socketError.message || "WebSocket connection error");
+    });
+
     return () => {
       newSocket.emit("dashboard:leave", replicationId);
       newSocket.disconnect();
     };
-  }, [replicationId]);
+  }, [adminSecret, replicationId, replicationToken, tokenReady]);
 
   const handleWatch = async (sessionId: string) => {
     try {
@@ -221,17 +309,12 @@ export const LiveDashboard = () => {
 
   const handleShareLink = async (sessionId: string, open: boolean = true) => {
     try {
-      const adminSecret = localStorage.getItem("adminSecret");
       const response = await axios.post(
         `${
           import.meta.env.VITE_APP_BACKEND
         }/api/v1/spectator/sessions/${sessionId}/token`,
         { expiresIn: 3600 },
-        {
-          headers: {
-            Authorization: `Bearer ${adminSecret}`,
-          },
-        }
+        buildRequestConfig()
       );
       if (!open) return response.data.spectateUrl;
       setCopyModal({
