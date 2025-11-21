@@ -38,7 +38,10 @@ export const SpectatorView = () => {
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      messagesEndRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
     }
   }, []);
 
@@ -53,7 +56,9 @@ export const SpectatorView = () => {
 
       try {
         const response = await axios.get(
-          `${import.meta.env.VITE_APP_BACKEND}/api/v1/spectator/sessions/${sessionId}?token=${token}`
+          `${
+            import.meta.env.VITE_APP_BACKEND
+          }/api/v1/spectator/sessions/${sessionId}?token=${token}`
         );
 
         setSession(response.data.session);
@@ -87,7 +92,7 @@ export const SpectatorView = () => {
 
     const newSocket = io(import.meta.env.VITE_APP_BACKEND, {
       auth: {
-        token: token,
+        jwt: token,
       },
     });
 
@@ -180,7 +185,9 @@ export const SpectatorView = () => {
             className="w-6 h-6"
           />
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold text-gray-900">Spectator Mode</h1>
+            <h1 className="text-lg font-semibold text-gray-900">
+              Spectator Mode
+            </h1>
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                 isActive

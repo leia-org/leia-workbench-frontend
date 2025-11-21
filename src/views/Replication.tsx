@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
-import axios from "axios";
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
+import axios, { AxiosRequestConfig } from "axios";
 import { Navbar } from "../components/Navbar";
 import Switch from "react-switch";
 import { ToastContainer, toast } from "react-toastify";
@@ -21,6 +21,7 @@ import {
   TrashIcon,
   DocumentTextIcon,
   LightBulbIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 
 interface Replication {
@@ -29,6 +30,8 @@ interface Replication {
   isActive: boolean;
   duration: number;
   isRepeatable: boolean;
+  isShared: boolean;
+  shareToken?: string | null;
   code: string;
   createdAt: string;
   updatedAt: string;
@@ -64,16 +67,36 @@ interface Replication {
   };
 }
 
+const REPLICATION_TOKENS_KEY = "replicationTokens";
+
+const readStoredReplicationTokens = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(REPLICATION_TOKENS_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 export const Replication: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [replication, setReplication] = useState<Replication | null>(null);
   const [localReplication, setLocalReplication] = useState<Replication | null>(
     null
   );
   const [loading, setLoading] = useState(true);
   const adminSecret = localStorage.getItem("adminSecret");
+  const isAdmin = Boolean(adminSecret);
   const [copied, setCopied] = useState<boolean>(false);
+  const [replicationToken, setReplicationToken] = useState<string | null>(null);
+  const [tokenReady, setTokenReady] = useState(false);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
 
   // Modals
   const [newName, setNewName] = useState<string>("");
@@ -88,19 +111,70 @@ export const Replication: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
 
+  useEffect(() => {
+    if (!id) return;
+    setTokenReady(false);
+    const tokens = readStoredReplicationTokens();
+    const searchParams = new URLSearchParams(location.search);
+    const tokenFromQuery = searchParams.get("token");
+
+    if (tokenFromQuery) {
+      tokens[id] = tokenFromQuery;
+      localStorage.setItem(REPLICATION_TOKENS_KEY, JSON.stringify(tokens));
+      setReplicationToken(tokenFromQuery);
+    } else {
+      setReplicationToken(tokens[id] || null);
+    }
+    setTokenReady(true);
+  }, [id, location.search]);
+
+  const buildRequestConfig = useCallback(
+    (config: AxiosRequestConfig = {}): AxiosRequestConfig => {
+      const headers = { ...(config.headers || {}) };
+      if (adminSecret) {
+        headers.Authorization = `Bearer ${adminSecret}`;
+      }
+
+      const params = { ...(config.params || {}) };
+      if (replicationToken) {
+        params.token = replicationToken;
+      }
+
+      const finalConfig: AxiosRequestConfig = { ...config };
+      if (Object.keys(headers).length > 0) {
+        finalConfig.headers = headers;
+      }
+      if (Object.keys(params).length > 0) {
+        finalConfig.params = params;
+      }
+      return finalConfig;
+    },
+    [adminSecret, replicationToken]
+  );
+
   // Fetch replication on mount
   useEffect(() => {
+    if (!tokenReady || !id) {
+      return;
+    }
     const fetchReplication = async () => {
       try {
         const resp = await axios.get<Replication>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}`,
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setReplication(resp.data);
         setLocalReplication(structuredClone(resp.data));
       } catch (err: any) {
         if (axios.isAxiosError(err) && err.response?.status === 403) {
-          setTimeout(() => navigate("/login"), 2000);
+          if (replicationToken) {
+            toast.error("Invalid or expired replication token", {
+              position: "bottom-right",
+              autoClose: 5000,
+            });
+          } else {
+            setTimeout(() => navigate("/login"), 2000);
+          }
         } else {
           console.error("Load error:", err);
         }
@@ -109,7 +183,14 @@ export const Replication: React.FC = () => {
       }
     };
     fetchReplication();
-  }, [id, adminSecret, navigate]);
+  }, [
+    id,
+    adminSecret,
+    navigate,
+    replicationToken,
+    tokenReady,
+    buildRequestConfig,
+  ]);
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -146,13 +227,25 @@ export const Replication: React.FC = () => {
     setTimeout(() => setCopied(false), 4000);
   };
 
+  const handleCopyShareLink = () => {
+    if (!replication?.shareToken || !id) return;
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "";
+    const link = `${origin}/replications/${id}?token=${replication.shareToken}`;
+    navigator.clipboard.writeText(link);
+    setCopiedShareLink(true);
+    setTimeout(() => setCopiedShareLink(false), 4000);
+  };
+
   const handleRename = async () => {
     if (replication && newName.trim()) {
       try {
         const resp = await axios.patch(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/name`,
           { name: newName.trim() },
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setReplication(resp.data);
         setLocalReplication(structuredClone(resp.data));
@@ -185,7 +278,7 @@ export const Replication: React.FC = () => {
             import.meta.env.VITE_APP_BACKEND
           }/api/v1/replications/${id}/duration`,
           { duration: Number(newDuration) },
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setReplication(resp.data);
         setLocalReplication(structuredClone(resp.data));
@@ -211,7 +304,7 @@ export const Replication: React.FC = () => {
         const resp = await axios.patch(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/form`,
           { form: newForm.trim() },
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setReplication(resp.data);
         setLocalReplication(structuredClone(resp.data));
@@ -236,7 +329,7 @@ export const Replication: React.FC = () => {
       try {
         const resp = await axios.delete(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/form`,
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setReplication(resp.data);
         setLocalReplication(structuredClone(resp.data));
@@ -264,7 +357,7 @@ export const Replication: React.FC = () => {
           import.meta.env.VITE_APP_BACKEND
         }/api/v1/replications/${id}/regenerate-code`,
         {},
-        { headers: { Authorization: `Bearer ${adminSecret}` } }
+        buildRequestConfig()
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
@@ -281,6 +374,31 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const regenerateShareToken = async () => {
+    if (!isAdmin) return;
+    try {
+      const resp = await axios.patch(
+        `${
+          import.meta.env.VITE_APP_BACKEND
+        }/api/v1/replications/${id}/regenerate-share-token`,
+        {},
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      toast.success("Share token regenerated successfully", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error("Error regenerating share token", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      console.error("Regenerate share token error:", err);
+    }
+  };
+
   // Toggle active state
   const toggleActive = async () => {
     if (!replication) return;
@@ -290,7 +408,7 @@ export const Replication: React.FC = () => {
           import.meta.env.VITE_APP_BACKEND
         }/api/v1/replications/${id}/toggle-active`,
         {},
-        { headers: { Authorization: `Bearer ${adminSecret}` } }
+        buildRequestConfig()
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
@@ -319,7 +437,7 @@ export const Replication: React.FC = () => {
           import.meta.env.VITE_APP_BACKEND
         }/api/v1/replications/${id}/toggle-repeatable`,
         {},
-        { headers: { Authorization: `Bearer ${adminSecret}` } }
+        buildRequestConfig()
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
@@ -339,6 +457,34 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const toggleShared = async () => {
+    if (!replication || !isAdmin) return;
+    try {
+      const resp = await axios.patch(
+        `${
+          import.meta.env.VITE_APP_BACKEND
+        }/api/v1/replications/${id}/toggle-shared`,
+        {},
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      const message = resp.data.isShared
+        ? "Replication sharing enabled"
+        : "Replication sharing disabled";
+      toast.success(message, {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error("Error toggling shared access", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      console.error("Update error:", err);
+    }
+  };
+
   const toggleAskSolution = async (idx: number) => {
     if (!replication) return;
     const leiaId = replication.experiment.leias[idx].id;
@@ -348,7 +494,7 @@ export const Replication: React.FC = () => {
           import.meta.env.VITE_APP_BACKEND
         }/api/v1/replications/${id}/leia/${leiaId}/toggle-ask-solution`,
         {},
-        { headers: { Authorization: `Bearer ${adminSecret}` } }
+        buildRequestConfig()
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
@@ -375,7 +521,7 @@ export const Replication: React.FC = () => {
           import.meta.env.VITE_APP_BACKEND
         }/api/v1/replications/${id}/leia/${leiaId}/toggle-evaluate-solution`,
         {},
-        { headers: { Authorization: `Bearer ${adminSecret}` } }
+        buildRequestConfig()
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
@@ -445,7 +591,7 @@ export const Replication: React.FC = () => {
             import.meta.env.VITE_APP_BACKEND
           }/api/v1/replications/${replicationId}/leia/${localLeiaId}/runner-configuration`,
           localLeiaRunnerConfiguration,
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setReplication(resp.data);
         setLocalReplication(structuredClone(resp.data));
@@ -466,7 +612,7 @@ export const Replication: React.FC = () => {
   if (loading || !replication || !localReplication) {
     return (
       <div className="min-h-screen">
-        <Navbar />
+        {isAdmin && <Navbar />}
         <div className="py-20 text-center">Loading replication...</div>
       </div>
     );
@@ -474,7 +620,7 @@ export const Replication: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
+      {isAdmin && <Navbar />}
       <ToastContainer />
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
@@ -483,13 +629,15 @@ export const Replication: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-800 mr-2">
               {replication.name}
             </h1>
-            <button
-              onClick={() => setIsNewNameModalOpen(true)}
-              className="flex text-center items-center space-x-1 text-blue-600 hover:underline"
-            >
-              <PencilIcon className="h-4 w-4" />
-              <span className="text-sm">Rename</span>
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setIsNewNameModalOpen(true)}
+                className="flex text-center items-center space-x-1 text-blue-600 hover:underline"
+              >
+                <PencilIcon className="h-4 w-4" />
+                <span className="text-sm">Rename</span>
+              </button>
+            )}
           </div>
           <div className="flex items-center space-x-4">
             <Link
@@ -515,8 +663,50 @@ export const Replication: React.FC = () => {
                 onChange={toggleRepeatable}
               ></Switch>
             </label>
+            {isAdmin && (
+              <label className="text-center flex items-center">
+                <ShareIcon className="h-4 w-4 text-gray-600" />
+                <span className="text-sm text-gray-700 mx-2">Shared</span>
+                <Switch
+                  checked={replication.isShared}
+                  onChange={toggleShared}
+                ></Switch>
+              </label>
+            )}
           </div>
         </div>
+
+        {isAdmin && replication.isShared && replication.shareToken && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-6 flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-sm text-purple-900 font-semibold">
+                  Share token:{" "}
+                  <span className="font-mono">{replication.shareToken}</span>
+                </p>
+                <p className="text-xs text-purple-700 mt-1">
+                  Anyone with this link can manage the replication.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={handleCopyShareLink}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                >
+                  <ClipboardDocumentCheckIcon className="h-4 w-4" />
+                  {copiedShareLink ? "Copied Link" : "Copy Share Link"}
+                </button>
+                <button
+                  onClick={regenerateShareToken}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white text-purple-700 border border-purple-300 rounded-lg hover:bg-purple-100 transition-colors text-sm"
+                >
+                  <ArrowPathIcon className="h-4 w-4" />
+                  Regenerate Token
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/*Information*/}
         <h3 className="text-lg font-semibold">Replication information</h3>

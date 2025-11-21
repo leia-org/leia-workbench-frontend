@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import axios from 'axios';
-import { Navbar } from '../components/Navbar';
-import { ArrowDownTrayIcon, ArrowLeftIcon, UserCircleIcon } from '@heroicons/react/24/solid';
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
+import axios, { AxiosRequestConfig } from "axios";
+import { Navbar } from "../components/Navbar";
+import { ArrowDownTrayIcon, ArrowLeftIcon, UserCircleIcon } from "@heroicons/react/24/solid";
 
 interface Message {
   id: string;
@@ -24,67 +24,127 @@ interface Session {
   } | null;
 }
 
+const REPLICATION_TOKENS_KEY = "replicationTokens";
+
+const readStoredReplicationTokens = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(REPLICATION_TOKENS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 export const Conversations: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [conversations, setConversations] = useState<Session[]>([]);
-  const [replicationName, setReplicationName] = useState<string>('');
+  const [replicationName, setReplicationName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [editingScore, setEditingScore] = useState<string | null>(null);
-  const [scoreValue, setScoreValue] = useState<string>('');
-  const adminSecret = localStorage.getItem('adminSecret');
+  const [scoreValue, setScoreValue] = useState<string>("");
+  const adminSecret = localStorage.getItem("adminSecret");
+  const isAdmin = Boolean(adminSecret);
+  const [replicationToken, setReplicationToken] = useState<string | null>(null);
+  const [tokenReady, setTokenReady] = useState(false);
 
   useEffect(() => {
+    if (!id) return;
+    setTokenReady(false);
+    const tokens = readStoredReplicationTokens();
+    const searchParams = new URLSearchParams(location.search);
+    const tokenFromQuery = searchParams.get("token");
+
+    if (tokenFromQuery) {
+      tokens[id] = tokenFromQuery;
+      localStorage.setItem(REPLICATION_TOKENS_KEY, JSON.stringify(tokens));
+      setReplicationToken(tokenFromQuery);
+    } else {
+      setReplicationToken(tokens[id] || null);
+    }
+    setTokenReady(true);
+  }, [id, location.search]);
+
+  const buildRequestConfig = (
+    config: AxiosRequestConfig = {}
+  ): AxiosRequestConfig => {
+    const headers = { ...(config.headers || {}) };
+    if (adminSecret) {
+      headers.Authorization = `Bearer ${adminSecret}`;
+    }
+
+    const params = { ...(config.params || {}) };
+    if (replicationToken) {
+      params.token = replicationToken;
+    }
+
+    const finalConfig: AxiosRequestConfig = { ...config };
+    if (Object.keys(headers).length > 0) {
+      finalConfig.headers = headers;
+    }
+    if (Object.keys(params).length > 0) {
+      finalConfig.params = params;
+    }
+    return finalConfig;
+  };
+
+  useEffect(() => {
+    if (!tokenReady || !id) return;
     const fetchConversations = async () => {
       try {
-        // Fetch replication info
         const repResp = await axios.get(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}`,
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setReplicationName(repResp.data.name);
 
-        // Fetch conversations
         const convResp = await axios.get<Session[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/conversations`,
-          { headers: { Authorization: `Bearer ${adminSecret}` } }
+          buildRequestConfig()
         );
         setConversations(convResp.data);
       } catch (err: any) {
         if (axios.isAxiosError(err) && err.response?.status === 403) {
-          navigate('/login');
+          if (replicationToken) {
+            alert("Invalid or expired replication token");
+          } else {
+            navigate("/login");
+          }
         } else {
-          console.error('Load error:', err);
+          console.error("Load error:", err);
         }
       } finally {
         setLoading(false);
       }
     };
     fetchConversations();
-  }, [id, adminSecret, navigate]);
+  }, [id, adminSecret, navigate, replicationToken, tokenReady]);
 
   const handleDownloadCSV = async () => {
     try {
       const response = await axios.get(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/conversations/csv`,
-        {
-          headers: { Authorization: `Bearer ${adminSecret}` },
-          responseType: 'blob',
-        }
+        buildRequestConfig({ responseType: "blob" })
       );
 
-      const blob = new Blob([response.data], { type: 'text/csv' });
+      const blob = new Blob([response.data], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
-      link.setAttribute('download', `${replicationName.replace(/\s+/g, '_')}_conversations.csv`);
+      link.setAttribute(
+        "download",
+        `${replicationName.replace(/\s+/g, "_")}_conversations.csv`
+      );
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Download error:', err);
+      console.error("Download error:", err);
     }
   };
 
@@ -108,7 +168,7 @@ export const Conversations: React.FC = () => {
       await axios.patch(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/sessions/${sessionId}/score`,
         { score },
-        { headers: { Authorization: `Bearer ${adminSecret}` } }
+        buildRequestConfig()
       );
 
       // Update local state
@@ -121,8 +181,8 @@ export const Conversations: React.FC = () => {
       setEditingScore(null);
       setScoreValue('');
     } catch (err) {
-      console.error('Error updating score:', err);
-      alert('Failed to update score');
+      console.error("Error updating score:", err);
+      alert("Failed to update score");
     }
   };
 
@@ -134,7 +194,7 @@ export const Conversations: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100">
-        <Navbar />
+        {isAdmin && <Navbar />}
         <div className="flex items-center justify-center h-96">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
@@ -144,7 +204,7 @@ export const Conversations: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <Navbar />
+      {isAdmin && <Navbar />}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
