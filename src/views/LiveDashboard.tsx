@@ -99,7 +99,6 @@ export const LiveDashboard = () => {
     url: "",
   });
   const adminSecret = localStorage.getItem("adminSecret");
-  const isAdmin = Boolean(adminSecret);
   const REPLICATION_TOKENS_KEY = "replicationTokens";
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
