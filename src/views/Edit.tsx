@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import mermaid from "mermaid";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
 
@@ -344,7 +343,7 @@ interface Configuration {
 export const Edit = () => {
   const navigate = useNavigate();
   const [formUrl, setFormUrl] = useState<string | null>(null);
-  const [solutionFormat, setSolutionFormat] = useState<string>("mermaid");
+  const [solutionFormat, setSolutionFormat] = useState<string>("text");
   const [code, setCode] = useState(() => {
     const savedCode = localStorage.getItem("mermaid_code");
     if (savedCode) {
@@ -371,6 +370,7 @@ export const Edit = () => {
   );
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [spectateUrl, setSpectateUrl] = useState<string | null>(null);
+  const [problemSolution, setProblemSolution] = useState<string | null>(null);
 
   // Load initial data from localStorage
   useEffect(() => {
@@ -480,6 +480,7 @@ export const Edit = () => {
           );
           setConcludedSvg(svg.svg);
         }
+        setProblemSolution(exerciseSolution);
         setConcluded(true);
         setShowAlert(false);
       }
@@ -630,29 +631,13 @@ export const Edit = () => {
         ) : (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
             <h2 className="text-gray-500 px-4 py-2">Problem Solution</h2>
-            <TransformWrapper
-              initialScale={1}
-              minScale={0.5}
-              maxScale={4}
-              centerOnInit={true}
-              wheel={{ wheelDisabled: true }}
-            >
-              <TransformComponent
-                wrapperClass="!w-full !h-full"
-                contentClass="flex items-center justify-center p-4"
-              >
-                {concludedSvg ? (
-                  <div
-                    dangerouslySetInnerHTML={{ __html: concludedSvg }}
-                    className="transform-component-module_content__uCDPE"
-                  />
-                ) : (
-                  <div className="text-gray-500">
-                    Loading concluded diagram...
-                  </div>
-                )}
-              </TransformComponent>
-            </TransformWrapper>
+            <FormatPreview
+              code={problemSolution || ""}
+              format={solutionFormat}
+              mermaidSvg={concludedSvg}
+              error={error}
+              renderControls={(utils) => <DiagramControls {...utils} />}
+            />
           </div>
         )}
 
@@ -666,26 +651,18 @@ export const Edit = () => {
 
         {/* Preview Panel */}
         <div style={{ width: `${100 - editorWidth}%` }} className="h-full">
+          {concluded && (
+            <h2 className="text-gray-500 px-4 py-2">Your Solution</h2>
+          )}
           <FormatPreview
             code={code}
             format={solutionFormat}
             mermaidSvg={mermaidSvg}
             error={error}
-            concluded={concluded}
             renderControls={(utils) => <DiagramControls {...utils} />}
           />
         </div>
       </main>
-      {concluded ? (
-        <div className="h-[300px] w-full">
-          <FormatEditor
-            value={code}
-            onChange={handleEditorChange}
-            format={solutionFormat}
-            onError={(err: any) => setError(err)}
-          />
-        </div>
-      ) : null}
 
       {showEvaluation && evaluation && (
         <EvaluationModal
