@@ -67,6 +67,41 @@ interface Replication {
   };
 }
 
+const VOICE_OPTIONS: Array<{
+  value: string;
+  label: string;
+  gender: string;
+}> = [
+  { value: "alloy", label: "Alloy - Female", gender: "female" },
+  { value: "ash", label: "Ash - Male", gender: "male" },
+  { value: "ballad", label: "Ballad - Male", gender: "male" },
+  { value: "cedar", label: "Cedar - Male", gender: "male" },
+  { value: "coral", label: "Coral - Female", gender: "female" },
+  { value: "echo", label: "Echo - Male", gender: "male" },
+  { value: "marin", label: "Marin - Female", gender: "female" },
+  { value: "sage", label: "Sage - Female", gender: "female" },
+  { value: "shimmer", label: "Shimmer - Female", gender: "female" },
+  { value: "verse", label: "Verse - Male", gender: "male" },
+];
+
+const getFilteredVoiceOptions = (
+  pronoun: string | undefined,
+  all = false,
+  selected: string
+) => {
+  if (!pronoun || all || (pronoun != "he" && pronoun != "she")) {
+    return VOICE_OPTIONS;
+  } else if (pronoun === "he") {
+    return VOICE_OPTIONS.filter(
+      (option) => option.gender === "male" || option.value === selected
+    );
+  } else if (pronoun === "she") {
+    return VOICE_OPTIONS.filter(
+      (option) => option.gender === "female" || option.value === selected
+    );
+  }
+};
+
 const REPLICATION_TOKENS_KEY = "replicationTokens";
 
 const readStoredReplicationTokens = (): Record<string, string> => {
@@ -97,6 +132,7 @@ export const Replication: React.FC = () => {
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [showAllVoices, setShowAllVoices] = useState<boolean>(false);
 
   // Modals
   const [newName, setNewName] = useState<string>("");
@@ -946,9 +982,27 @@ export const Replication: React.FC = () => {
                           }
                           className="border border-gray-300 rounded px-2 py-1 text-sm"
                         >
-                          <option value="echo">Echo</option>
-                          <option value="marin">Marin</option>
+                          {getFilteredVoiceOptions(
+                            item.leia.spec.persona.spec.subjectPronoum,
+                            showAllVoices,
+                            item.runnerConfiguration.realtimeConfig?.voice ||
+                              "marin"
+                          )?.map((voice) => (
+                            <option key={voice.value} value={voice.value}>
+                              {voice.label}
+                            </option>
+                          ))}
                         </select>
+                        <label className="text-center flex items-center">
+                          <EyeIcon className="h-4 w-4 text-gray-600" />
+                          <span className="text-sm text-gray-700 mx-2">
+                            Show all voices
+                          </span>
+                          <Switch
+                            checked={showAllVoices}
+                            onChange={() => setShowAllVoices(!showAllVoices)}
+                          ></Switch>
+                        </label>
                       </div>
                       <div className="text-xs text-purple-600 flex items-center gap-1">
                         <svg
