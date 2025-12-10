@@ -32,6 +32,7 @@ export const SpectatorView = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [mode, setMode] = useState("standard");
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -61,19 +62,33 @@ export const SpectatorView = () => {
           }/api/v1/spectator/sessions/${sessionId}?token=${token}`
         );
 
-        setSession(response.data.session);
-        setIsActive(response.data.isActive);
+        console.log(response);
 
-        // Extract messages from populated session
-        const sessionMessages = response.data.session.messages || [];
-        setMessages(
-          sessionMessages.map((msg: any) => ({
-            id: msg.id,
-            text: msg.text,
-            isLeia: msg.isLeia,
-            timestamp: new Date(msg.timestamp),
-          }))
-        );
+        setSession(response.data.session);
+        setIsActive(!response.data.session.finishedAt);
+        setMode(response.data.leia.configuration.mode);
+
+        let messages = response.data.messages;
+
+        if (
+          response.data.leia.configuration?.mode === "transcription" &&
+          response.data.leia.configuration?.data?.messages
+        ) {
+          messages = response.data.leia.configuration.data.messages;
+        }
+
+        const sortedMessages = messages
+          .sort(
+            (a: Message, b: Message) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          )
+          .map((msg: Message) => ({
+            ...msg,
+            id:
+              msg.id ||
+              `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          }));
+        setMessages(sortedMessages);
 
         setLoading(false);
         setTimeout(scrollToBottom, 100);
@@ -196,6 +211,15 @@ export const SpectatorView = () => {
               }`}
             >
               {isActive ? "Active" : "Finished"}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                mode == "standard"
+                  ? "bg-blue-100 text-blue-700"
+                  : "bg-orange-100 text-orange-700"
+              }`}
+            >
+              {mode}
             </span>
           </div>
         </div>

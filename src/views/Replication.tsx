@@ -22,6 +22,7 @@ import {
   DocumentTextIcon,
   LightBulbIcon,
   ShareIcon,
+  BeakerIcon,
 } from "@heroicons/react/24/solid";
 
 interface Replication {
@@ -45,7 +46,11 @@ interface Replication {
         askSolution: boolean;
         evaluateSolution: boolean;
       };
-      leia: { metadata: { name: string }; spec: any };
+      leia: {
+        id: any;
+        metadata: { name: string };
+        spec: any;
+      };
       runnerConfiguration: {
         provider: string;
         audioMode?: "realtime" | null;
@@ -66,6 +71,41 @@ interface Replication {
     }>;
   };
 }
+
+const VOICE_OPTIONS: Array<{
+  value: string;
+  label: string;
+  gender: string;
+}> = [
+  { value: "alloy", label: "Alloy - Female", gender: "female" },
+  { value: "ash", label: "Ash - Male", gender: "male" },
+  { value: "ballad", label: "Ballad - Male", gender: "male" },
+  { value: "cedar", label: "Cedar - Male", gender: "male" },
+  { value: "coral", label: "Coral - Female", gender: "female" },
+  { value: "echo", label: "Echo - Male", gender: "male" },
+  { value: "marin", label: "Marin - Female", gender: "female" },
+  { value: "sage", label: "Sage - Female", gender: "female" },
+  { value: "shimmer", label: "Shimmer - Female", gender: "female" },
+  { value: "verse", label: "Verse - Male", gender: "male" },
+];
+
+const getFilteredVoiceOptions = (
+  pronoun: string | undefined,
+  all = false,
+  selected: string
+) => {
+  if (!pronoun || all || (pronoun != "he" && pronoun != "she")) {
+    return VOICE_OPTIONS;
+  } else if (pronoun === "he") {
+    return VOICE_OPTIONS.filter(
+      (option) => option.gender === "male" || option.value === selected
+    );
+  } else if (pronoun === "she") {
+    return VOICE_OPTIONS.filter(
+      (option) => option.gender === "female" || option.value === selected
+    );
+  }
+};
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
 
@@ -97,6 +137,10 @@ export const Replication: React.FC = () => {
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [showAllVoices, setShowAllVoices] = useState<boolean>(false);
+  const [startingSessionLeiaId, setStartingSessionLeiaId] = useState<
+    string | null
+  >(null);
 
   // Modals
   const [newName, setNewName] = useState<string>("");
@@ -609,6 +653,28 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const startTestSession = async (leiaId: string, replicationId: string) => {
+    if (loading || startingSessionLeiaId || !leiaId || !replicationId) return;
+    setStartingSessionLeiaId(leiaId);
+    try {
+      const resp = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/test`,
+        { leiaId, replicationId },
+        buildRequestConfig()
+      );
+      const sessionId = resp.data.sessionId;
+      navigate(`/chat/${sessionId}`);
+    } catch (err) {
+      toast.error("Error starting test session", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      console.error("Start test session error:", err);
+    } finally {
+      setStartingSessionLeiaId(null);
+    }
+  };
+
   if (loading || !replication || !localReplication) {
     return (
       <div className="min-h-screen">
@@ -814,188 +880,242 @@ export const Replication: React.FC = () => {
         {/* Leias section */}
         <h3 className="text-lg font-semibold">Leia configurations</h3>
         <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6 mt-2">
-          {localReplication.experiment.leias.map((item, idx) => (
-            <div
-              key={idx}
-              className="bg-white p-4 rounded-xl shadow flex flex-col space-y-2"
-            >
-              <div className="flex items-center justify-between">
-                <div className="font-medium">{item.leia.metadata.name}</div>
-                <button
-                  onClick={() => {
-                    setSideBarData(item.leia);
-                    setIsSidebarOpen(true);
-                  }}
-                  className="flex items-center space-x-1 text-blue-600 hover:underline"
-                >
-                  <EyeIcon className="h-4 w-4" />
-                  <span className="text-sm">View Content</span>
-                </button>
-              </div>
-              <div className="text-sm text-gray-700">
-                Sessions: <strong>{item.sessionCount}</strong>
-              </div>
-              <div className="text-sm text-gray-700">
-                Mode: <strong>{item.configuration.mode}</strong>
-              </div>
+          {localReplication.experiment.leias.map((item, idx) => {
+            const isStartingAnySession = Boolean(startingSessionLeiaId);
+            const isStartingThisSession = startingSessionLeiaId === item.id;
 
-              <div className="flex items-center space-x-8">
-                <label className="text-center flex items-center">
-                  <DocumentTextIcon className="h-4 w-4 text-gray-600" />
-                  <span className="text-sm text-gray-700 mx-2">
-                    Student solution
-                  </span>
-                  <Switch
-                    checked={item.configuration.askSolution}
-                    onChange={() => toggleAskSolution(idx)}
-                  ></Switch>
-                </label>
-                <label className="text-center flex items-center">
-                  <LightBulbIcon className="h-4 w-4 text-gray-600" />
-                  <span className="text-sm text-gray-700 mx-2">
-                    Automatic evaluation
-                  </span>
-                  <Switch
-                    checked={item.configuration.evaluateSolution}
-                    onChange={() => toggleEvaluateSolution(idx)}
-                  ></Switch>
-                </label>
-              </div>
-
-              <fieldset className="bg-white p-4 rounded-xl shadow border-solid border border-gray-400">
-                <legend>Runner</legend>
-                <div className="flex items-center space-x-2 mb-3">
-                  <div className="text-sm text-gray-700">Provider:</div>
-                  <select
-                    value={item.runnerConfiguration.provider}
-                    onChange={(e) =>
-                      handleLocalLeiaChange(
-                        idx,
-                        "runnerConfiguration.provider",
-                        e.target.value
-                      )
-                    }
-                    className="border border-gray-300 rounded-md p-2"
-                  >
-                    <option value="default">default</option>
-                    <option value="openai-assistant">openai-assistant</option>
-                  </select>
+            return (
+              <div
+                key={idx}
+                className="bg-white p-4 rounded-xl shadow flex flex-col space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">{item.leia.metadata.name}</div>
+                  <div className="flex">
+                    <button
+                      onClick={() => {
+                        setSideBarData(item.leia);
+                        setIsSidebarOpen(true);
+                      }}
+                      className="flex items-center space-x-1 text-blue-600 hover:underline"
+                    >
+                      <EyeIcon className="h-4 w-4" />
+                      <span className="text-sm">View Content</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        startTestSession(item.id, replication.id);
+                      }}
+                      disabled={isStartingAnySession}
+                      className={`flex items-center space-x-1 text-gray-600 hover:underline ${
+                        isStartingAnySession
+                          ? "opacity-60 cursor-not-allowed"
+                          : ""
+                      }`}
+                    >
+                      {isStartingThisSession ? (
+                        <>
+                          <ArrowPathIcon className="h-4 w-4 text-gray-600 ml-4 animate-spin" />
+                          <span className="text-sm text-gray-700">
+                            Starting...
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <BeakerIcon className="h-4 w-4 text-gray-600 ml-4" />
+                          <span className="text-sm text-gray-700">
+                            Test Session
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-700">
+                  Sessions: <strong>{item.sessionCount}</strong>
+                </div>
+                <div className="text-sm text-gray-700">
+                  Mode: <strong>{item.configuration.mode}</strong>
                 </div>
 
-                {/* Audio Mode Configuration */}
-                <div className="border-t pt-3 mt-3">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <label className="text-sm text-gray-700 font-medium">
-                      Audio Mode:
-                    </label>
+                <div className="flex items-center space-x-8">
+                  <label className="text-center flex items-center">
+                    <DocumentTextIcon className="h-4 w-4 text-gray-600" />
+                    <span className="text-sm text-gray-700 mx-2">
+                      Student solution
+                    </span>
                     <Switch
-                      checked={
-                        item.runnerConfiguration.audioMode === "realtime"
+                      checked={item.configuration.askSolution}
+                      onChange={() => toggleAskSolution(idx)}
+                    ></Switch>
+                  </label>
+                  <label className="text-center flex items-center">
+                    <LightBulbIcon className="h-4 w-4 text-gray-600" />
+                    <span className="text-sm text-gray-700 mx-2">
+                      Automatic evaluation
+                    </span>
+                    <Switch
+                      checked={item.configuration.evaluateSolution}
+                      onChange={() => toggleEvaluateSolution(idx)}
+                    ></Switch>
+                  </label>
+                </div>
+
+                <fieldset className="bg-white p-4 rounded-xl shadow border-solid border border-gray-400">
+                  <legend>Runner</legend>
+                  <div className="flex items-center space-x-2 mb-3">
+                    <div className="text-sm text-gray-700">Provider:</div>
+                    <select
+                      value={item.runnerConfiguration.provider}
+                      onChange={(e) =>
+                        handleLocalLeiaChange(
+                          idx,
+                          "runnerConfiguration.provider",
+                          e.target.value
+                        )
                       }
-                      onChange={(checked) => {
-                        if (checked) {
-                          handleLocalLeiaChange(
-                            idx,
-                            "runnerConfiguration.audioMode",
-                            "realtime"
-                          );
-                          // Initialize default realtimeConfig if not exists
-                          if (!item.runnerConfiguration.realtimeConfig) {
-                            handleLocalLeiaChange(
-                              idx,
-                              "runnerConfiguration.realtimeConfig",
-                              {
-                                model: "gpt-4o-realtime-preview",
-                                voice: "marin",
-                                instructions: "",
-                                turnDetection: {
-                                  type: "server_vad",
-                                  threshold: 0.5,
-                                  prefix_padding_ms: 300,
-                                  silence_duration_ms: 500,
-                                },
-                              }
-                            );
-                          }
-                        } else {
-                          handleLocalLeiaChange(
-                            idx,
-                            "runnerConfiguration.audioMode",
-                            null
-                          );
-                        }
-                      }}
-                    />
+                      className="border border-gray-300 rounded-md p-2"
+                    >
+                      <option value="default">default</option>
+                      <option value="openai-assistant">openai-assistant</option>
+                    </select>
                   </div>
 
-                  {item.runnerConfiguration.audioMode === "realtime" && (
-                    <div className="ml-4 space-y-2 text-sm">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-gray-600">Voice:</span>
-                        <select
-                          value={
-                            item.runnerConfiguration.realtimeConfig?.voice ||
-                            "marin"
-                          }
-                          onChange={(e) =>
+                  {/* Audio Mode Configuration */}
+                  <div className="border-t pt-3 mt-3">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <label className="text-sm text-gray-700 font-medium">
+                        Audio Mode:
+                      </label>
+                      <Switch
+                        checked={
+                          item.runnerConfiguration.audioMode === "realtime"
+                        }
+                        onChange={(checked) => {
+                          if (checked) {
                             handleLocalLeiaChange(
                               idx,
-                              "runnerConfiguration.realtimeConfig.voice",
-                              e.target.value
-                            )
+                              "runnerConfiguration.audioMode",
+                              "realtime"
+                            );
+                            // Initialize default realtimeConfig if not exists
+                            if (!item.runnerConfiguration.realtimeConfig) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.realtimeConfig",
+                                {
+                                  model: "gpt-4o-realtime-preview",
+                                  voice: "marin",
+                                  instructions: "",
+                                  turnDetection: {
+                                    type: "server_vad",
+                                    threshold: 0.5,
+                                    prefix_padding_ms: 300,
+                                    silence_duration_ms: 500,
+                                  },
+                                }
+                              );
+                            }
+                          } else {
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.audioMode",
+                              null
+                            );
                           }
-                          className="border border-gray-300 rounded px-2 py-1 text-sm"
-                        >
-                          <option value="echo">Echo</option>
-                          <option value="marin">Marin</option>
-                        </select>
-                      </div>
-                      <div className="text-xs text-purple-600 flex items-center gap-1">
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                          />
-                        </svg>
-                        Real-time voice conversation enabled
-                      </div>
+                        }}
+                      />
                     </div>
-                  )}
-                </div>
 
-                <div className="flex w-full gap-2">
-                  <button
-                    onClick={() => handleLocalLeiaReset(idx)}
-                    className="mt-2 bg-gray-400 text-white rounded-lg px-4 py-2 hover:bg-gray-500 transition duration-200 w-full"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    onClick={() => handleLeiaUpdate(idx)}
-                    disabled={
-                      JSON.stringify(localReplication.experiment.leias[idx]) ===
-                      JSON.stringify(replication.experiment.leias[idx])
-                    }
-                    className={`mt-2 rounded-lg px-4 py-2 transition duration-200 w-full text-white ${
-                      JSON.stringify(localReplication.experiment.leias[idx]) ===
-                      JSON.stringify(replication.experiment.leias[idx])
-                        ? "bg-blue-300 cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-700"
-                    }`}
-                  >
-                    Save
-                  </button>
-                </div>
-              </fieldset>
-            </div>
-          ))}
+                    {item.runnerConfiguration.audioMode === "realtime" && (
+                      <div className="ml-4 space-y-2 text-sm">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-600">Voice:</span>
+                          <select
+                            value={
+                              item.runnerConfiguration.realtimeConfig?.voice ||
+                              "marin"
+                            }
+                            onChange={(e) =>
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.realtimeConfig.voice",
+                                e.target.value
+                              )
+                            }
+                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                          >
+                            {getFilteredVoiceOptions(
+                              item.leia.spec.persona.spec.subjectPronoum,
+                              showAllVoices,
+                              item.runnerConfiguration.realtimeConfig?.voice ||
+                                "marin"
+                            )?.map((voice) => (
+                              <option key={voice.value} value={voice.value}>
+                                {voice.label}
+                              </option>
+                            ))}
+                          </select>
+                          <label className="text-center flex items-center">
+                            <EyeIcon className="h-4 w-4 text-gray-600" />
+                            <span className="text-sm text-gray-700 mx-2">
+                              Show all voices
+                            </span>
+                            <Switch
+                              checked={showAllVoices}
+                              onChange={() => setShowAllVoices(!showAllVoices)}
+                            ></Switch>
+                          </label>
+                        </div>
+                        <div className="text-xs text-purple-600 flex items-center gap-1">
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                            />
+                          </svg>
+                          Real-time voice conversation enabled
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex w-full gap-2">
+                    <button
+                      onClick={() => handleLocalLeiaReset(idx)}
+                      className="mt-2 bg-gray-400 text-white rounded-lg px-4 py-2 hover:bg-gray-500 transition duration-200 w-full"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={() => handleLeiaUpdate(idx)}
+                      disabled={
+                        JSON.stringify(
+                          localReplication.experiment.leias[idx]
+                        ) === JSON.stringify(replication.experiment.leias[idx])
+                      }
+                      className={`mt-2 rounded-lg px-4 py-2 transition duration-200 w-full text-white ${
+                        JSON.stringify(
+                          localReplication.experiment.leias[idx]
+                        ) === JSON.stringify(replication.experiment.leias[idx])
+                          ? "bg-blue-300 cursor-not-allowed"
+                          : "bg-blue-600 hover:bg-blue-700"
+                      }`}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </fieldset>
+              </div>
+            );
+          })}
         </div>
 
         {/* Modals */}
