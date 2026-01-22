@@ -6,7 +6,6 @@ import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { AudioControls } from "../components/AudioControls";
 
-
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
     <div
@@ -88,35 +87,46 @@ export const Chat = () => {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
-  const [audioMode, setAudioMode] = useState<'text' | 'audio'>('text');
+  const [audioMode, setAudioMode] = useState<"text" | "audio">("text");
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
+  const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
 
   const realtimeAudio = useRealtimeAudio({
-    sessionId: sessionId || '',
-    enabled: audioMode === 'audio',
-    onTranscriptComplete: useCallback((transcript: string, isLeia: boolean, timestamp: Date, sequence: number) => {
-      const newMessage: Message = {
-        text: transcript,
-        timestamp: timestamp,
-        isLeia,
-        id: generateMessageId(),
-        sequence: sequence,
-      };
-      setMessages((prev) => {
-        const updated = [...prev, newMessage];
+    sessionId: sessionId || "",
+    enabled: audioMode === "audio",
+    onTranscriptComplete: useCallback(
+      (
+        transcript: string,
+        isLeia: boolean,
+        timestamp: Date,
+        sequence: number
+      ) => {
+        const newMessage: Message = {
+          text: transcript,
+          timestamp: timestamp,
+          isLeia,
+          id: generateMessageId(),
+          sequence: sequence,
+        };
+        setMessages((prev) => {
+          const updated = [...prev, newMessage];
 
-        return updated.sort((a, b) => {
-          if (a.sequence !== undefined && b.sequence !== undefined) {
-            return a.sequence - b.sequence;
-          }
-          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+          return updated.sort((a, b) => {
+            if (a.sequence !== undefined && b.sequence !== undefined) {
+              return a.sequence - b.sequence;
+            }
+            return (
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+            );
+          });
         });
-      });
-    }, []),
+      },
+      []
+    ),
     onError: useCallback((error: Error) => {
-      console.error('Realtime audio error:', error);
+      console.error("Realtime audio error:", error);
       setLoadError(error.message);
     }, []),
   });
@@ -230,6 +240,9 @@ export const Chat = () => {
         setConfiguration(response.data.leia.configuration);
         setReplication(response.data.replication);
         setSession(response.data.session);
+        setTooltipMessage(
+          response.data.leia.leia.spec.behaviour.spec.tooltip || null
+        );
         localStorage.setItem("sessionId", response.data.session.id);
         localStorage.setItem(
           "exercise",
@@ -246,9 +259,9 @@ export const Chat = () => {
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
 
-        if (response.data.leia?.audioMode === 'realtime') {
-          console.log('Audio mode detected, switching to audio interface');
-          setAudioMode('audio');
+        if (response.data.leia?.audioMode === "realtime") {
+          console.log("Audio mode detected, switching to audio interface");
+          setAudioMode("audio");
         }
         let messages = response.data.messages;
 
@@ -826,13 +839,14 @@ export const Chat = () => {
                       <button
                         onClick={() =>
                           copyToInput(
-                            "Hi, my name is (...) and I am here to (...), nice to meet you!"
+                            tooltipMessage ||
+                              "Hi, my name is (...) and I am here to (...), nice to meet you!"
                           )
                         }
                         className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
                       >
-                        "Hi, my name is (...) and I am here to (...), nice to
-                        meet you!"
+                        {tooltipMessage ||
+                          "Hi, my name is (...) and I am here to (...), nice to meet you!"}
                       </button>
                       <p className="text-xs text-blue-600 mt-1">
                         Click to copy to input
@@ -903,20 +917,23 @@ export const Chat = () => {
                 placeholder={
                   configuration?.mode === "transcription"
                     ? "Disabled in transcription exercise"
-                    : audioMode === 'audio'
+                    : audioMode === "audio"
                     ? "Audio mode enabled - Use the audio controls to speak"
                     : "Type a message... (Shift+Enter for new line)"
                 }
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
-                disabled={configuration?.mode === "transcription" || audioMode === 'audio'}
+                disabled={
+                  configuration?.mode === "transcription" ||
+                  audioMode === "audio"
+                }
                 rows={1}
               />
               <button
                 type="submit"
                 disabled={
                   configuration?.mode === "transcription" ||
-                  audioMode === 'audio' ||
+                  audioMode === "audio" ||
                   !newMessageText.trim() ||
                   sendingMessage ||
                   retryingMessage
@@ -1070,7 +1087,7 @@ export const Chat = () => {
       )}
 
       {/* Audio Controls Floating Popup - Only shown in audio mode */}
-      {audioMode === 'audio' && (
+      {audioMode === "audio" && (
         <AudioControls
           isConnected={realtimeAudio.isConnected}
           isMuted={realtimeAudio.isMuted}
