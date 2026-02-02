@@ -841,22 +841,11 @@ export const Chat = () => {
                     </div>
                     <div className="flex-1">
                       <p className="text-sm text-blue-800 mb-2">
-                        <strong>Message example:</strong>
+                        <strong>Try saying:</strong>
                       </p>
-                      <button
-                        onClick={() =>
-                          copyToInput(
-                            tooltipMessage ||
-                              "Hi, my name is (...) and I am here to (...), nice to meet you!",
-                          )
-                        }
-                        className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
-                      >
+                      <p className="text-sm text-blue-700 bg-blue-100 rounded px-3 py-2">
                         {tooltipMessage ||
                           "Hi, my name is (...) and I am here to (...), nice to meet you!"}
-                      </button>
-                      <p className="text-xs text-blue-600 mt-1">
-                        Click to copy to input
                       </p>
                     </div>
                     <button
