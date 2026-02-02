@@ -75,10 +75,10 @@ export const Chat = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [configuration, setConfiguration] = useState<Configuration | null>(
-    null
+    null,
   );
   const [replication, setReplication] = useState<Replication | null>(null);
-  const [showInstructions, setShowInstructions] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
@@ -96,12 +96,13 @@ export const Chat = () => {
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
     enabled: audioMode === "audio",
+    forceMute: showInstructions,
     onTranscriptComplete: useCallback(
       (
         transcript: string,
         isLeia: boolean,
         timestamp: Date,
-        sequence: number
+        sequence: number,
       ) => {
         const newMessage: Message = {
           text: transcript,
@@ -123,7 +124,7 @@ export const Chat = () => {
           });
         });
       },
-      []
+      [],
     ),
     onError: useCallback((error: Error) => {
       console.error("Realtime audio error:", error);
@@ -177,7 +178,7 @@ export const Chat = () => {
         }/api/v1/interactions/${sessionId}/messages`,
         {
           message: failedMessage,
-        }
+        },
       );
 
       if (response.status === 200) {
@@ -232,7 +233,7 @@ export const Chat = () => {
   const loadData = useCallback(async () => {
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`,
       );
 
       if (response.status === 200) {
@@ -241,20 +242,20 @@ export const Chat = () => {
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
-          response.data.leia.leia.spec.behaviour.spec.tooltip || null
+          response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
         localStorage.setItem("sessionId", response.data.session.id);
         localStorage.setItem(
           "exercise",
-          JSON.stringify(response.data.leia.leia.spec.problem.spec)
+          JSON.stringify(response.data.leia.leia.spec.problem.spec),
         );
         localStorage.setItem(
           "configuration",
-          JSON.stringify(response.data.leia.configuration)
+          JSON.stringify(response.data.leia.configuration),
         );
         localStorage.setItem(
           "replication",
-          JSON.stringify(response.data.replication)
+          JSON.stringify(response.data.replication),
         );
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
@@ -275,7 +276,7 @@ export const Chat = () => {
         const sortedMessages = messages
           .sort(
             (a: Message, b: Message) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
           )
           .map((msg: Message) => ({
             ...msg,
@@ -285,7 +286,7 @@ export const Chat = () => {
       }
     } catch (error: any) {
       setLoadError(
-        error.response?.data?.error || "An unexpected error occurred"
+        error.response?.data?.error || "An unexpected error occurred",
       );
     }
     setTimeout(() => {
@@ -419,7 +420,7 @@ export const Chat = () => {
         }/api/v1/interactions/${sessionId}/messages`,
         {
           message: messageText,
-        }
+        },
       );
 
       if (response.status === 200) {
@@ -458,7 +459,7 @@ export const Chat = () => {
         const response = await axios.post(
           `${
             import.meta.env.VITE_APP_BACKEND
-          }/api/v1/interactions/${sessionId}/finish`
+          }/api/v1/interactions/${sessionId}/finish`,
         );
 
         if (response.status === 200) {
@@ -468,7 +469,7 @@ export const Chat = () => {
         }
       } catch (error: any) {
         setLoadError(
-          error.response?.data?.error || "An unexpected error occurred"
+          error.response?.data?.error || "An unexpected error occurred",
         );
       } finally {
         setConcluding(false);
@@ -560,6 +561,12 @@ export const Chat = () => {
             </div>
             <div className="px-6 py-4">
               <p className="text-gray-600">{exercise?.description}</p>
+              <p className="text-gray-600 mt-4">
+                When you're ready, click the button below to start the task.
+                {audioMode === "audio"
+                  ? "Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need."
+                  : ""}
+              </p>
             </div>
             <div className="px-6 py-4 border-t flex justify-end">
               <button
@@ -668,7 +675,7 @@ export const Chat = () => {
                 window.open(
                   configuration.data.link,
                   "_blank",
-                  "noopener,noreferrer"
+                  "noopener,noreferrer",
                 )
               }
               className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center gap-3 shadow-sm"
@@ -753,7 +760,7 @@ export const Chat = () => {
                     index === messages.length - 1 &&
                     failedMessage &&
                     msg.text.includes(
-                      "This message is taking longer than usual."
+                      "This message is taking longer than usual.",
                     ) && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <button
@@ -840,7 +847,7 @@ export const Chat = () => {
                         onClick={() =>
                           copyToInput(
                             tooltipMessage ||
-                              "Hi, my name is (...) and I am here to (...), nice to meet you!"
+                              "Hi, my name is (...) and I am here to (...), nice to meet you!",
                           )
                         }
                         className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
@@ -918,8 +925,8 @@ export const Chat = () => {
                   configuration?.mode === "transcription"
                     ? "Disabled in transcription exercise"
                     : audioMode === "audio"
-                    ? "Audio mode enabled - Use the audio controls to speak"
-                    : "Type a message... (Shift+Enter for new line)"
+                      ? "Audio mode enabled - Use the audio controls to speak"
+                      : "Type a message... (Shift+Enter for new line)"
                 }
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
@@ -1090,7 +1097,8 @@ export const Chat = () => {
       {audioMode === "audio" && (
         <AudioControls
           isConnected={realtimeAudio.isConnected}
-          isMuted={realtimeAudio.isMuted}
+          isMuted={realtimeAudio.isMuted || realtimeAudio.forceMute}
+          forceMute={realtimeAudio.forceMute}
           isLeiaSpeaking={realtimeAudio.isLeiaSpeaking}
           audioElement={realtimeAudio.audioElement}
           mediaStream={realtimeAudio.mediaStream}
