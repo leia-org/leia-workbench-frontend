@@ -12,7 +12,7 @@ mermaid.initialize({
   securityLevel: "loose",
 });
 
-const defaultCode = `classDiagram
+const fallbackCode = `classDiagram
     class Person {
         +String firstName
         +String lastName
@@ -42,6 +42,25 @@ const defaultCode = `classDiagram
     Person <|-- Client
     Client "1" --> "*" Order : places
     Order "1" --> "*" Product : contains`;
+
+const getDefaultCode = () => {
+  const savedExercise = localStorage.getItem("exercise");
+  if (savedExercise) {
+    try {
+      const parsedExercise = JSON.parse(savedExercise);
+      const initialSolution =
+        typeof parsedExercise?.initialSolution === "string"
+          ? parsedExercise.initialSolution.trim()
+          : "";
+      if (initialSolution) {
+        return initialSolution;
+      }
+    } catch (error) {
+      console.warn("Failed to parse exercise from localStorage:", error);
+    }
+  }
+  return fallbackCode;
+};
 
 interface EvaluationModalProps {
   evaluation: string;
@@ -349,7 +368,7 @@ export const Edit = () => {
     if (savedCode) {
       return savedCode;
     }
-    return defaultCode;
+    return getDefaultCode();
   });
   const [mermaidSvg, setMermaidSvg] = useState<string>("");
   const [lastValidSvg, setLastValidSvg] = useState<string>("");
