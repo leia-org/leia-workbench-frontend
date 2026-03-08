@@ -23,6 +23,7 @@ import {
   LightBulbIcon,
   ShareIcon,
   BeakerIcon,
+  ChatBubbleBottomCenterIcon
 } from "@heroicons/react/24/solid";
 
 interface Replication {
@@ -1069,6 +1070,7 @@ export const Replication: React.FC = () => {
                           </label>
                         </div>
                         <div className="flex items-center space-x-2 mt-2">
+                          <ChatBubbleBottomCenterIcon className="h-4 w-4 text-gray-600" />
                           <label className="text-sm text-gray-700 font-medium">
                             Hide live transcription:
                           </label>
