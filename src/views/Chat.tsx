@@ -29,6 +29,7 @@ interface Message {
   isLeia: boolean;
   id?: string; // Agregar ID único para anclas
   sequence?: number;
+  fromAudio?: boolean;
 }
 
 interface Exercise {
@@ -88,6 +89,7 @@ export const Chat = () => {
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio">("text");
+  const [hideTranscription, setHideTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -110,6 +112,7 @@ export const Chat = () => {
           isLeia,
           id: generateMessageId(),
           sequence: sequence,
+          fromAudio: true,
         };
         setMessages((prev) => {
           const updated = [...prev, newMessage];
@@ -264,6 +267,7 @@ export const Chat = () => {
           console.log("Audio mode detected, switching to audio interface");
           setAudioMode("audio");
         }
+        setHideTranscription(Boolean(response.data.leia?.hideTranscription));
         let messages = response.data.messages;
 
         if (
@@ -714,12 +718,15 @@ export const Chat = () => {
             ref={chatMessagesRef}
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
-            {messages.map((msg, index) => (
+            {(hideTranscription
+              ? messages.filter((msg) => !msg.fromAudio)
+              : messages
+            ).map((msg, index, visibleMessages) => (
               <div
                 key={msg.id || index}
                 id={`message-${msg.id || index}`}
                 ref={
-                  msg.isLeia && index === messages.length - 1
+                  msg.isLeia && index === visibleMessages.length - 1
                     ? lastLeiaMessageRef
                     : null
                 }
