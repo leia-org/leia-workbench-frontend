@@ -5,6 +5,7 @@ import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { AudioControls } from "../components/AudioControls";
+import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -718,6 +719,9 @@ export const Chat = () => {
             ref={chatMessagesRef}
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
+            {audioMode === "audio" && hideTranscription && (
+              <LiveTranscriptionNotice />
+            )}
             {(hideTranscription
               ? messages.filter((msg) => !msg.fromAudio)
               : messages
@@ -764,7 +768,7 @@ export const Chat = () => {
                   </p>
                   {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
                   {msg.isLeia &&
-                    index === messages.length - 1 &&
+                    index === visibleMessages.length - 1 &&
                     failedMessage &&
                     msg.text.includes(
                       "This message is taking longer than usual.",
