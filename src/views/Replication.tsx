@@ -59,6 +59,7 @@ interface Replication {
           model?: string;
           voice?: "echo" | "marin";
           instructions?: string;
+          hideTranscription?: boolean;
           turnDetection?: {
             type?: "server_vad" | "none";
             threshold?: number;
