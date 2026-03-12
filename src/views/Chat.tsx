@@ -268,7 +268,8 @@ export const Chat = () => {
           console.log("Audio mode detected, switching to audio interface");
           setAudioMode("audio");
         }
-        setHideTranscription(Boolean(response.data.leia?.hideTranscription));
+        const hideTranscriptionEnabled = Boolean(response.data.leia?.hideTranscription);
+        setHideTranscription(hideTranscriptionEnabled);
         let messages = response.data.messages;
 
         if (
@@ -286,6 +287,7 @@ export const Chat = () => {
           .map((msg: Message) => ({
             ...msg,
             id: msg.id || generateMessageId(),
+            fromAudio: hideTranscriptionEnabled ? true : msg.fromAudio,
           }));
         setMessages(sortedMessages);
       }
