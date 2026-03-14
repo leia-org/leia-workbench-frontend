@@ -30,7 +30,6 @@ interface Message {
   isLeia: boolean;
   id?: string; // Agregar ID único para anclas
   sequence?: number;
-  fromAudio?: boolean;
 }
 
 interface Exercise {
@@ -113,7 +112,6 @@ export const Chat = () => {
           isLeia,
           id: generateMessageId(),
           sequence: sequence,
-          fromAudio: true,
         };
         setMessages((prev) => {
           const updated = [...prev, newMessage];
@@ -287,7 +285,6 @@ export const Chat = () => {
           .map((msg: Message) => ({
             ...msg,
             id: msg.id || generateMessageId(),
-            fromAudio: hideTranscriptionEnabled ? true : msg.fromAudio,
           }));
         setMessages(sortedMessages);
       }
@@ -724,10 +721,7 @@ export const Chat = () => {
             {audioMode === "audio" && hideTranscription && (
               <LiveTranscriptionNotice />
             )}
-            {(hideTranscription
-              ? messages.filter((msg) => !msg.fromAudio)
-              : messages
-            ).map((msg, index, visibleMessages) => (
+            {!hideTranscription && messages.map((msg, index, visibleMessages) => (
               <div
                 key={msg.id || index}
                 id={`message-${msg.id || index}`}
