@@ -16,6 +16,7 @@ import {
   EyeIcon,
   LockClosedIcon,
   InformationCircleIcon,
+  LinkIcon,
   XMarkIcon,
   ClipboardDocumentCheckIcon,
   TrashIcon,
@@ -122,6 +123,15 @@ const readStoredReplicationTokens = (): Record<string, string> => {
   }
 };
 
+const buildWorkbenchLink = (code: string, email?: string) => {
+  const url = new URL("/", window.location.origin);
+  url.searchParams.set("code", code);
+  if (email) {
+    url.searchParams.set("email", email);
+  }
+  return url.toString();
+};
+
 export const Replication: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -137,6 +147,8 @@ export const Replication: React.FC = () => {
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [copiedStudentLink, setCopiedStudentLink] = useState(false);
+  const [copiedDemoLink, setCopiedDemoLink] = useState(false);
   const [showAllVoices, setShowAllVoices] = useState<boolean>(false);
   const [startingSessionLeiaId, setStartingSessionLeiaId] = useState<
     string | null
@@ -281,6 +293,22 @@ export const Replication: React.FC = () => {
     navigator.clipboard.writeText(link);
     setCopiedShareLink(true);
     setTimeout(() => setCopiedShareLink(false), 4000);
+  };
+
+  const handleCopyStudentLink = () => {
+    if (!replication?.code) return;
+    navigator.clipboard.writeText(buildWorkbenchLink(replication.code));
+    setCopiedStudentLink(true);
+    setTimeout(() => setCopiedStudentLink(false), 4000);
+  };
+
+  const handleCopyDemoLink = () => {
+    if (!replication?.code) return;
+    navigator.clipboard.writeText(
+      buildWorkbenchLink(replication.code, "_test_demo")
+    );
+    setCopiedDemoLink(true);
+    setTimeout(() => setCopiedDemoLink(false), 4000);
   };
 
   const handleRename = async () => {
@@ -873,6 +901,61 @@ export const Replication: React.FC = () => {
                   Copied!
                 </span>
               )}
+            </div>
+            <div className="space-y-3">
+              {(() => {
+                const studentLink = buildWorkbenchLink(replication.code);
+
+                return (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-5 w-5 text-gray-600" />
+                      <strong>Student link:</strong>
+                    </div>
+                    <div
+                      className="cursor-pointer pl-7"
+                      onClick={handleCopyStudentLink}
+                      title="Copy student link to clipboard"
+                    >
+                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
+                        {studentLink}
+                      </span>
+                    </div>
+                    {copiedStudentLink && (
+                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
+                        Copied!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const demoLink = buildWorkbenchLink(replication.code, "_test_demo");
+
+                return (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-5 w-5 text-gray-600" />
+                      <strong>Demo/Test link:</strong>
+                    </div>
+                    <div
+                      className="cursor-pointer pl-7"
+                      onClick={handleCopyDemoLink}
+                      title="Copy demo/test link to clipboard"
+                    >
+                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
+                        {demoLink}
+                      </span>
+                    </div>
+                    {copiedDemoLink && (
+                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
+                        Copied!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
