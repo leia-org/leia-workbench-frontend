@@ -4,7 +4,9 @@ import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
+import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
+import { LukeAudioWidget } from "../components/LukeAudioWidget";
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -87,49 +89,60 @@ export const Chat = () => {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
-  const [audioMode, setAudioMode] = useState<"text" | "audio">("text");
+  const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
+  const [lukeConfig, setLukeConfig] = useState<{ provider: string; voice: string } | null>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
 
+  const handleTranscriptComplete = useCallback(
+    (
+      transcript: string,
+      isLeia: boolean,
+      timestamp: Date,
+      sequence: number,
+    ) => {
+      const newMessage: Message = {
+        text: transcript,
+        timestamp: timestamp,
+        isLeia,
+        id: generateMessageId(),
+        sequence: sequence,
+      };
+      setMessages((prev) => {
+        const updated = [...prev, newMessage];
+
+        return updated.sort((a, b) => {
+          if (a.sequence !== undefined && b.sequence !== undefined) {
+            return a.sequence - b.sequence;
+          }
+          return (
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+        });
+      });
+    },
+    [],
+  );
+
+  const handleAudioError = useCallback((error: Error) => {
+    console.error("Audio error:", error);
+    setLoadError(error.message);
+  }, []);
+
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
     enabled: audioMode === "audio",
     forceMute: showInstructions,
-    onTranscriptComplete: useCallback(
-      (
-        transcript: string,
-        isLeia: boolean,
-        timestamp: Date,
-        sequence: number,
-      ) => {
-        const newMessage: Message = {
-          text: transcript,
-          timestamp: timestamp,
-          isLeia,
-          id: generateMessageId(),
-          sequence: sequence,
-        };
-        setMessages((prev) => {
-          const updated = [...prev, newMessage];
+    onTranscriptComplete: handleTranscriptComplete,
+    onError: handleAudioError,
+  });
 
-          return updated.sort((a, b) => {
-            if (a.sequence !== undefined && b.sequence !== undefined) {
-              return a.sequence - b.sequence;
-            }
-            return (
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-            );
-          });
-        });
-      },
-      [],
-    ),
-    onError: useCallback((error: Error) => {
-      console.error("Realtime audio error:", error);
-      setLoadError(error.message);
-    }, []),
+  const lukeToken = useLukeToken({
+    sessionId: sessionId || "",
+    enabled: audioMode === "luke",
+    onError: handleAudioError,
   });
 
   // Función mejorada para scroll automático usando utilidades
@@ -263,6 +276,12 @@ export const Chat = () => {
         if (response.data.leia?.audioMode === "realtime") {
           console.log("Audio mode detected, switching to audio interface");
           setAudioMode("audio");
+        } else if (response.data.leia?.audioMode === "luke") {
+          console.log("Luke audio mode detected");
+          setAudioMode("luke");
+          if (response.data.leia?.lukeConfig) {
+            setLukeConfig(response.data.leia.lukeConfig);
+          }
         }
         let messages = response.data.messages;
 
@@ -563,7 +582,7 @@ export const Chat = () => {
               <p className="text-gray-600">{exercise?.description}</p>
               <p className="text-gray-600 mt-4">
                 When you're ready, click the button below to start the task.
-                {audioMode === "audio"
+                {(audioMode === "audio" || audioMode === "luke")
                   ? "Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need."
                   : ""}
               </p>
@@ -640,7 +659,28 @@ export const Chat = () => {
       </header>
 
       {/* Contenido principal - Condicional según el modo */}
-      {configuration?.mode === "transcription" &&
+      {audioMode === "luke" ? (
+        /* Vista Luke - Componente nativo en el centro */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {lukeToken.isReady && lukeConfig ? (
+            <LukeAudioWidget
+              wsUrl={lukeToken.wsUrl!}
+              token={lukeToken.token!}
+              lukeConfig={lukeConfig}
+              forceMute={showInstructions}
+              mode="inline"
+              onTranscriptComplete={handleTranscriptComplete}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-gray-500 text-sm">Connecting to voice...</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : configuration?.mode === "transcription" &&
       !configuration?.data?.messages &&
       configuration?.data?.link ? (
         /* Vista de transcripción externa */
@@ -811,8 +851,8 @@ export const Chat = () => {
         </div>
       )}
 
-      {/* Input de chat - Ocultar solo en transcripción externa */}
-      {!(
+      {/* Input de chat - Ocultar en transcripción externa y en modo luke */}
+      {audioMode !== "luke" && !(
         configuration?.mode === "transcription" &&
         !configuration?.data?.messages &&
         configuration?.data?.link
@@ -1106,7 +1146,7 @@ export const Chat = () => {
         </div>
       )}
 
-      {/* Audio Controls Floating Popup - Only shown in audio mode */}
+      {/* Audio Controls Floating Popup - Legacy realtime mode */}
       {audioMode === "audio" && (
         <AudioControls
           isConnected={realtimeAudio.isConnected}
@@ -1120,6 +1160,7 @@ export const Chat = () => {
           onEndSession={handleFinishConversation}
         />
       )}
+
     </div>
   );
 };
