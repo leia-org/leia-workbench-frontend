@@ -726,7 +726,7 @@ export const Replication: React.FC = () => {
             {isAdmin && (
               <button
                 onClick={() => setIsNewNameModalOpen(true)}
-                className="flex text-center items-center space-x-1 text-blue-600 hover:underline"
+                className="flex text-center items-center space-x-1 text-blue-600 hover:underline px-2"
               >
                 <PencilIcon className="h-4 w-4" />
                 <span className="text-sm">Rename</span>
@@ -823,6 +823,61 @@ export const Replication: React.FC = () => {
               <strong>Experiment:</strong>
               <p className="ml-2">{replication.experiment.name}</p>
             </div>
+            <div className="space-y-3">
+              {(() => {
+                const studentLink = buildWorkbenchLink(replication.code);
+
+                return (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-5 w-5 text-gray-600" />
+                      <strong>Student link:</strong>
+                    </div>
+                    <div
+                      className="cursor-pointer pl-7"
+                      onClick={handleCopyStudentLink}
+                      title="Copy student link to clipboard"
+                    >
+                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
+                        {studentLink}
+                      </span>
+                    </div>
+                    {copiedStudentLink && (
+                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
+                        Copied!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const demoLink = buildWorkbenchLink(replication.code, "_test_demo");
+
+                return (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-5 w-5 text-gray-600" />
+                      <strong>Demo/Test link:</strong>
+                    </div>
+                    <div
+                      className="cursor-pointer pl-7"
+                      onClick={handleCopyDemoLink}
+                      title="Copy demo/test link to clipboard"
+                    >
+                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
+                        {demoLink}
+                      </span>
+                    </div>
+                    {copiedDemoLink && (
+                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
+                        Copied!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
 
@@ -902,61 +957,7 @@ export const Replication: React.FC = () => {
                 </span>
               )}
             </div>
-            <div className="space-y-3">
-              {(() => {
-                const studentLink = buildWorkbenchLink(replication.code);
-
-                return (
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <LinkIcon className="h-5 w-5 text-gray-600" />
-                      <strong>Student link:</strong>
-                    </div>
-                    <div
-                      className="cursor-pointer pl-7"
-                      onClick={handleCopyStudentLink}
-                      title="Copy student link to clipboard"
-                    >
-                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
-                        {studentLink}
-                      </span>
-                    </div>
-                    {copiedStudentLink && (
-                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
-                        Copied!
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {(() => {
-                const demoLink = buildWorkbenchLink(replication.code, "_test_demo");
-
-                return (
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <LinkIcon className="h-5 w-5 text-gray-600" />
-                      <strong>Demo/Test link:</strong>
-                    </div>
-                    <div
-                      className="cursor-pointer pl-7"
-                      onClick={handleCopyDemoLink}
-                      title="Copy demo/test link to clipboard"
-                    >
-                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
-                        {demoLink}
-                      </span>
-                    </div>
-                    {copiedDemoLink && (
-                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
-                        Copied!
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
+            
           </div>
         </div>
 
