@@ -92,6 +92,7 @@ export const Chat = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [lukeConfig, setLukeConfig] = useState<{ provider: string; voice: string } | null>(null);
+  const [hideTranscription, setHideTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -284,8 +285,9 @@ export const Chat = () => {
             setLukeConfig(response.data.leia.lukeConfig);
           }
         }
-        const hideTranscriptionEnabled = Boolean(response.data.leia?.hideTranscription);
-        setHideTranscription(hideTranscriptionEnabled);
+        if (response.data.leia?.hideTranscription !== undefined) {
+          setHideTranscription(Boolean(response.data.leia.hideTranscription));
+        }
         let messages = response.data.messages;
 
         if (
