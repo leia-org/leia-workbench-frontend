@@ -13,7 +13,6 @@ export const LiveTranscriptionNotice: React.FC = () => {
 					className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600"
 					aria-hidden="true"
 				/>
-
 				<div>
 					<p className="text-sm font-semibold">Live transcription is disabled</p>
 					<p className="mt-1 text-sm text-amber-800">
