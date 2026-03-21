@@ -6,6 +6,7 @@ import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
+import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
 
 const TypingAnimation = () => (
@@ -91,6 +92,7 @@ export const Chat = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [lukeConfig, setLukeConfig] = useState<{ provider: string; voice: string } | null>(null);
+  const [hideTranscription, setHideTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -282,6 +284,9 @@ export const Chat = () => {
           if (response.data.leia?.lukeConfig) {
             setLukeConfig(response.data.leia.lukeConfig);
           }
+        }
+        if (response.data.leia?.hideTranscription !== undefined) {
+          setHideTranscription(Boolean(response.data.leia.hideTranscription));
         }
         let messages = response.data.messages;
 
@@ -754,12 +759,15 @@ export const Chat = () => {
             ref={chatMessagesRef}
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
-            {messages.map((msg, index) => (
+            {audioMode === "audio" && hideTranscription && (
+              <LiveTranscriptionNotice />
+            )}
+            {!hideTranscription && messages.map((msg, index, visibleMessages) => (
               <div
                 key={msg.id || index}
                 id={`message-${msg.id || index}`}
                 ref={
-                  msg.isLeia && index === messages.length - 1
+                  msg.isLeia && index === visibleMessages.length - 1
                     ? lastLeiaMessageRef
                     : null
                 }
@@ -797,7 +805,7 @@ export const Chat = () => {
                   </p>
                   {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
                   {msg.isLeia &&
-                    index === messages.length - 1 &&
+                    index === visibleMessages.length - 1 &&
                     failedMessage &&
                     msg.text.includes(
                       "This message is taking longer than usual.",

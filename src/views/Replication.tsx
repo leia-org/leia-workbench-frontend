@@ -23,6 +23,7 @@ import {
   LightBulbIcon,
   ShareIcon,
   BeakerIcon,
+  ChatBubbleBottomCenterIcon
 } from "@heroicons/react/24/solid";
 
 interface Replication {
@@ -58,6 +59,7 @@ interface Replication {
           model?: string;
           voice?: string;
           instructions?: string;
+          hideTranscription?: boolean;
           turnDetection?: {
             type?: "server_vad" | "none";
             threshold?: number;
@@ -1014,6 +1016,7 @@ export const Replication: React.FC = () => {
                                   model: "gpt-4o-realtime-preview",
                                   voice: "marin",
                                   instructions: "",
+                                  hideTranscription: false,
                                   turnDetection: {
                                     type: "server_vad",
                                     threshold: 0.5,
@@ -1088,6 +1091,25 @@ export const Replication: React.FC = () => {
                               onChange={() => setShowAllVoices(!showAllVoices)}
                             ></Switch>
                           </label>
+                        </div>
+                        <div className="flex items-center space-x-2 mt-2">
+                          <ChatBubbleBottomCenterIcon className="h-4 w-4 text-gray-600" />
+                          <label className="text-sm text-gray-700 font-medium">
+                            Hide live transcription:
+                          </label>
+                          <Switch
+                            checked={
+                              item.runnerConfiguration.realtimeConfig
+                                ?.hideTranscription || false
+                            }
+                            onChange={(checked) =>
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.realtimeConfig.hideTranscription",
+                                checked
+                              )
+                            }
+                          />
                         </div>
                         <div className="text-xs text-purple-600 flex items-center gap-1">
                           <svg
