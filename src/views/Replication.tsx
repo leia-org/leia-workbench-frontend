@@ -54,10 +54,10 @@ interface Replication {
       };
       runnerConfiguration: {
         provider: string;
-        audioMode?: "realtime" | null;
+        audioMode?: "realtime" | "luke" | null;
         realtimeConfig?: {
           model?: string;
-          voice?: "echo" | "marin";
+          voice?: string;
           instructions?: string;
           hideTranscription?: boolean;
           turnDetection?: {
@@ -66,6 +66,10 @@ interface Replication {
             prefix_padding_ms?: number;
             silence_duration_ms?: number;
           };
+        };
+        lukeConfig?: {
+          provider: string;
+          voice: string;
         };
       };
       sessionCount: number;
@@ -586,24 +590,23 @@ export const Replication: React.FC = () => {
   };
 
   const handleLocalLeiaChange = (idx: number, key: string, value: any) => {
-    if (localReplication) {
+    setLocalReplication((prev) => {
+      if (!prev) return prev;
+      const copy = structuredClone(prev) as any;
       const keys = key.split(".");
-      const localReplicationCopy = structuredClone(localReplication) as any;
-      let property = localReplicationCopy?.experiment.leias[idx];
+      let property = copy.experiment.leias[idx];
       for (let i = 0; i < keys.length - 1; i++) {
         if (property[keys[i]] === undefined) {
-          console.log("Property " + keys[i] + " not found");
-          return;
+          property[keys[i]] = {};
         }
         property = property[keys[i]];
       }
-
       const lastKey = keys.at(-1);
       if (lastKey) {
         property[lastKey] = value;
-        setLocalReplication(localReplicationCopy);
       }
-    }
+      return copy;
+    });
   };
 
   const handleLocalLeiaReset = (idx: number) => {
@@ -989,18 +992,22 @@ export const Replication: React.FC = () => {
                       <label className="text-sm text-gray-700 font-medium">
                         Audio Mode:
                       </label>
-                      <Switch
-                        checked={
-                          item.runnerConfiguration.audioMode === "realtime"
-                        }
-                        onChange={(checked) => {
-                          if (checked) {
+                      <select
+                        value={item.runnerConfiguration.audioMode || "none"}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === "none") {
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.audioMode",
+                              null
+                            );
+                          } else if (value === "realtime") {
                             handleLocalLeiaChange(
                               idx,
                               "runnerConfiguration.audioMode",
                               "realtime"
                             );
-                            // Initialize default realtimeConfig if not exists
                             if (!item.runnerConfiguration.realtimeConfig) {
                               handleLocalLeiaChange(
                                 idx,
@@ -1019,15 +1026,30 @@ export const Replication: React.FC = () => {
                                 }
                               );
                             }
-                          } else {
+                          } else if (value === "luke") {
                             handleLocalLeiaChange(
                               idx,
                               "runnerConfiguration.audioMode",
-                              null
+                              "luke"
                             );
+                            if (!item.runnerConfiguration.lukeConfig) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig",
+                                {
+                                  provider: "gemini",
+                                  voice: "Puck",
+                                }
+                              );
+                            }
                           }
                         }}
-                      />
+                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                      >
+                        <option value="none">None</option>
+                        <option value="realtime">Legacy (OpenAI Realtime)</option>
+                        <option value="luke">Luke</option>
+                      </select>
                     </div>
 
                     {item.runnerConfiguration.audioMode === "realtime" && (
@@ -1103,7 +1125,94 @@ export const Replication: React.FC = () => {
                               d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
                             />
                           </svg>
-                          Real-time voice conversation enabled
+                          Real-time voice conversation enabled (Legacy)
+                        </div>
+                      </div>
+                    )}
+
+                    {item.runnerConfiguration.audioMode === "luke" && (
+                      <div className="ml-4 space-y-2 text-sm">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-600">Provider:</span>
+                          <select
+                            value={
+                              item.runnerConfiguration.lukeConfig?.provider ||
+                              "gemini"
+                            }
+                            onChange={(e) => {
+                              const provider = e.target.value;
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig.provider",
+                                provider
+                              );
+                              // Set default voice for the selected provider
+                              const defaultVoice = provider === "gemini" ? "Puck" : "alloy";
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig.voice",
+                                defaultVoice
+                              );
+                            }}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                          >
+                            <option value="openai">OpenAI</option>
+                            <option value="gemini">Gemini</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-600">Voice:</span>
+                          <select
+                            value={
+                              item.runnerConfiguration.lukeConfig?.voice ||
+                              (item.runnerConfiguration.lukeConfig?.provider === "openai" ? "alloy" : "Puck")
+                            }
+                            onChange={(e) =>
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig.voice",
+                                e.target.value
+                              )
+                            }
+                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                          >
+                            {item.runnerConfiguration.lukeConfig?.provider === "openai" ? (
+                              <>
+                                <option value="alloy">Alloy</option>
+                                <option value="ash">Ash</option>
+                                <option value="ballad">Ballad</option>
+                                <option value="coral">Coral</option>
+                                <option value="echo">Echo</option>
+                                <option value="sage">Sage</option>
+                                <option value="shimmer">Shimmer</option>
+                                <option value="verse">Verse</option>
+                              </>
+                            ) : (
+                              <>
+                                <option value="Puck">Puck</option>
+                                <option value="Charon">Charon</option>
+                                <option value="Kore">Kore</option>
+                                <option value="Fenrir">Fenrir</option>
+                                <option value="Aoede">Aoede</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                        <div className="text-xs text-blue-600 flex items-center gap-1">
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                            />
+                          </svg>
+                          Luke voice conversation enabled
                         </div>
                       </div>
                     )}
