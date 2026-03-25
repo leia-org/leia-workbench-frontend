@@ -56,11 +56,11 @@ interface Replication {
       runnerConfiguration: {
         provider: string;
         audioMode?: "realtime" | "luke" | null;
+        hideAudioTranscription?: boolean | null;
         realtimeConfig?: {
           model?: string;
           voice?: string;
           instructions?: string;
-          hideTranscription?: boolean;
           turnDetection?: {
             type?: "server_vad" | "none";
             threshold?: number;
@@ -1086,12 +1086,29 @@ export const Replication: React.FC = () => {
                               "runnerConfiguration.audioMode",
                               null
                             );
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.hideAudioTranscription",
+                              null
+                            );
                           } else if (value === "realtime") {
                             handleLocalLeiaChange(
                               idx,
                               "runnerConfiguration.audioMode",
                               "realtime"
                             );
+                            if (
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                null ||
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                undefined
+                            ) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                false
+                              );
+                            }
                             if (!item.runnerConfiguration.realtimeConfig) {
                               handleLocalLeiaChange(
                                 idx,
@@ -1100,7 +1117,6 @@ export const Replication: React.FC = () => {
                                   model: "gpt-4o-realtime-preview",
                                   voice: "marin",
                                   instructions: "",
-                                  hideTranscription: false,
                                   turnDetection: {
                                     type: "server_vad",
                                     threshold: 0.5,
@@ -1116,6 +1132,18 @@ export const Replication: React.FC = () => {
                               "runnerConfiguration.audioMode",
                               "luke"
                             );
+                            if (
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                null ||
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                undefined
+                            ) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                false
+                              );
+                            }
                             if (!item.runnerConfiguration.lukeConfig) {
                               handleLocalLeiaChange(
                                 idx,
@@ -1135,6 +1163,30 @@ export const Replication: React.FC = () => {
                         <option value="luke">Luke</option>
                       </select>
                     </div>
+
+                    {item.runnerConfiguration.audioMode && (
+                      <div className="ml-4">
+                        <div className="flex items-center space-x-2 mt-2">
+                          <ChatBubbleBottomCenterIcon className="h-4 w-4 text-gray-600" />
+                          <label className="text-sm text-gray-700 font-medium">
+                            Hide audio transcription:
+                          </label>
+                          <Switch
+                            checked={
+                              item.runnerConfiguration
+                                .hideAudioTranscription || false
+                            }
+                            onChange={(checked) =>
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                checked
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {item.runnerConfiguration.audioMode === "realtime" && (
                       <div className="ml-4 space-y-2 text-sm">
@@ -1175,25 +1227,6 @@ export const Replication: React.FC = () => {
                               onChange={() => setShowAllVoices(!showAllVoices)}
                             ></Switch>
                           </label>
-                        </div>
-                        <div className="flex items-center space-x-2 mt-2">
-                          <ChatBubbleBottomCenterIcon className="h-4 w-4 text-gray-600" />
-                          <label className="text-sm text-gray-700 font-medium">
-                            Hide live transcription:
-                          </label>
-                          <Switch
-                            checked={
-                              item.runnerConfiguration.realtimeConfig
-                                ?.hideTranscription || false
-                            }
-                            onChange={(checked) =>
-                              handleLocalLeiaChange(
-                                idx,
-                                "runnerConfiguration.realtimeConfig.hideTranscription",
-                                checked
-                              )
-                            }
-                          />
                         </div>
                         <div className="text-xs text-purple-600 flex items-center gap-1">
                           <svg

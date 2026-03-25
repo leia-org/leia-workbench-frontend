@@ -92,7 +92,7 @@ export const Chat = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [lukeConfig, setLukeConfig] = useState<{ provider: string; voice: string } | null>(null);
-  const [hideTranscription, setHideTranscription] = useState(false);
+  const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -285,8 +285,16 @@ export const Chat = () => {
             setLukeConfig(response.data.leia.lukeConfig);
           }
         }
-        if (response.data.leia?.hideTranscription !== undefined) {
-          setHideTranscription(Boolean(response.data.leia.hideTranscription));
+        if (
+          response.data.leia?.hideAudioTranscription !== undefined ||
+          response.data.leia?.hideTranscription !== undefined
+        ) {
+          setHideAudioTranscription(
+            Boolean(
+              response.data.leia.hideAudioTranscription ??
+                response.data.leia.hideTranscription
+            )
+          );
         }
         let messages = response.data.messages;
 
@@ -759,10 +767,10 @@ export const Chat = () => {
             ref={chatMessagesRef}
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
-            {audioMode === "audio" && hideTranscription && (
+            {audioMode === "audio" && hideAudioTranscription && (
               <LiveTranscriptionNotice />
             )}
-            {!hideTranscription && messages.map((msg, index, visibleMessages) => (
+            {!hideAudioTranscription && messages.map((msg, index, visibleMessages) => (
               <div
                 key={msg.id || index}
                 id={`message-${msg.id || index}`}
