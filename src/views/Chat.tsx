@@ -675,6 +675,7 @@ export const Chat = () => {
       {audioMode === "luke" ? (
         /* Vista Luke - Componente nativo en el centro */
         <div className="flex-1 flex flex-col overflow-hidden">
+          {hideAudioTranscription && <LiveTranscriptionNotice />}
           {lukeToken.isReady && lukeConfig ? (
             <LukeAudioWidget
               wsUrl={lukeToken.wsUrl!}
