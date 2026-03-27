@@ -681,6 +681,7 @@ export const Chat = () => {
               token={lukeToken.token!}
               lukeConfig={lukeConfig}
               forceMute={showInstructions}
+              showTranscription={!hideAudioTranscription}
               mode="inline"
               onTranscriptComplete={handleTranscriptComplete}
             />
