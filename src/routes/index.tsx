@@ -11,9 +11,18 @@ import { Experiment } from '../views/Experiment';
 import { Conversations } from '../views/Conversations';
 import { LiveDashboard } from '../views/LiveDashboard';
 import { SpectatorView } from '../views/SpectatorView';
+import { AuthProvider } from '../context';
+import { Outlet } from 'react-router-dom';
+
 
 export const router = createBrowserRouter([
-  {
+   {element:(
+    <AuthProvider>
+        <Outlet />
+    </AuthProvider>
+   ),
+
+    children:[{
     path: '/',
     element: <Login />,
   },
@@ -64,5 +73,5 @@ export const router = createBrowserRouter([
   {
     path: '*',
     element: <Navigate to="/" replace />,
-  },
+  },]}
 ]);

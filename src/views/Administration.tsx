@@ -41,9 +41,9 @@ const formatTimeAgo = (dateString: string) => {
 
   interval = Math.floor(seconds / 60);
   if (interval >= 1) return `${interval} minute${interval === 1 ? '' : 's'} ago`;
-  
+
   if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
-  
+
   return `Now`;
 };
 
@@ -56,8 +56,8 @@ export const Administration: React.FC = () => {
   useEffect(() => {
     const fetchReplications = async () => {
       try {
-        const adminSecret = localStorage.getItem('adminSecret');
-        if (!adminSecret) {
+        const token = localStorage.getItem('token');
+        if (!token) {
           navigate('/login');
           return;
         }
@@ -65,7 +65,7 @@ export const Administration: React.FC = () => {
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
@@ -125,7 +125,7 @@ export const Administration: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <div 
+                <div
                   className="flex flex-col cursor-pointer"
                   onClick={() => handleCopy(rep.code, id)}
                   title="Copy code to clipboard"
@@ -172,7 +172,7 @@ export const Administration: React.FC = () => {
                 </span>
               </div>
 
-              <button 
+              <button
                 className="mt-4 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
                 onClick={() => handleView(id)}
               >
