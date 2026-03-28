@@ -285,16 +285,8 @@ export const Chat = () => {
             setLukeConfig(response.data.leia.lukeConfig);
           }
         }
-        if (
-          response.data.leia?.hideAudioTranscription !== undefined ||
-          response.data.leia?.hideTranscription !== undefined
-        ) {
-          setHideAudioTranscription(
-            Boolean(
-              response.data.leia.hideAudioTranscription ??
-                response.data.leia.hideTranscription
-            )
-          );
+        if (response.data.leia?.hideAudioTranscription !== undefined) {
+          setHideAudioTranscription(Boolean(response.data.leia.hideAudioTranscription));
         }
         let messages = response.data.messages;
 
@@ -675,7 +667,6 @@ export const Chat = () => {
       {audioMode === "luke" ? (
         /* Vista Luke - Componente nativo en el centro */
         <div className="flex-1 flex flex-col overflow-hidden">
-          {hideAudioTranscription && <LiveTranscriptionNotice />}
           {lukeToken.isReady && lukeConfig ? (
             <LukeAudioWidget
               wsUrl={lukeToken.wsUrl!}
@@ -769,9 +760,7 @@ export const Chat = () => {
             ref={chatMessagesRef}
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
-            {audioMode === "audio" && hideAudioTranscription && (
-              <LiveTranscriptionNotice />
-            )}
+            {hideAudioTranscription && (<LiveTranscriptionNotice/>)}
             {!hideAudioTranscription && messages.map((msg, index, visibleMessages) => (
               <div
                 key={msg.id || index}
