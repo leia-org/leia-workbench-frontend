@@ -13,6 +13,7 @@ import { LiveDashboard } from '../views/LiveDashboard';
 import { SpectatorView } from '../views/SpectatorView';
 import { AuthProvider } from '../context';
 import { Outlet } from 'react-router-dom';
+import { ApiKeysPage } from '../views/ApiKeys';
 
 
 export const router = createBrowserRouter([
@@ -69,6 +70,10 @@ export const router = createBrowserRouter([
   {
     path: '/experiments/:id',
     element: <Experiment />,
+  },
+  {
+    path: '/administration/api-keys',
+    element: <ApiKeysPage />,
   },
   {
     path: '*',
