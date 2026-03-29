@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
+import { useAuth } from '../context/useAuth';
 import axios from 'axios';
 import {
   ClockIcon,
@@ -52,12 +53,13 @@ export const Administration: React.FC = () => {
   const [replications, setReplications] = useState<Replication[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     const fetchReplications = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) {
+        if (!token || !isAdmin) {
           navigate('/login');
           return;
         }
@@ -83,7 +85,7 @@ export const Administration: React.FC = () => {
     };
 
     fetchReplications();
-  }, [navigate]);
+  }, [navigate, token, isAdmin]);
 
   const handleView = (id: string) => {
     navigate(`/replications/${id}`);

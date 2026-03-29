@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
 import { io } from "socket.io-client";
 import { SessionCard } from "../components/SessionCard";
+import { useAuth } from "../context/useAuth";
 
 interface LiveSession {
   id: string;
@@ -98,7 +99,8 @@ export const LiveDashboard = () => {
     isOpen: false,
     url: "",
   });
-  const adminSecret = localStorage.getItem("adminSecret");
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const REPLICATION_TOKENS_KEY = "replicationTokens";
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
@@ -134,10 +136,10 @@ export const LiveDashboard = () => {
 
   const buildRequestConfig = useCallback(
     (config: AxiosRequestConfig = {}) => {
-      const headers = { ...(config.headers || {}) };
-      if (adminSecret) {
-        headers.Authorization = `Bearer ${adminSecret}`;
-      }
+        const headers = { ...(config.headers || {}) };
+        if (token && isAdmin) {
+          headers.Authorization = `Bearer ${token}`;
+        }
 
       const params = { ...(config.params || {}) };
       if (replicationToken) {
@@ -153,7 +155,7 @@ export const LiveDashboard = () => {
       }
       return finalConfig;
     },
-    [adminSecret, replicationToken]
+    [token, isAdmin, replicationToken]
   );
 
   // Fetch sessions - Always fetch all sessions (active and finished)
@@ -228,8 +230,8 @@ export const LiveDashboard = () => {
     if (!tokenReady || !replicationId) return;
 
     const authPayload: Record<string, string> = {};
-    if (adminSecret) {
-      authPayload.adminSecret = adminSecret;
+    if (token && isAdmin) {
+      authPayload.token = token;
     } else if (replicationToken) {
       authPayload.shareToken = replicationToken;
     } else {
@@ -295,7 +297,7 @@ export const LiveDashboard = () => {
       newSocket.emit("dashboard:leave", replicationId);
       newSocket.disconnect();
     };
-  }, [adminSecret, replicationId, replicationToken, tokenReady]);
+  }, [token, isAdmin, replicationId, replicationToken, tokenReady]);
 
   const handleWatch = async (sessionId: string) => {
     try {

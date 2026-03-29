@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { useAuth } from '../context';
 
 interface Experiment {
   id: string;
@@ -20,6 +21,8 @@ interface Experiment {
 
 export const Experiment: React.FC = () => {
   const navigate = useNavigate();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [experiment, setExperiment] = useState<Experiment>();
   const [loading, setLoading] = useState<boolean>(true);
   const { id } = useParams<{ id: string }>();
@@ -30,8 +33,7 @@ export const Experiment: React.FC = () => {
   useEffect(() => {
     const fetchExperiment = async () => {
       try {
-        const adminSecret = localStorage.getItem('adminSecret');
-        if (!adminSecret) {
+        if (!token || !isAdmin) {
           navigate('/login');
           return;
         }
@@ -39,7 +41,7 @@ export const Experiment: React.FC = () => {
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments/${id}`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
@@ -61,8 +63,7 @@ export const Experiment: React.FC = () => {
 
   const handleCreateReplication = async () => {
     try {
-      const adminSecret = localStorage.getItem('adminSecret');
-      if (!adminSecret) {
+      if (!token || !isAdmin) {
         navigate('/login');
         return;
       }
@@ -74,7 +75,7 @@ export const Experiment: React.FC = () => {
         },
         {
           headers: {
-            Authorization: `Bearer ${adminSecret}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
@@ -115,8 +116,8 @@ export const Experiment: React.FC = () => {
             </button>
           </div>
         </div>
-        <SyntaxHighlighter 
-          language="json" 
+        <SyntaxHighlighter
+          language="json"
           style={docco}
           wrapLongLines={true}
           showLineNumbers={true}
@@ -133,7 +134,7 @@ export const Experiment: React.FC = () => {
               setReplicationName('');
             }
           }}
-        > 
+        >
           <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
           >
@@ -162,8 +163,8 @@ export const Experiment: React.FC = () => {
                 onClick={handleCreateReplication}
                 disabled={!replicationName.trim()}
                 className={`px-4 py-2 rounded-md ${
-                  replicationName.trim() 
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                  replicationName.trim()
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
                     : 'bg-blue-300 text-white cursor-not-allowed'
                 }`}
               >

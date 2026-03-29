@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
+import { useAuth } from '../context/useAuth';
 import axios from 'axios';
 import {
   InformationCircleIcon,
@@ -42,9 +43,9 @@ const formatTimeAgo = (dateString: string) => {
 
   interval = Math.floor(seconds / 60);
   if (interval >= 1) return `${interval} minute${interval === 1 ? '' : 's'} ago`;
-  
+
   if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
-  
+
   return `Now`;
 };
 
@@ -52,12 +53,13 @@ export const Experiments: React.FC = () => {
   const navigate = useNavigate();
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        const adminSecret = localStorage.getItem('adminSecret');
-        if (!adminSecret) {
+        if (!token || !isAdmin) {
           navigate('/login');
           return;
         }
@@ -65,7 +67,7 @@ export const Experiments: React.FC = () => {
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
@@ -150,7 +152,7 @@ export const Experiments: React.FC = () => {
                 </span>
               </div>
 
-              <button 
+              <button
                 className="mt-4 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
                 onClick={() => handleView(id)}
               >

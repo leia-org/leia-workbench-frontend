@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
 import { Navbar } from "../components/Navbar";
+import { useAuth } from "../context/useAuth";
 import Switch from "react-switch";
 import { ToastContainer, toast } from "react-toastify";
 import SyntaxHighlighter from "react-syntax-highlighter";
@@ -126,13 +127,14 @@ export const Replication: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [replication, setReplication] = useState<Replication | null>(null);
   const [localReplication, setLocalReplication] = useState<Replication | null>(
     null
   );
   const [loading, setLoading] = useState(true);
-  const adminSecret = localStorage.getItem("adminSecret");
-  const isAdmin = Boolean(adminSecret);
+
   const [copied, setCopied] = useState<boolean>(false);
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
@@ -175,8 +177,8 @@ export const Replication: React.FC = () => {
   const buildRequestConfig = useCallback(
     (config: AxiosRequestConfig = {}): AxiosRequestConfig => {
       const headers = { ...(config.headers || {}) };
-      if (adminSecret) {
-        headers.Authorization = `Bearer ${adminSecret}`;
+      if (token && isAdmin) {
+        headers.Authorization = `Bearer ${token}`;
       }
 
       const params = { ...(config.params || {}) };
@@ -193,7 +195,7 @@ export const Replication: React.FC = () => {
       }
       return finalConfig;
     },
-    [adminSecret, replicationToken]
+    [token, isAdmin, replicationToken]
   );
 
   // Fetch replication on mount
@@ -229,7 +231,6 @@ export const Replication: React.FC = () => {
     fetchReplication();
   }, [
     id,
-    adminSecret,
     navigate,
     replicationToken,
     tokenReady,
