@@ -159,7 +159,7 @@ export const Replication: React.FC = () => {
   const [startingSessionLeiaId, setStartingSessionLeiaId] = useState<
     string | null
   >(null);
-
+  const [availableModels, setAvailableModels] = useState<Array<string>>([]);
   // Modals
   const [newName, setNewName] = useState<string>("");
   const [newDuration, setNewDuration] = useState<string>("");
@@ -253,6 +253,22 @@ export const Replication: React.FC = () => {
     tokenReady,
     buildRequestConfig,
   ]);
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const resp = await axios.get<{ models: string[] }>(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/runner/models`,
+          buildRequestConfig()
+        );
+        setAvailableModels(Array.isArray(resp.data?.models) ? resp.data.models : []);
+      } catch (err) {
+        console.error("Error fetching available models:", err);
+        setAvailableModels([]);
+      }
+    };
+    fetchModels();
+  }, [buildRequestConfig]);
+
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -1065,9 +1081,15 @@ export const Replication: React.FC = () => {
                       }
                       className="border border-gray-300 rounded-md p-2"
                     >
-                      <option value="default">default</option>
-                      <option value="openai-assistant">openai-assistant</option>
+             
+                      {availableModels.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
                     </select>
+
+              
                   </div>
 
                   {/* Audio Mode Configuration */}
