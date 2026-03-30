@@ -1,11 +1,12 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   PencilIcon,
   TrashIcon,
   DocumentDuplicateIcon,
   EyeIcon,
   LinkIcon,
-  CubeTransparentIcon
+  CubeTransparentIcon,
+  EyeSlashIcon
 } from "@heroicons/react/24/solid";
 import { ApiKey } from "../../models/ApiKeys"; // Asegúrate de que esta ruta sea correcta en tu proyecto
 
@@ -17,6 +18,20 @@ interface ApiKeyCardProps {
 }
 
 export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete, onCopy }) => {
+  const [isValueVisible, setIsValueVisible] = useState(false);
+
+  const changeValueVisibility = () => {
+    setIsValueVisible(!isValueVisible);
+  };
+
+  const getMaskedValue = (value: string) => {
+
+    if (value.length <= 4) return "••••••••";
+    const visiblePart = value.substring(0, 3);
+    const hiddenPart = "•".repeat(Math.min(value.length - 3, 12));
+    return `${visiblePart}${hiddenPart}`;
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 border border-gray-200 p-6 flex flex-col">
 
@@ -70,19 +85,30 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete
         <div>
           <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">API Key Value</label>
           <div className="flex items-center justify-between mt-1.5 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
-            <span className="text-sm font-mono text-gray-800 truncate">{apiKey.description}</span>
+
+            <span className="text-sm font-mono text-gray-800 truncate">
+              {isValueVisible ? apiKey.keyValue : getMaskedValue(apiKey.keyValue)}
+            </span>
+
             <div className="flex space-x-2 ml-3 pl-3 border-l border-gray-200">
-              <button className="text-gray-400 hover:text-gray-700 transition-colors">
-                <EyeIcon className="h-5 w-5" />
+              <button
+                className="text-gray-400 hover:text-gray-700 transition-colors"
+                onClick={changeValueVisibility}
+                title={isValueVisible ? "Hide value" : "Show value"}
+              >
+                {isValueVisible ? (
+                  <EyeSlashIcon className="h-5 w-5" />
+                ) : (
+                  <EyeIcon className="h-5 w-5" />
+                )}
               </button>
-              <button onClick={() => onCopy(apiKey.keyValue)} className="text-gray-400 hover:text-blue-600 transition-colors">
+              <button onClick={() => onCopy(apiKey.keyValue)} className="text-gray-400 hover:text-blue-600 transition-colors" title="Copy to clipboard">
                 <DocumentDuplicateIcon className="h-5 w-5" />
               </button>
             </div>
           </div>
         </div>
 
-        {/* Detalles del Modelo y URLs */}
         <div className="grid grid-cols-1 gap-4 bg-gray-50/50 rounded-lg p-4 border border-gray-100">
           <div className="flex items-start space-x-3">
             <CubeTransparentIcon className="h-5 w-5 text-gray-400 mt-0.5" />

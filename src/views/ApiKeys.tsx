@@ -11,12 +11,29 @@ import type { ApiKey } from "../models/ApiKeys";
 
 export const ApiKeysPage: React.FC = () => {
 
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
 
   useEffect(() => {
-
-  }, [user]);
+    const fetchApiKeys = async () => {
+      try {
+        if (!user) return;
+        const response = await fetch(`${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          }
+        });
+        if (!response.ok) throw new Error("Error fetching API Keys");
+        const data = await response.json();
+        setApiKeys(data);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to load API Keys");
+      }
+    };
+    fetchApiKeys();
+  }, [user, token]);
 
   // Estados Formulario (ahora Modal)
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -32,7 +49,6 @@ export const ApiKeysPage: React.FC = () => {
     navigator.clipboard.writeText(keyString);
     toast.success("API Key copied to clipboard!");
   };
-
   const openCreateModal = () => {
     setFormMode("create");
     setSelectedKey(null);
@@ -45,18 +61,73 @@ export const ApiKeysPage: React.FC = () => {
     setIsFormModalOpen(true);
   };
 
-  const handleSaveKey = (e: React.FormEvent) => {
-    e.preventDefault();
-    // TODO: Recuperar datos del form y llamar a la API, con los datos obtenidos reescribir el token del localStorage y actualizar el estado de apiKeys
-    toast.success(formMode === "create" ? "API Key created successfully!" : "API Key updated!");
-    setIsFormModalOpen(false);
-  };
+  const handleSaveKey = async (formData: Partial<ApiKey>) => {
+    try {
+      const isCreate = formMode === "create";
+      const baseUrl = `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`;
+      const url = isCreate ? baseUrl : `${baseUrl}/${selectedKey?.id}`;
+      const method = isCreate ? "POST" : "PUT";
 
-  const confirmDelete = () => {
-    setApiKeys(apiKeys.filter((k) => k.id !== keyToDelete?.id));
-    toast.success("API Key deleted successfully!");
-    setIsDeleteModalOpen(false);
-    setKeyToDelete(null);
+      console.log('Saving API Key with data:', formData); // Debug log
+      console.log('Request URL:', url, 'Method:', method); // Debug log
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "Error saving API Key");
+      }
+
+      // Asumimos que el backend devuelve la ApiKey guardada/actualizada
+      const savedKey: ApiKey = await response.json();
+
+      setApiKeys((prev) => {
+        if (isCreate) {
+          return [...prev, savedKey];
+        } else {
+          return prev.map((key) => (key.id === savedKey.id ? savedKey : key));
+        }
+      });
+
+      toast.success(isCreate ? "API Key created successfully!" : "API Key updated!");
+      setIsFormModalOpen(false);
+
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Failed to save API Key");
+      // Lanzamos el error para que el modal sepa que falló (y no cierre o pare el loading)
+      throw err;
+    }
+  };
+  const confirmDelete = async () => {
+    if (!keyToDelete) return;
+    try {
+      const response = await fetch(`${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys/${keyToDelete.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "Error deleting API Key");
+      }
+      setApiKeys(apiKeys.filter((k) => k.id !== keyToDelete.id));
+      toast.success("API Key deleted successfully!");
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Failed to delete API Key");
+    } finally {
+      setIsDeleteModalOpen(false);
+      setKeyToDelete(null);
+    }
   };
 
   return (
