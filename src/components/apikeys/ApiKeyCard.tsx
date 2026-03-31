@@ -24,14 +24,13 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete
     setIsValueVisible(!isValueVisible);
   };
 
-  const getMaskedValue = (value: string) => {
-
+  const getMaskedValue = (value?: string) => {
+    if (!value) return "••••••••";
     if (value.length <= 4) return "••••••••";
     const visiblePart = value.substring(0, 3);
     const hiddenPart = "•".repeat(Math.min(value.length - 3, 12));
     return `${visiblePart}${hiddenPart}`;
   };
-
   return (
     <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 border border-gray-200 p-6 flex flex-col">
 

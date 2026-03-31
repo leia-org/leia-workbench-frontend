@@ -21,10 +21,12 @@ import {
   ClipboardDocumentCheckIcon,
   TrashIcon,
   DocumentTextIcon,
+  ChevronDownIcon,
   LightBulbIcon,
   ShareIcon,
   BeakerIcon,
 } from "@heroicons/react/24/solid";
+import { useApiKeys } from "../hooks/useApiKeys";
 
 interface Replication {
   id: string;
@@ -156,6 +158,10 @@ export const Replication: React.FC = () => {
   // Side bar
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
+  const {apiKeys} = useApiKeys();
+  const [selectedApiKeys, setSelectedApiKeys] = useState<Record<string, string>>({});
+  // Usamos el idx para saber qué dropdown abrir si hay múltiples Leias
+  const [openDropdownIdx, setOpenDropdownIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -981,7 +987,96 @@ export const Replication: React.FC = () => {
                       <option value="openai-assistant">openai-assistant</option>
                     </select>
                   </div>
+                  {/* API Key Dropdown */}
+                  <div className="flex items-center space-x-2 mb-3 relative">
+                    <div className="text-sm text-gray-700 mr-1">API Key:</div>
 
+                    {/* Contenedor del Dropdown imitando al <select> nativo */}
+                    <div className="relative flex-shrink-0">
+                      <button
+                        onClick={() => setOpenDropdownIdx(openDropdownIdx === idx ? null : idx)}
+                        className="flex items-center justify-between min-w-[180px] border border-gray-300 rounded-md p-2 text-sm bg-white hover:bg-gray-50 focus:outline-none transition-colors"
+                      >
+                        <span className="truncate mr-2">
+                          {!selectedApiKeys[item.id] || selectedApiKeys[item.id] === "system"
+                            ? "LEIA System Key"
+                            : apiKeys.find((k) => k.id === selectedApiKeys[item.id])?.description || "Custom Key"}
+                        </span>
+                        <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                      </button>
+
+                      {openDropdownIdx === idx && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setOpenDropdownIdx(null)}
+                          ></div>
+
+                          <div className="absolute left-0 mt-1 w-full min-w-[180px] bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1 overflow-hidden">
+                            <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100">
+                              Select Key
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                setSelectedApiKeys(prev => ({ ...prev, [item.id]: "system" }));
+                                setOpenDropdownIdx(null);
+                              }}
+                              className={`w-full text-left px-3 py-2 text-sm transition-colors ${(!selectedApiKeys[item.id] || selectedApiKeys[item.id] === "system") ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"}`}
+                            >
+                              LEIA System Key
+                            </button>
+
+                            {apiKeys.map((key) => (
+                              <button
+                                key={key.id}
+                                onClick={() => {
+                                  setSelectedApiKeys(prev => ({ ...prev, [item.id]: key.id }));
+                                  setOpenDropdownIdx(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${selectedApiKeys[item.id] === key.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"}`}
+                              >
+                                {key.description}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-3 pl-2">
+
+                      {/* URL de Gestión (Dashboard) */}
+                      {selectedApiKeys[item.id] &&
+                       selectedApiKeys[item.id] !== "system" &&
+                       apiKeys.find(k => k.id === selectedApiKeys[item.id])?.managementUrl && (
+                        <a
+                          href={apiKeys.find(k => k.id === selectedApiKeys[item.id])?.managementUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+                          title={apiKeys.find(k => k.id === selectedApiKeys[item.id])?.managementUrl}
+                        >
+                          <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                          </svg>
+                          <span>Dashboard</span>
+                        </a>
+                      )}
+
+                      {/* Enlace para gestionar API Keys */}
+                      <Link
+                        to="/administration/api-keys"
+                        className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+                      >
+                        <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Manage Keys
+                      </Link>
+                    </div>
+                  </div>
+                  {/* --- FIN Dropdown de API Key --- */}
                   {/* Audio Mode Configuration */}
                   <div className="border-t pt-3 mt-3">
                     <div className="flex items-center space-x-2 mb-2">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Navbar } from "../components/Navbar";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -7,40 +7,16 @@ import { ApiKeyCard } from "../components/apikeys/ApiKeyCard";
 import { ApiKeyFormModal } from "../components/apikeys/ApiKeyFormModal";
 import { useAuth } from "../context";
 import type { ApiKey } from "../models/ApiKeys";
+import { useApiKeys } from "../hooks/useApiKeys";
 
 
 export const ApiKeysPage: React.FC = () => {
 
-  const { user, token } = useAuth();
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-
-  useEffect(() => {
-    const fetchApiKeys = async () => {
-      try {
-        if (!user) return;
-        const response = await fetch(`${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json"
-          }
-        });
-        if (!response.ok) throw new Error("Error fetching API Keys");
-        const data = await response.json();
-        setApiKeys(data);
-      } catch (err) {
-        console.error(err);
-        toast.error("Failed to load API Keys");
-      }
-    };
-    fetchApiKeys();
-  }, [user, token]);
-
-  // Estados Formulario (ahora Modal)
+  const { token } = useAuth();
+  const {apiKeys, setApiKeys, isLoading} = useApiKeys();
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null);
-
-  // Estados Modal Borrado
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
 
@@ -68,25 +44,30 @@ export const ApiKeysPage: React.FC = () => {
       const url = isCreate ? baseUrl : `${baseUrl}/${selectedKey?.id}`;
       const method = isCreate ? "POST" : "PUT";
 
-      console.log('Saving API Key with data:', formData); // Debug log
-      console.log('Request URL:', url, 'Method:', method); // Debug log
+      const payload = {
+        description: formData.description,
+        keyValue: formData.keyValue,
+        modelName: formData.modelName,
+        baseUrl: formData.baseUrl,
+        managementUrl: formData.managementUrl?.trim() ? formData.managementUrl.trim() : undefined,
+        isActive: formData.isActive,
+        isDefault: formData.isDefault,
+      };
       const response = await fetch(url, {
         method,
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.message || "Error saving API Key");
       }
-
-      // Asumimos que el backend devuelve la ApiKey guardada/actualizada
       const savedKey: ApiKey = await response.json();
-
+      console.log("Saved key:", savedKey);
       setApiKeys((prev) => {
         if (isCreate) {
           return [...prev, savedKey];
@@ -101,7 +82,6 @@ export const ApiKeysPage: React.FC = () => {
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Failed to save API Key");
-      // Lanzamos el error para que el modal sepa que falló (y no cierre o pare el loading)
       throw err;
     }
   };
@@ -130,6 +110,49 @@ export const ApiKeysPage: React.FC = () => {
     }
   };
 
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-gray-500 font-medium">Loading your API Keys...</p>
+        </div>
+      );
+    }
+    if (apiKeys.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-gray-200 border-dashed shadow-sm">
+          <svg className="h-12 w-12 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+          </svg>
+          <p className="text-gray-500 mb-4 text-center max-w-sm">
+            You don't have any custom API Keys configured yet. Add one to get started.
+          </p>
+          <button
+            onClick={openCreateModal}
+            className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium border border-blue-200"
+          >
+            Create your first key
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {apiKeys.map((key) => (
+          <ApiKeyCard
+            key={key.id}
+            apiKey={key}
+            onEdit={() => openEditModal(key)}
+            onDelete={() => { setKeyToDelete(key); setIsDeleteModalOpen(true); }}
+            onCopy={handleCopyKey}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -154,18 +177,7 @@ export const ApiKeysPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Grid de Tarjetas*/}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {apiKeys.map((key) => (
-            <ApiKeyCard
-              key={key.id}
-              apiKey={key}
-              onEdit={() => openEditModal(key)}
-              onDelete={() => { setKeyToDelete(key); setIsDeleteModalOpen(true); }}
-              onCopy={handleCopyKey}
-            />
-          ))}
-        </div>
+        {renderContent()}
       </div>
 
       {/* --- MODAL FORMULARIO (Creación / Edición) --- */}
