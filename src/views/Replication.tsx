@@ -1579,11 +1579,10 @@ export const Replication: React.FC = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-lg w-full mx-4">
               <h2 className="text-lg font-semibold mb-2 text-red-700">
-                Provider no disponible
+                Provider not available
               </h2>
               <p className="text-sm text-gray-700 mb-4">
-                Algunas Leias tienen un provider configurado que ya no está en
-                la lista de modelos disponibles del runner.
+                Some Leias have a provider configured that is no longer in the list of available models.
               </p>
               <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4 max-h-56 overflow-auto">
                 {unavailableLeiaProviders.map((item) => (
@@ -1596,15 +1595,14 @@ export const Replication: React.FC = () => {
                 ))}
               </div>
               <p className="text-sm text-gray-600 mb-4">
-                Cambia el provider por
-                uno disponible y guarda la configuración.
+                Change the provider to one that is available and save the configuration.
               </p>
               <div className="flex justify-end">
                 <button
                   onClick={() => setIsMissingProviderModalOpen(false)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
-                  Entendido
+                  Understand
                 </button>
               </div>
             </div>
