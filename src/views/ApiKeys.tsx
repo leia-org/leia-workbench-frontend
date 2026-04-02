@@ -5,25 +5,37 @@ import "react-toastify/dist/ReactToastify.css";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { ApiKeyCard } from "../components/apikeys/ApiKeyCard";
 import { ApiKeyFormModal } from "../components/apikeys/ApiKeyFormModal";
-import { useAuth } from "../context";
-import type { ApiKey } from "../models/ApiKeys";
+import { ApiKeyMarkDefaultModal } from "../components/apikeys/ApiKeyMarkDefaultModal";
+import type { ApiKey, ApiKeyFormData } from "../models/ApiKeys";
 import { useApiKeys } from "../hooks/useApiKeys";
 
 
 export const ApiKeysPage: React.FC = () => {
-
-  const { token } = useAuth();
-  const {apiKeys, setApiKeys, isLoading} = useApiKeys();
+  const { apiKeys, isLoading, toggleDefault, savingIds, deleteKey, saveKey } = useApiKeys();
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
+  const [isMarkDefaultModalOpen, setIsMarkDefaultModalOpen] = useState(false);
 
   // --- Handlers ---
   const handleCopyKey = (keyString: string) => {
     navigator.clipboard.writeText(keyString);
     toast.success("API Key copied to clipboard!");
+  };
+
+  const confirmMarkDefault = async () => {
+    if (!selectedKey) return;
+    try {
+      const updatedKey = await toggleDefault(selectedKey);
+      toast.success(updatedKey.isDefault ? "API Key set as default" : "API Key removed as default");
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Failed to update default status");
+    } finally {
+      setIsMarkDefaultModalOpen(false);
+      setSelectedKey(null);
+    }
   };
   const openCreateModal = () => {
     setFormMode("create");
@@ -37,47 +49,35 @@ export const ApiKeysPage: React.FC = () => {
     setIsFormModalOpen(true);
   };
 
+  const openMarkDefaultModal = (key: ApiKey) => {
+    setSelectedKey(key);
+    setIsMarkDefaultModalOpen(true);
+  }
+
   const handleSaveKey = async (formData: Partial<ApiKey>) => {
     try {
       const isCreate = formMode === "create";
       const baseUrl = `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`;
       const url = isCreate ? baseUrl : `${baseUrl}/${selectedKey?.id}`;
       const method = isCreate ? "POST" : "PUT";
+      const cleanManagementUrl = formData.managementUrl?.trim() || undefined;
 
-      const payload = {
+      const payload: ApiKeyFormData =
+      {
         description: formData.description,
         keyValue: formData.keyValue,
         modelName: formData.modelName,
         baseUrl: formData.baseUrl,
-        managementUrl: formData.managementUrl?.trim() ? formData.managementUrl.trim() : undefined,
+        managementUrl: cleanManagementUrl,
         isActive: formData.isActive,
-        isDefault: formData.isDefault,
       };
-      const response = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || "Error saving API Key");
+      if (isCreate) {
+        payload.isDefault = formData.isDefault || false;
       }
-      const savedKey: ApiKey = await response.json();
-      console.log("Saved key:", savedKey);
-      setApiKeys((prev) => {
-        if (isCreate) {
-          return [...prev, savedKey];
-        } else {
-          return prev.map((key) => (key.id === savedKey.id ? savedKey : key));
-        }
-      });
-
-      toast.success(isCreate ? "API Key created successfully!" : "API Key updated!");
-      setIsFormModalOpen(false);
+        await saveKey(url, method, payload);
+        toast.success(isCreate ? "API Key created successfully!" : "API Key updated!");
+        setIsFormModalOpen(false);
 
     } catch (err) {
       console.error(err);
@@ -86,27 +86,16 @@ export const ApiKeysPage: React.FC = () => {
     }
   };
   const confirmDelete = async () => {
-    if (!keyToDelete) return;
+    if (!selectedKey) return;
     try {
-      const response = await fetch(`${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys/${keyToDelete.id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || "Error deleting API Key");
-      }
-      setApiKeys(apiKeys.filter((k) => k.id !== keyToDelete.id));
+      await deleteKey(selectedKey.id);
       toast.success("API Key deleted successfully!");
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Failed to delete API Key");
     } finally {
       setIsDeleteModalOpen(false);
-      setKeyToDelete(null);
+      setSelectedKey(null);
     }
   };
 
@@ -145,8 +134,10 @@ export const ApiKeysPage: React.FC = () => {
             key={key.id}
             apiKey={key}
             onEdit={() => openEditModal(key)}
-            onDelete={() => { setKeyToDelete(key); setIsDeleteModalOpen(true); }}
+            onDelete={() => { setSelectedKey(key); setIsDeleteModalOpen(true); }}
+            onToggleDefault={() => openMarkDefaultModal(key)}
             onCopy={handleCopyKey}
+            isSaving={!!savingIds?.[key.id]}
           />
         ))}
       </div>
@@ -185,7 +176,10 @@ export const ApiKeysPage: React.FC = () => {
         isOpen={isFormModalOpen}
         mode={formMode}
         selectedKey={selectedKey}
-        onClose={() => setIsFormModalOpen(false)}
+        onClose={() => {
+          setIsFormModalOpen(false);
+          setSelectedKey(null);
+        }}
         onSave={handleSaveKey}
       />
 
@@ -196,10 +190,13 @@ export const ApiKeysPage: React.FC = () => {
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-gray-900">Delete API Key?</h3>
-                <button onClick={() => setIsDeleteModalOpen(false)} className="text-gray-400 hover:text-gray-500"><XMarkIcon className="h-5 w-5" /></button>
+                <button onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setSelectedKey(null);
+                }} className="text-gray-400 hover:text-gray-500"><XMarkIcon className="h-5 w-5" /></button>
               </div>
               <p className="text-sm text-gray-600 mb-6">
-                Are you sure you want to delete the key <span className="font-semibold text-gray-800">"{keyToDelete?.description}"</span>?
+                Are you sure you want to delete the key <span className="font-semibold text-gray-800">"{selectedKey?.description}"</span>?
                 This action cannot be undone and any application using this key will stop working immediately.
               </p>
 
@@ -211,6 +208,12 @@ export const ApiKeysPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* --- MODAL MARCAR/DESMARCAR DEFAULT --- */}
+      {isMarkDefaultModalOpen && (<ApiKeyMarkDefaultModal
+        apiKey={selectedKey}
+        onClose={() => { setIsMarkDefaultModalOpen(false); setSelectedKey(null); }}
+        onConfirm={confirmMarkDefault}
+      />)}
     </div>
   );
 };

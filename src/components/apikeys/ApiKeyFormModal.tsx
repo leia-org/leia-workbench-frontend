@@ -6,22 +6,19 @@ interface ApiKeyFormModalProps {
   mode: "create" | "edit";
   selectedKey: ApiKey | null;
   onClose: () => void;
-  // Cambiamos onSave para que devuelva un Partial<ApiKey> (los datos del form)
+
   onSave: (formData: Partial<ApiKey>) => Promise<void>;
 }
 
 export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, onClose, onSave }) => {
-  // Estado local para controlar el formulario
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Cuando se abre el modal o cambia selectedKey, reseteamos el formulario
   useEffect(() => {
     if (isOpen) {
       if (mode === "edit" && selectedKey) {
         setFormData(selectedKey);
       } else {
-        // Formulario vacío para crear
         setFormData({
           description: "",
           keyValue: "",
@@ -29,13 +26,10 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
           isActive: true,
           baseUrl: "",
           managementUrl: "",
-          isDefault: false
         });
       }
     }
   }, [isOpen, mode, selectedKey]);
-
-  // Manejador genérico de cambios en inputs
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
 
@@ -43,7 +37,6 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
       const checked = (e.target as HTMLInputElement).checked;
       setFormData(prev => ({ ...prev, [name]: checked }));
     } else if (name === 'isActive') {
-       // Convertir el select a boolean
       setFormData(prev => ({ ...prev, isActive: value === 'Active' }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
@@ -105,12 +98,6 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Management URL <span className="text-gray-400 font-normal">(Optional)</span></label>
               <input type="url" name="managementUrl" value={formData.managementUrl || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-blue-600" placeholder="https://..." />
-            </div>
-            <div className="flex items-center mt-2">
-              <input type="checkbox" id="defaultKey" name="isDefault" checked={formData.isDefault || false} onChange={handleChange} className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
-              <label htmlFor="defaultKey" className="ml-2 block text-sm text-gray-900">
-                Set as Default Key
-              </label>
             </div>
           </div>
           <div className="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50">
