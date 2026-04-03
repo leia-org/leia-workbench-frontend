@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 import { AuthContext, type AuthContextType } from "./AuthContext";
 import type { DecodedToken } from "../models/Auth";
+import axios from "axios";
+import { toast } from "react-toastify";
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -49,6 +51,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [navigate]);
 
   useEffect(() => {
+    const responseInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (
+          axios.isAxiosError(error) &&
+          error.response?.status === 401 &&
+          !error.config?.url?.includes('/login')
+        ) {
+          toast.error("Tu sesión ha caducado. Por favor, vuelve a iniciar sesión.");
+          logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(responseInterceptor);
+  }, [logout]);
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      console.warn("Se detectó un 401 en fetch. Cerrando sesión...");
+      toast.error("Tu sesión ha caducado. Por favor, vuelve a iniciar sesión.");
+      logout();
+    };
+    window.addEventListener('auth-unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('auth-unauthorized', handleUnauthorized);
+    };
+  }, [logout]);
+
+  useEffect(() => {
     const storedToken = localStorage.getItem("token");
 
     if (storedToken) {
@@ -71,6 +102,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const interval = setInterval(() => {
       if (isTokenExpired(token)) {
+        toast.info("Tu sesión ha expirado por inactividad.");
         logout();
       }
     }, 60000);
@@ -87,6 +119,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     setUser,
   };
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+      </div>
+    );
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

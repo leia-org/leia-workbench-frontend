@@ -4,7 +4,7 @@ import axios, { AxiosRequestConfig } from "axios";
 import { Navbar } from "../components/Navbar";
 import { useAuth } from "../context/useAuth";
 import Switch from "react-switch";
-import { ToastContainer, toast } from "react-toastify";
+import { toast } from "react-toastify";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { docco } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import {
@@ -183,7 +183,7 @@ export const Replication: React.FC = () => {
   const buildRequestConfig = useCallback(
     (config: AxiosRequestConfig = {}): AxiosRequestConfig => {
       const headers = { ...(config.headers || {}) };
-      if (token && isAdmin) {
+      if (token) {
         headers.Authorization = `Bearer ${token}`;
       }
 
@@ -201,7 +201,7 @@ export const Replication: React.FC = () => {
       }
       return finalConfig;
     },
-    [token, isAdmin, replicationToken]
+    [token, replicationToken]
   );
 
   // Fetch replication on mount
@@ -225,7 +225,8 @@ export const Replication: React.FC = () => {
               autoClose: 5000,
             });
           } else {
-            setTimeout(() => navigate("/login"), 2000);
+            toast.error("No tienes permisos para acceder a esta réplica.");
+            navigate("/login");
           }
         } else {
           console.error("Load error:", err);
@@ -694,7 +695,6 @@ export const Replication: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {isAdmin && <Navbar />}
-      <ToastContainer />
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

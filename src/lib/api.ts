@@ -18,6 +18,9 @@ export async function authFetch(url: string, token: string|null, options: Reques
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && !url.includes('/login')) {
+    window.dispatchEvent(new CustomEvent('auth-unauthorized'));
+  }
   const data = await safeJsonParse(res);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { res, data } as { res: Response; data: any };

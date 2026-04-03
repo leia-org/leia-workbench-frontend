@@ -53,16 +53,12 @@ export const Administration: React.FC = () => {
   const [replications, setReplications] = useState<Replication[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const { token, user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { token, isLoading } = useAuth();
 
   useEffect(() => {
     const fetchReplications = async () => {
       try {
-        if (!token || !isAdmin) {
-          navigate('/login');
-          return;
-        }
+        if (isLoading) {return;}
         const response = await axios.get<Replication[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
@@ -74,18 +70,14 @@ export const Administration: React.FC = () => {
         setReplications(response.data);
         console.log('Replications:', response.data);
       } catch (error: any) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          setTimeout(() => navigate('/login'), 2000);
-        } else {
-          console.error('Failed to load replications:', error);
-        }
+        console.error('Failed to load replications:', error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchReplications();
-  }, [navigate, token, isAdmin]);
+  }, [navigate, token, isLoading]);
 
   const handleView = (id: string) => {
     navigate(`/replications/${id}`);

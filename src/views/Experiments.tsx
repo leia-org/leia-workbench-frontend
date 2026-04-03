@@ -53,16 +53,11 @@ export const Experiments: React.FC = () => {
   const navigate = useNavigate();
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const { token, user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { token } = useAuth();
 
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        if (!token || !isAdmin) {
-          navigate('/login');
-          return;
-        }
         const response = await axios.get<Experiment[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
           {
@@ -74,18 +69,14 @@ export const Experiments: React.FC = () => {
         setExperiments(response.data);
         console.log('Experiments:', response.data);
       } catch (error: any) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          setTimeout(() => navigate('/login'), 2000);
-        } else {
-          console.error('Failed to load experiments:', error);
-        }
+        console.error('Failed to load experiments:', error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchExperiments();
-  }, [navigate]);
+  }, [token]);
 
   const handleView = (id: string) => {
     navigate(`/experiments/${id}`);

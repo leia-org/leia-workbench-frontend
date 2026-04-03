@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Navbar } from "../components/Navbar";
-import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { toast } from "react-toastify";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { ApiKeyCard } from "../components/apikeys/ApiKeyCard";
 import { ApiKeyFormModal } from "../components/apikeys/ApiKeyFormModal";
@@ -147,7 +146,6 @@ export const ApiKeysPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <ToastContainer position="bottom-right" />
 
       {/* Contenido Principal */}
       <div className="max-w-6xl mx-auto p-6">

@@ -21,8 +21,7 @@ interface Experiment {
 
 export const Experiment: React.FC = () => {
   const navigate = useNavigate();
-  const { token, user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { token } = useAuth();
   const [experiment, setExperiment] = useState<Experiment>();
   const [loading, setLoading] = useState<boolean>(true);
   const { id } = useParams<{ id: string }>();
@@ -33,10 +32,6 @@ export const Experiment: React.FC = () => {
   useEffect(() => {
     const fetchExperiment = async () => {
       try {
-        if (!token || !isAdmin) {
-          navigate('/login');
-          return;
-        }
         const response = await axios.get<Experiment>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments/${id}`,
           {
@@ -48,25 +43,17 @@ export const Experiment: React.FC = () => {
         setExperiment(response.data);
         console.log('Experiment:', response.data);
       } catch (error: any) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          setTimeout(() => navigate('/login'), 2000);
-        } else {
-          console.error('Failed to load experiments:', error);
-        }
+        console.error('Failed to load experiments:', error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchExperiment();
-  }, [id, navigate]);
+  }, [id, token]);
 
   const handleCreateReplication = async () => {
     try {
-      if (!token || !isAdmin) {
-        navigate('/login');
-        return;
-      }
       const response = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
         {
@@ -84,11 +71,7 @@ export const Experiment: React.FC = () => {
       setReplicationName('');
       navigate(`/replications/${response.data.id}`);
     } catch (error: any) {
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        setTimeout(() => navigate('/login'), 2000);
-      } else {
-        console.error('Failed to create replication:', error);
-      }
+      console.error('Failed to create replication:', error);
     }
   };
 
