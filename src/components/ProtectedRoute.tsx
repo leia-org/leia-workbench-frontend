@@ -1,13 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context';
+import { toast } from 'react-toastify';
 
 interface ProtectedRouteProps {
-  requireAdmin?: boolean;
+  requiredRoles?: string[];
 }
-
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requireAdmin = false }) => {
-  const { token, user, isLoading } = useAuth();
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRoles = ['admin'] }) => {
+  const { token, user, isLoading, logout } = useAuth();
+  useEffect(() => {
+    if (!isLoading && token && requiredRoles && (!user?.role || !requiredRoles.includes(user.role))) {
+      toast.error('Acceso denegado. Por seguridad se ha cerrado tu sesión.');
+      logout();
+    }
+  }, [isLoading, token, requiredRoles, user?.role, logout]);
 
   if (isLoading) {
     return (
@@ -21,8 +27,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requireAdmin = false })
     return <Navigate to="/login" replace />;
   }
 
-  if (requireAdmin && user?.role !== 'admin') {
-    return <Navigate to="/" replace />;
+  if (requiredRoles && (!user?.role || !requiredRoles.includes(user.role))) {
+    return null;
   }
 
   return <Outlet />;

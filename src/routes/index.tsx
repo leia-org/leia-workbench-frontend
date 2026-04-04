@@ -42,7 +42,7 @@ export const router = createBrowserRouter([
   },
 
   {
-    element: <ProtectedRoute requireAdmin={true} />,
+    element: <ProtectedRoute requiredRoles={['admin', 'advanced']} />,
     children: [
       {
         path: '/administration',

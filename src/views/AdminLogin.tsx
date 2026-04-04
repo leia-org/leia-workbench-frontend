@@ -1,18 +1,28 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Cog6ToothIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { useAuth } from "../context";
+import { toast } from "react-toastify";
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, token } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [isManualLogin, setIsManualLogin] = useState(false);
+
+
+  useEffect(() => {
+    if (token && !isManualLogin) {
+      navigate("/administration");
+      toast.info("You are already logged in, redirecting to admin panel...");
+    }
+  }, [token, navigate, isManualLogin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +34,6 @@ export const AdminLogin: React.FC = () => {
 
     setLoading(true);
     setMessage("");
-
     try {
       const response = await axios.post(
         `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/login`,
@@ -38,7 +47,7 @@ export const AdminLogin: React.FC = () => {
       if (token) {
         setSuccess(true);
         setMessage("Logged in successfully!");
-
+        setIsManualLogin(true);
         login(token);
 
         setTimeout(() => {
@@ -72,6 +81,9 @@ export const AdminLogin: React.FC = () => {
     }
   };
 
+  if (token && !isManualLogin) {
+    return null;
+  }
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50">
       <div className="w-full max-w-md px-8 py-12 bg-white rounded-2xl shadow-xl">
