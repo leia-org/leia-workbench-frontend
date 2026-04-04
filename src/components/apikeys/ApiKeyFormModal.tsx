@@ -17,7 +17,7 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
   useEffect(() => {
     if (isOpen) {
       if (mode === "edit" && selectedKey) {
-        setFormData(selectedKey);
+        setFormData({ ...selectedKey, keyValue: "" });
       } else {
         setFormData({
           description: "",
@@ -47,7 +47,6 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      console.log('Submitting form with data:', formData); // Debug log
       await onSave(formData);
     } finally {
       setIsSubmitting(false);
@@ -76,7 +75,7 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">API Key Value</label>
-              <input type="text" name="keyValue" value={formData.keyValue || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 font-mono" placeholder="sk-..." required={mode === 'create'} />
+              <input type="text" name="keyValue" value={formData.keyValue || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 font-mono" placeholder={mode === "create" ? "sk-..." : "Leave blank to keep current"} required={mode === 'create'} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

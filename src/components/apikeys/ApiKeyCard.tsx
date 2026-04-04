@@ -1,12 +1,9 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   PencilIcon,
   TrashIcon,
-  DocumentDuplicateIcon,
-  EyeIcon,
   LinkIcon,
   CubeTransparentIcon,
-  EyeSlashIcon,
   StarIcon as StarSolidIcon
 } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutlineIcon } from "@heroicons/react/24/outline";
@@ -16,31 +13,17 @@ interface ApiKeyCardProps {
   apiKey: ApiKey;
   onEdit: () => void;
   onDelete: () => void;
-  onCopy: (keyString: string) => void;
   onToggleDefault?: (apiKey: ApiKey) => void;
   isSaving?: boolean;
 }
 
-export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete, onCopy, onToggleDefault, isSaving = false }) => {
-  const [isValueVisible, setIsValueVisible] = useState(false);
-
-  const changeValueVisibility = () => {
-    setIsValueVisible(!isValueVisible);
-  };
+export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete, onToggleDefault, isSaving = false }) => {
 
   const handleToggleDefault = () => {
     if (onToggleDefault) {
       onToggleDefault(apiKey);
       return;
     }
-  };
-
-  const getMaskedValue = (value?: string) => {
-    if (!value) return "••••••••";
-    if (value.length <= 4) return "••••••••";
-    const visiblePart = value.substring(0, 3);
-    const hiddenPart = "•".repeat(Math.min(value.length - 3, 12));
-    return `${visiblePart}${hiddenPart}`;
   };
   return (
     <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 border border-gray-200 p-6 flex flex-col">
@@ -123,25 +106,8 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete
           <div className="flex items-center justify-between mt-1.5 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
 
             <span className="text-sm font-mono text-gray-800 truncate">
-              {isValueVisible ? apiKey.keyValue : getMaskedValue(apiKey.keyValue)}
+              {apiKey.keyValue}
             </span>
-
-            <div className="flex space-x-2 ml-3 pl-3 border-l border-gray-200">
-              <button
-                className="text-gray-400 hover:text-gray-700 transition-colors"
-                onClick={changeValueVisibility}
-                title={isValueVisible ? "Hide value" : "Show value"}
-              >
-                {isValueVisible ? (
-                  <EyeSlashIcon className="h-5 w-5" />
-                ) : (
-                  <EyeIcon className="h-5 w-5" />
-                )}
-              </button>
-              <button onClick={() => onCopy(apiKey.keyValue)} className="text-gray-400 hover:text-blue-600 transition-colors" title="Copy to clipboard">
-                <DocumentDuplicateIcon className="h-5 w-5" />
-              </button>
-            </div>
           </div>
         </div>
 

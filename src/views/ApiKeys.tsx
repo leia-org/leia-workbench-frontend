@@ -18,11 +18,6 @@ export const ApiKeysPage: React.FC = () => {
   const [isMarkDefaultModalOpen, setIsMarkDefaultModalOpen] = useState(false);
 
   // --- Handlers ---
-  const handleCopyKey = (keyString: string) => {
-    navigator.clipboard.writeText(keyString);
-    toast.success("API Key copied to clipboard!");
-  };
-
   const confirmMarkDefault = async () => {
     if (!selectedKey) return;
     try {
@@ -135,7 +130,6 @@ export const ApiKeysPage: React.FC = () => {
             onEdit={() => openEditModal(key)}
             onDelete={() => { setSelectedKey(key); setIsDeleteModalOpen(true); }}
             onToggleDefault={() => openMarkDefaultModal(key)}
-            onCopy={handleCopyKey}
             isSaving={!!savingIds?.[key.id]}
           />
         ))}
