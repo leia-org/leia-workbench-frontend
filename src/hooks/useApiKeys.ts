@@ -116,6 +116,11 @@ export const useApiKeys = () => {
     }
   }, [apiKeys, token]);
 
+  const getDefaultKey = useCallback((): ApiKey | null => {
+    return apiKeys.find(k => k.isDefault) || null;
+  }, [apiKeys]);
+
+
   return {
     apiKeys,
     setApiKeys,
@@ -125,6 +130,7 @@ export const useApiKeys = () => {
     toggleDefault,
     savingIds,
     deleteKey,
-    saveKey
+    saveKey,
+    getDefaultKey
   };
 };

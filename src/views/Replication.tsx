@@ -27,6 +27,7 @@ import {
   BeakerIcon,
 } from "@heroicons/react/24/solid";
 import { useApiKeys } from "../hooks/useApiKeys";
+import { ApiKey } from "../models/ApiKeys";
 
 interface Replication {
   id: string;
@@ -130,7 +131,7 @@ export const Replication: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { token, user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAuthorised = user?.role === "admin" || user?.role === "advanced";
   const [replication, setReplication] = useState<Replication | null>(null);
   const [localReplication, setLocalReplication] = useState<Replication | null>(
     null
@@ -154,15 +155,14 @@ export const Replication: React.FC = () => {
   const [isNewDurationModalOpen, setIsNewDurationModalOpen] =
     useState<boolean>(false);
   const [isNewFormModalOpen, setIsNewFormModalOpen] = useState<boolean>(false);
-
   // Side bar
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
-  const {apiKeys} = useApiKeys();
-  const [selectedApiKeys, setSelectedApiKeys] = useState<Record<string, string>>({});
+  const {apiKeys, getDefaultKey} = useApiKeys();
+  const defaultKey = getDefaultKey();
+  const [selectedKey, setSelectedKey] = useState<ApiKey | null>(defaultKey);
   // Usamos el idx para saber qué dropdown abrir si hay múltiples Leias
   const [openDropdownIdx, setOpenDropdownIdx] = useState<number | null>(null);
-
   useEffect(() => {
     if (!id) return;
     setTokenReady(false);
@@ -203,6 +203,12 @@ export const Replication: React.FC = () => {
     },
     [token, replicationToken]
   );
+
+  useEffect(() => {
+    if (defaultKey && !selectedKey) {
+      setSelectedKey(defaultKey);
+    }
+  }, [defaultKey, selectedKey]);
 
   // Fetch replication on mount
   useEffect(() => {
@@ -427,7 +433,7 @@ export const Replication: React.FC = () => {
   };
 
   const regenerateShareToken = async () => {
-    if (!isAdmin) return;
+    if (!isAuthorised) return;
     try {
       const resp = await axios.patch(
         `${
@@ -510,7 +516,7 @@ export const Replication: React.FC = () => {
   };
 
   const toggleShared = async () => {
-    if (!replication || !isAdmin) return;
+    if (!replication || !isAuthorised) return;
     try {
       const resp = await axios.patch(
         `${
@@ -686,7 +692,7 @@ export const Replication: React.FC = () => {
   if (loading || !replication || !localReplication) {
     return (
       <div className="min-h-screen">
-        {isAdmin && <Navbar />}
+        {isAuthorised && <Navbar />}
         <div className="py-20 text-center">Loading replication...</div>
       </div>
     );
@@ -694,7 +700,7 @@ export const Replication: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {isAdmin && <Navbar />}
+      {isAuthorised && <Navbar />}
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -702,7 +708,7 @@ export const Replication: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-800 mr-2">
               {replication.name}
             </h1>
-            {isAdmin && (
+            {isAuthorised && (
               <button
                 onClick={() => setIsNewNameModalOpen(true)}
                 className="flex text-center items-center space-x-1 text-blue-600 hover:underline"
@@ -736,7 +742,7 @@ export const Replication: React.FC = () => {
                 onChange={toggleRepeatable}
               ></Switch>
             </label>
-            {isAdmin && (
+            {isAuthorised && (
               <label className="text-center flex items-center">
                 <ShareIcon className="h-4 w-4 text-gray-600" />
                 <span className="text-sm text-gray-700 mx-2">Shared</span>
@@ -749,7 +755,7 @@ export const Replication: React.FC = () => {
           </div>
         </div>
 
-        {isAdmin && replication.isShared && replication.shareToken && (
+        {isAuthorised && replication.isShared && replication.shareToken && (
           <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-6 flex flex-col gap-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
@@ -998,9 +1004,7 @@ export const Replication: React.FC = () => {
                         className="flex items-center justify-between min-w-[180px] border border-gray-300 rounded-md p-2 text-sm bg-white hover:bg-gray-50 focus:outline-none transition-colors"
                       >
                         <span className="truncate mr-2">
-                          {!selectedApiKeys[item.id] || selectedApiKeys[item.id] === "system"
-                            ? "LEIA System Key"
-                            : apiKeys.find((k) => k.id === selectedApiKeys[item.id])?.description || "Custom Key"}
+                          {selectedKey?.description}
                         </span>
                         <ChevronDownIcon className="h-4 w-4 text-gray-500" />
                       </button>
@@ -1016,25 +1020,14 @@ export const Replication: React.FC = () => {
                             <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100">
                               Select Key
                             </div>
-
-                            <button
-                              onClick={() => {
-                                setSelectedApiKeys(prev => ({ ...prev, [item.id]: "system" }));
-                                setOpenDropdownIdx(null);
-                              }}
-                              className={`w-full text-left px-3 py-2 text-sm transition-colors ${(!selectedApiKeys[item.id] || selectedApiKeys[item.id] === "system") ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"}`}
-                            >
-                              LEIA System Key
-                            </button>
-
                             {apiKeys.map((key) => (
                               <button
                                 key={key.id}
                                 onClick={() => {
-                                  setSelectedApiKeys(prev => ({ ...prev, [item.id]: key.id }));
+                                  setSelectedKey(key);
                                   setOpenDropdownIdx(null);
                                 }}
-                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${selectedApiKeys[item.id] === key.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"}`}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${selectedKey?.id === key.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"}`}
                               >
                                 {key.description}
                               </button>
@@ -1046,15 +1039,13 @@ export const Replication: React.FC = () => {
                     <div className="flex items-center space-x-3 pl-2">
 
                       {/* URL de Gestión (Dashboard) */}
-                      {selectedApiKeys[item.id] &&
-                       selectedApiKeys[item.id] !== "system" &&
-                       apiKeys.find(k => k.id === selectedApiKeys[item.id])?.managementUrl && (
+                      {selectedKey && selectedKey.id !== "system" && selectedKey.managementUrl && (
                         <a
-                          href={apiKeys.find(k => k.id === selectedApiKeys[item.id])?.managementUrl}
+                          href={selectedKey.managementUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
-                          title={apiKeys.find(k => k.id === selectedApiKeys[item.id])?.managementUrl}
+                          title={selectedKey.managementUrl}
                         >
                           <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
