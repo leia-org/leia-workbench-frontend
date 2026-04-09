@@ -17,6 +17,7 @@ interface LukeAudioWidgetProps {
   token: string;
   lukeConfig: LukeConfig;
   forceMute?: boolean;
+  showTranscription?: boolean;
   mode?: LukeUIMode;
   onTranscriptComplete?: (
     transcript: string,
@@ -31,6 +32,7 @@ interface LukeAudioWidgetProps {
 const LukeAudioInner: React.FC<{
   lukeConfig: LukeConfig;
   forceMute?: boolean;
+  showTranscription?: boolean;
   mode?: LukeUIMode;
   onTranscriptComplete?: (
     transcript: string,
@@ -38,7 +40,13 @@ const LukeAudioInner: React.FC<{
     timestamp: Date,
     sequence: number,
   ) => void;
-}> = ({ lukeConfig, forceMute = false, mode = "inline", onTranscriptComplete }) => {
+}> = ({
+  lukeConfig,
+  forceMute = false,
+  showTranscription = true,
+  mode = "inline",
+  onTranscriptComplete,
+}) => {
   const {
     isConnected,
     providers,
@@ -113,7 +121,7 @@ const LukeAudioInner: React.FC<{
   return (
     <VoiceClientUI
       mode={mode}
-      showTranscription={true}
+      showTranscription={showTranscription}
       showProviderSelector={false}
       showExpandButton={false}
       onTranscription={handleTranscription}
@@ -127,6 +135,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   token,
   lukeConfig,
   forceMute,
+  showTranscription,
   mode = "inline",
   onTranscriptComplete,
 }) => {
@@ -135,6 +144,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
       <LukeAudioInner
         lukeConfig={lukeConfig}
         forceMute={forceMute}
+        showTranscription={showTranscription}
         mode={mode}
         onTranscriptComplete={onTranscriptComplete}
       />

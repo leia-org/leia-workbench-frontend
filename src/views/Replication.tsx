@@ -56,11 +56,11 @@ interface Replication {
       runnerConfiguration: {
         provider: string;
         audioMode?: "realtime" | "luke" | null;
+        hideAudioTranscription?: boolean | null;
         realtimeConfig?: {
           model?: string;
           voice?: string;
           instructions?: string;
-          hideTranscription?: boolean;
           turnDetection?: {
             type?: "server_vad" | "none";
             threshold?: number;
@@ -115,6 +115,7 @@ const getFilteredVoiceOptions = (
 };
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
+const DEFAULT_PROVIDER = "default";
 
 const readStoredReplicationTokens = (): Record<string, string> => {
   try {
@@ -159,7 +160,11 @@ export const Replication: React.FC = () => {
   const [startingSessionLeiaId, setStartingSessionLeiaId] = useState<
     string | null
   >(null);
-
+  const [availableModels, setAvailableModels] = useState<Array<string>>([]);
+  const [hasFetchedAvailableModels, setHasFetchedAvailableModels] =
+    useState(false);
+  const [isMissingProviderModalOpen, setIsMissingProviderModalOpen] =
+    useState(false);
   // Modals
   const [newName, setNewName] = useState<string>("");
   const [newDuration, setNewDuration] = useState<string>("");
@@ -172,6 +177,24 @@ export const Replication: React.FC = () => {
   // Side bar
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
+
+  const isProviderValid = (provider: string) => {
+    return provider === DEFAULT_PROVIDER || availableModels.includes(provider);
+  };
+
+  const unavailableLeiaProviders: Array<{ leiaName: string; provider: string }> =
+    !localReplication || !hasFetchedAvailableModels
+      ? []
+      : localReplication.experiment.leias
+          .filter(
+            (leia) =>
+              leia.runnerConfiguration.provider &&
+              !isProviderValid(leia.runnerConfiguration.provider)
+          )
+          .map((leia) => ({
+            leiaName: leia.leia.metadata?.name || "Unknown Leia",
+            provider: leia.runnerConfiguration.provider,
+          }));
 
   useEffect(() => {
     if (!id) return;
@@ -253,6 +276,43 @@ export const Replication: React.FC = () => {
     tokenReady,
     buildRequestConfig,
   ]);
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const resp = await axios.get<{ models: string[] }>(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/runner/models`,
+          buildRequestConfig()
+        );
+        setAvailableModels(
+          Array.isArray(resp.data?.models) ? resp.data.models : []
+        );
+        setHasFetchedAvailableModels(true);
+      } catch (err) {
+        console.error("Error fetching available models:", err);
+        setAvailableModels([]);
+        setHasFetchedAvailableModels(false);
+      }
+    };
+    fetchModels();
+  }, [buildRequestConfig]);
+
+  useEffect(() => {
+    if (!hasFetchedAvailableModels) {
+      setIsMissingProviderModalOpen(false);
+      return;
+    }
+
+    const hasUnavailableProvider = Boolean(
+      localReplication?.experiment.leias.some(
+        (leia) =>
+          leia.runnerConfiguration.provider &&
+          !isProviderValid(leia.runnerConfiguration.provider)
+      )
+    );
+
+    setIsMissingProviderModalOpen(hasUnavailableProvider);
+  }, [hasFetchedAvailableModels, localReplication, availableModels]);
+
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -1054,6 +1114,15 @@ export const Replication: React.FC = () => {
                   <legend>Runner</legend>
                   <div className="flex items-center space-x-2 mb-3">
                     <div className="text-sm text-gray-700">Provider:</div>
+                    {(() => {
+                      const currentProvider = item.runnerConfiguration.provider;
+                      const isCurrentProviderValid = isProviderValid(currentProvider);
+                      const baseOptions = [DEFAULT_PROVIDER, ...availableModels];
+                      const providerOptions = isCurrentProviderValid
+                        ? baseOptions
+                        : [currentProvider, ...baseOptions];
+
+                      return (
                     <select
                       value={item.runnerConfiguration.provider}
                       onChange={(e) =>
@@ -1063,11 +1132,26 @@ export const Replication: React.FC = () => {
                           e.target.value
                         )
                       }
-                      className="border border-gray-300 rounded-md p-2"
+                      className={`border rounded-md p-2 ${
+                        isCurrentProviderValid
+                          ? "border-gray-300"
+                          : "border-red-500 bg-red-50 text-red-800"
+                      }`}
                     >
-                      <option value="default">default</option>
-                      <option value="openai-assistant">openai-assistant</option>
+                      {providerOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt === DEFAULT_PROVIDER
+                            ? "default"
+                            : isProviderValid(opt)
+                            ? opt
+                            : `${opt} (no disponible)`}
+                        </option>
+                      ))}
                     </select>
+                      );
+                    })()}
+
+              
                   </div>
 
                   {/* Audio Mode Configuration */}
@@ -1086,12 +1170,29 @@ export const Replication: React.FC = () => {
                               "runnerConfiguration.audioMode",
                               null
                             );
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.hideAudioTranscription",
+                              null
+                            );
                           } else if (value === "realtime") {
                             handleLocalLeiaChange(
                               idx,
                               "runnerConfiguration.audioMode",
                               "realtime"
                             );
+                            if (
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                null ||
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                undefined
+                            ) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                false
+                              );
+                            }
                             if (!item.runnerConfiguration.realtimeConfig) {
                               handleLocalLeiaChange(
                                 idx,
@@ -1100,7 +1201,6 @@ export const Replication: React.FC = () => {
                                   model: "gpt-4o-realtime-preview",
                                   voice: "marin",
                                   instructions: "",
-                                  hideTranscription: false,
                                   turnDetection: {
                                     type: "server_vad",
                                     threshold: 0.5,
@@ -1116,6 +1216,18 @@ export const Replication: React.FC = () => {
                               "runnerConfiguration.audioMode",
                               "luke"
                             );
+                            if (
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                null ||
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                undefined
+                            ) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                false
+                              );
+                            }
                             if (!item.runnerConfiguration.lukeConfig) {
                               handleLocalLeiaChange(
                                 idx,
@@ -1135,6 +1247,30 @@ export const Replication: React.FC = () => {
                         <option value="luke">Luke</option>
                       </select>
                     </div>
+
+                    {item.runnerConfiguration.audioMode && (
+                      <div className="ml-4">
+                        <div className="flex items-center space-x-2 mt-2">
+                          <ChatBubbleBottomCenterIcon className="h-4 w-4 text-gray-600" />
+                          <label className="text-sm text-gray-700 font-medium">
+                            Hide audio transcription:
+                          </label>
+                          <Switch
+                            checked={
+                              item.runnerConfiguration
+                                .hideAudioTranscription || false
+                            }
+                            onChange={(checked) =>
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                checked
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {item.runnerConfiguration.audioMode === "realtime" && (
                       <div className="ml-4 space-y-2 text-sm">
@@ -1175,25 +1311,6 @@ export const Replication: React.FC = () => {
                               onChange={() => setShowAllVoices(!showAllVoices)}
                             ></Switch>
                           </label>
-                        </div>
-                        <div className="flex items-center space-x-2 mt-2">
-                          <ChatBubbleBottomCenterIcon className="h-4 w-4 text-gray-600" />
-                          <label className="text-sm text-gray-700 font-medium">
-                            Hide live transcription:
-                          </label>
-                          <Switch
-                            checked={
-                              item.runnerConfiguration.realtimeConfig
-                                ?.hideTranscription || false
-                            }
-                            onChange={(checked) =>
-                              handleLocalLeiaChange(
-                                idx,
-                                "runnerConfiguration.realtimeConfig.hideTranscription",
-                                checked
-                              )
-                            }
-                          />
                         </div>
                         <div className="text-xs text-purple-600 flex items-center gap-1">
                           <svg
@@ -1485,6 +1602,40 @@ export const Replication: React.FC = () => {
                   }`}
                 >
                   Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isMissingProviderModalOpen && unavailableLeiaProviders.length > 0 && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-lg w-full mx-4">
+              <h2 className="text-lg font-semibold mb-2 text-red-700">
+                Provider not available
+              </h2>
+              <p className="text-sm text-gray-700 mb-4">
+                Some Leias have a provider configured that is no longer in the list of available models.
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4 max-h-56 overflow-auto">
+                {unavailableLeiaProviders.map((item) => (
+                  <div
+                    key={`${item.leiaName}-${item.provider}`}
+                    className="text-sm text-red-800"
+                  >
+                    <strong>{item.leiaName}:</strong> {item.provider}
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Change the provider to one that is available and save the configuration.
+              </p>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setIsMissingProviderModalOpen(false)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Understand
                 </button>
               </div>
             </div>
