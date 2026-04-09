@@ -102,7 +102,7 @@ export const Experiment: React.FC = () => {
           <h2 className="text-lg font-semibold">Experiment preview</h2>
           <div>
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/experiments')}
               className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition duration-200"
             >
               Go back
