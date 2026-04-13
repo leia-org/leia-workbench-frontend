@@ -638,7 +638,10 @@ export const Chat = () => {
             onClick={handleFinishConversation}
             disabled={
               concluding ||
-              (!messages.length && configuration?.mode != "transcription")
+              (!messages.length &&
+                configuration?.mode !== "transcription" &&
+                audioMode !== "luke" &&
+                audioMode !== "audio")
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
