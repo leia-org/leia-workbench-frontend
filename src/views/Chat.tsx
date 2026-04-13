@@ -476,7 +476,13 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
-    if (!messages.length && configuration?.mode !== "transcription") return;
+    if (
+      !messages.length &&
+      configuration?.mode !== "transcription" &&
+      audioMode !== "luke" &&
+      audioMode !== "audio"
+    )
+      return;
     setConcluding(true);
     if (configuration?.askSolution) {
       navigate("/edit");
