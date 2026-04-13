@@ -92,6 +92,7 @@ export const Chat = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [lukeConfig, setLukeConfig] = useState<{ provider: string; voice: string } | null>(null);
+  const [leiaName, setLeiaName] = useState<string | null>(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -254,6 +255,7 @@ export const Chat = () => {
       if (response.status === 200) {
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
+        setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
@@ -672,6 +674,7 @@ export const Chat = () => {
               wsUrl={lukeToken.wsUrl!}
               token={lukeToken.token!}
               lukeConfig={lukeConfig}
+              leiaName={leiaName || undefined}
               forceMute={showInstructions}
               showTranscription={!hideAudioTranscription}
               mode="inline"
