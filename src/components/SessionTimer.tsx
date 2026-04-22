@@ -3,40 +3,28 @@ import { ClockIcon } from "@heroicons/react/24/outline";
 
 interface SessionTimerProps {
   durationMinutes: number;
+  sessionStartedAt: string; // ISO string — finishTime = startedAt + duration
   onExpire: () => void;
 }
 
-const STORAGE_KEY_PREFIX = "sessionFinishTime_";
-
 export const SessionTimer: React.FC<SessionTimerProps> = ({
   durationMinutes,
+  sessionStartedAt,
   onExpire,
 }) => {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const onExpireRef = useRef(onExpire);
   const hasExpiredRef = useRef(false);
 
-  // Keep onExpire ref up to date without restarting the timer
   useEffect(() => {
     onExpireRef.current = onExpire;
   }, [onExpire]);
 
   useEffect(() => {
-    if (!durationMinutes || durationMinutes <= 0) return;
+    if (!durationMinutes || durationMinutes <= 0 || !sessionStartedAt) return;
 
-    // Use sessionId from localStorage to namespace the finish time
-    const sessionId = localStorage.getItem("sessionId") || "unknown";
-    const storageKey = STORAGE_KEY_PREFIX + sessionId;
-
-    // Set finishTime on first mount, reuse if already set (e.g. page refresh)
-    let finishTime: number;
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      finishTime = parseInt(stored, 10);
-    } else {
-      finishTime = Date.now() + durationMinutes * 60 * 1000;
-      localStorage.setItem(storageKey, String(finishTime));
-    }
+    // Deterministic: finishTime is always startedAt + duration, survives page refreshes
+    const finishTime = new Date(sessionStartedAt).getTime() + durationMinutes * 60 * 1000;
 
     const tick = () => {
       const remaining = Math.floor((finishTime - Date.now()) / 1000);
@@ -44,7 +32,6 @@ export const SessionTimer: React.FC<SessionTimerProps> = ({
         setSecondsLeft(0);
         if (!hasExpiredRef.current) {
           hasExpiredRef.current = true;
-          localStorage.removeItem(storageKey);
           onExpireRef.current();
         }
       } else {
@@ -52,10 +39,10 @@ export const SessionTimer: React.FC<SessionTimerProps> = ({
       }
     };
 
-    tick(); // run immediately
+    tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [durationMinutes]);
+  }, [durationMinutes, sessionStartedAt]);
 
   if (secondsLeft === null) return null;
 

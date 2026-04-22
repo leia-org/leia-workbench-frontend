@@ -257,10 +257,10 @@ export const Chat = () => {
       if (response.status === 200) {
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
-        const st = response.data.leia.configuration?.data?.sessionTime;
-        //TEMP
-        //setSessionTime(1)
-        if (typeof st === "number") setSessionTime(st);
+        const durationSeconds = response.data.replication?.duration;
+        if (typeof durationSeconds === "number" && durationSeconds > 0) {
+          setSessionTime(durationSeconds / 60);
+        }
         setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
         setReplication(response.data.replication);
         setSession(response.data.session);
@@ -645,9 +645,10 @@ export const Chat = () => {
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
         <div className="flex gap-2">
-        {sessionTime && (
+        {sessionTime && session?.startedAt && (
           <SessionTimer
             durationMinutes={sessionTime}
+            sessionStartedAt={session.startedAt}
             onExpire={handleTimerExpire}
           />
         )}
