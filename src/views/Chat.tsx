@@ -259,8 +259,8 @@ export const Chat = () => {
         setConfiguration(response.data.leia.configuration);
         const st = response.data.leia.configuration?.data?.sessionTime;
         //TEMP
-        setSessionTime(1)
-        //if (typeof st === "number") setSessionTime(st);
+        //setSessionTime(1)
+        if (typeof st === "number") setSessionTime(st);
         setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
         setReplication(response.data.replication);
         setSession(response.data.session);
