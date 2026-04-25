@@ -20,4 +20,5 @@ export interface ApiKeyFormData {
   managementUrl?: string | undefined;
   isActive: boolean | undefined;
   isDefault?: boolean | undefined;
+  isSystemApiKey?: boolean | undefined;
 }

@@ -48,8 +48,8 @@ export const useApiKeys = () => {
               }
             });
           };
-  const deleteKey = async (id: string) => {
-    const { res, data } = await authFetch(`${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys/${id}`, token, { method: 'DELETE' });
+  const deleteKey = async (url: string, id: string) => {
+    const { res, data } = await authFetch(url, token, { method: 'DELETE' });
     if (!res.ok) throw new Error(data?.message || 'Error deleting key');
     setApiKeys(prev => prev.filter(k => k.id !== id));
   };

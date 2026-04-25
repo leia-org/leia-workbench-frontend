@@ -5,12 +5,13 @@ interface ApiKeyFormModalProps {
   isOpen: boolean;
   mode: "create" | "edit";
   selectedKey: ApiKey | null;
+  userRole?: string;
   onClose: () => void;
 
   onSave: (formData: Partial<ApiKey>) => Promise<void>;
 }
 
-export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, onClose, onSave }) => {
+export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, userRole, onClose, onSave }) => {
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -26,6 +27,7 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
           isActive: true,
           baseUrl: "",
           managementUrl: "",
+          isSystemApiKey: false,
         });
       }
     }
@@ -98,6 +100,25 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
               <label className="block text-sm font-medium text-gray-700 mb-1">Management URL <span className="text-gray-400 font-normal">(Optional)</span></label>
               <input type="url" name="managementUrl" value={formData.managementUrl || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-blue-600" placeholder="https://..." />
             </div>
+            {mode === "create" && userRole && userRole === "admin" && (
+              <div className="pt-2 border-t border-gray-100 mt-4">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="isSystemApiKey"
+                    checked={!!formData.isSystemApiKey}
+                    onChange={handleChange}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Make this a System API Key
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-7">
+                  System API keys can be used by all users who have system access enabled.
+                </p>
+              </div>
+            )}
           </div>
           <div className="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50">
             <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50">Cancel</button>

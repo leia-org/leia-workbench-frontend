@@ -7,9 +7,11 @@ import { ApiKeyFormModal } from "../components/apikeys/ApiKeyFormModal";
 import { ApiKeyMarkDefaultModal } from "../components/apikeys/ApiKeyMarkDefaultModal";
 import type { ApiKey, ApiKeyFormData } from "../models/ApiKeys";
 import { useApiKeys } from "../hooks/useApiKeys";
+import { useAuth } from "../context";
 
 
 export const ApiKeysPage: React.FC = () => {
+  const {user} = useAuth();
   const { apiKeys, isLoading, toggleDefault, savingIds, deleteKey, saveKey } = useApiKeys();
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
@@ -51,13 +53,16 @@ export const ApiKeysPage: React.FC = () => {
   const handleSaveKey = async (formData: Partial<ApiKey>) => {
     try {
       const isCreate = formMode === "create";
-      const baseUrl = `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`;
+      const isSystemKey = isCreate ? formData.isSystemApiKey : selectedKey?.isSystemApiKey;
+      const baseUrl = isSystemKey
+        ? `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/system-api-keys`
+        : `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`;
+
       const url = isCreate ? baseUrl : `${baseUrl}/${selectedKey?.id}`;
       const method = isCreate ? "POST" : "PUT";
       const cleanManagementUrl = formData.managementUrl?.trim() || undefined;
 
-      const payload: ApiKeyFormData =
-      {
+      const payload: ApiKeyFormData = {
         description: formData.description,
         keyValue: formData.keyValue,
         modelName: formData.modelName,
@@ -65,24 +70,29 @@ export const ApiKeysPage: React.FC = () => {
         managementUrl: cleanManagementUrl,
         isActive: formData.isActive,
       };
-
-      if (isCreate) {
+      if (isCreate && !isSystemKey) {
         payload.isDefault = formData.isDefault || false;
       }
-        await saveKey(url, method, payload);
-        toast.success(isCreate ? "API Key created successfully!" : "API Key updated!");
-        setIsFormModalOpen(false);
-
+      await saveKey(url, method, payload);
+      toast.success(isCreate ? "API Key created successfully!" : "API Key updated!");
+      setIsFormModalOpen(false);
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Failed to save API Key");
       throw err;
     }
   };
+
   const confirmDelete = async () => {
     if (!selectedKey) return;
     try {
-      await deleteKey(selectedKey.id);
+      const baseUrl = selectedKey.isSystemApiKey
+        ? `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/system-api-keys`
+        : `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`;
+
+      const url = `${baseUrl}/${selectedKey.id}`;
+
+      await deleteKey(url, selectedKey.id);
       toast.success("API Key deleted successfully!");
     } catch (err) {
       console.error(err);
@@ -127,6 +137,7 @@ export const ApiKeysPage: React.FC = () => {
           <ApiKeyCard
             key={key.id}
             apiKey={key}
+            userRole={user?.role}
             onEdit={() => openEditModal(key)}
             onDelete={() => { setSelectedKey(key); setIsDeleteModalOpen(true); }}
             onToggleDefault={() => openMarkDefaultModal(key)}
@@ -167,6 +178,7 @@ export const ApiKeysPage: React.FC = () => {
       <ApiKeyFormModal
         isOpen={isFormModalOpen}
         mode={formMode}
+        userRole={user?.role}
         selectedKey={selectedKey}
         onClose={() => {
           setIsFormModalOpen(false);

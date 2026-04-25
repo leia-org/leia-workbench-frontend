@@ -11,13 +11,14 @@ import { ApiKey } from "../../models/ApiKeys"; // Asegúrate de que esta ruta se
 
 interface ApiKeyCardProps {
   apiKey: ApiKey;
+  userRole: string|undefined;
   onEdit: () => void;
   onDelete: () => void;
   onToggleDefault?: (apiKey: ApiKey) => void;
   isSaving?: boolean;
 }
 
-export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete, onToggleDefault, isSaving = false }) => {
+export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, userRole,onDelete, onToggleDefault, isSaving = false }) => {
 
   const handleToggleDefault = () => {
     if (onToggleDefault) {
@@ -52,6 +53,12 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete
                 Default
               </span>
             )}
+
+            {apiKey.isSystemApiKey && (
+              <span className="bg-gray-100 text-yellow-800 text-[10px] font-bold px-2.5 py-1 rounded uppercase tracking-wide">
+                System
+              </span>
+            )}
           </div>
         </div>
 
@@ -66,7 +73,7 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete
               <svg className="animate-spin h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-              </svg>
+              </svg> // Cambiar por iconos
             ) : apiKey.isDefault ? (
               <StarSolidIcon className="h-5 w-5 text-yellow-500" />
             ) : (
@@ -74,7 +81,7 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, onDelete
             )}
           </button>
 
-          {!apiKey?.isSystemApiKey && (
+          {(!apiKey?.isSystemApiKey|| (userRole && userRole === 'admin')) && (
             <>
               <button
                 onClick={onEdit}
