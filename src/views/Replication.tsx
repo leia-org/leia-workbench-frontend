@@ -1557,7 +1557,7 @@ export const Replication: React.FC = () => {
                 pattern="[0-9]*"
                 value={newDuration}
                 onChange={(e) => setNewDuration(e.target.value)}
-                placeholder="1800"
+                placeholder="Duration in seconds (e.g. 1800)"
                 className="w-full border border-gray-300 rounded-md p-2 mb-4"
               />
               <div className="flex justify-end space-x-2">

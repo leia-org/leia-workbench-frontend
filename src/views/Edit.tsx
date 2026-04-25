@@ -5,6 +5,7 @@ import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
+import { SessionTimer } from "../components/SessionTimer";
 
 mermaid.initialize({
   startOnLoad: true,
@@ -287,9 +288,12 @@ interface HeaderProps {
   formUrl: string;
   loadingEvaluation: boolean;
   onAlert: () => void;
+  sessionTime?: number | null;
+  sessionStartedAt?: string | null;
+  onTimerExpire?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -300,7 +304,14 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert }) => (
         />
         <h1 className="text-xl font-semibold text-gray-900">Editor</h1>
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center">
+        {sessionTime && sessionStartedAt && onTimerExpire && (
+          <SessionTimer
+            durationMinutes={sessionTime}
+            sessionStartedAt={sessionStartedAt}
+            onExpire={onTimerExpire}
+          />
+        )}
         <button
           onClick={onAlert}
           disabled={loadingEvaluation}
@@ -390,6 +401,11 @@ export const Edit = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [spectateUrl, setSpectateUrl] = useState<string | null>(null);
   const [problemSolution, setProblemSolution] = useState<string | null>(null);
+  const [sessionTime, setSessionTime] = useState<number | null>(null);
+  const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
+  const [redirectingIn, setRedirectingIn] = useState(6);
 
   // Load initial data from localStorage
   useEffect(() => {
@@ -405,9 +421,20 @@ export const Edit = () => {
     if (savedReplication) {
       const parsedReplication = JSON.parse(savedReplication);
       setFormUrl(parsedReplication.form);
+      const durationSeconds = parsedReplication.duration;
+      if (typeof durationSeconds === "number" && durationSeconds > 0) {
+        setSessionTime(durationSeconds / 60);
+      }
     }
     if (savedSessionId) {
       setSessionId(savedSessionId);
+    }
+    const savedSession = localStorage.getItem("session");
+    if (savedSession) {
+      const parsedSession = JSON.parse(savedSession);
+      if (parsedSession.startedAt) {
+        setSessionStartedAt(parsedSession.startedAt);
+      }
     }
     if (savedExercise) {
       const parsedExercise = JSON.parse(savedExercise);
@@ -435,6 +462,37 @@ export const Edit = () => {
     localStorage.clear();
     navigate("/");
   }, [navigate]);
+
+  const handleTimerExpire = useCallback(async () => {
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+      );
+      if (response.status === 200) {
+        setSessionFinishedAt(new Date().toISOString());
+        setShowSuccessModal(true);
+      }
+    } catch (error) {
+      console.error("Failed to finish session on timer expiry:", error);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (sessionFinishedAt && !showSuccessModal) {
+      const timer = setInterval(() => {
+        setRedirectingIn((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            localStorage.clear();
+            navigate("/");
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [sessionFinishedAt, showSuccessModal, navigate]);
 
   const onOpenForm = useCallback(() => {
     if (formUrl) {
@@ -601,6 +659,9 @@ export const Edit = () => {
         }
         formUrl={formUrl || ""}
         loadingEvaluation={loadingEvaluation}
+        sessionTime={sessionTime}
+        sessionStartedAt={sessionStartedAt}
+        onTimerExpire={handleTimerExpire}
       />
 
       {showAlert && (
@@ -682,6 +743,78 @@ export const Edit = () => {
           />
         </div>
       </main>
+
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
+            <div className="flex justify-between items-center px-6 py-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Session Completed</h2>
+              <button onClick={() => setShowSuccessModal(false)} className="text-gray-400 hover:text-gray-500">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Success!</h3>
+              <p className="text-gray-600 text-center mb-4">
+                {formUrl
+                  ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
+                  : "Your session has been successfully completed."}
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end gap-2">
+              <button
+                onClick={() => { setShowSuccessModal(false); localStorage.clear(); navigate("/"); }}
+                className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                Home
+              </button>
+              {formUrl && (formUrl.startsWith("http://") || formUrl.startsWith("https://")) && (
+                <button
+                  onClick={() => window.open(formUrl, "_blank")}
+                  className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  Open Form
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sessionFinishedAt && !showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Session Already Completed</h3>
+              <p className="text-gray-600 text-center mb-4">
+                This session has already been completed. You will be redirected to the home page in {redirectingIn} seconds.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEvaluation && evaluation && (
         <EvaluationModal
