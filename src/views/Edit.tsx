@@ -291,9 +291,12 @@ interface HeaderProps {
   sessionTime?: number | null;
   sessionStartedAt?: string | null;
   onTimerExpire?: () => void;
+  onSave?: () => void;
+  saving?: boolean;
+  savedAt?: Date | null;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onSave, saving, savedAt }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -311,6 +314,29 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
             sessionStartedAt={sessionStartedAt}
             onExpire={onTimerExpire}
           />
+        )}
+        {onSave && (
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {saving ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                Saving...
+              </>
+            ) : savedAt ? (
+              <>
+                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Saved!
+              </>
+            ) : (
+              "Save"
+            )}
+          </button>
         )}
         <button
           onClick={onAlert}
@@ -406,6 +432,8 @@ export const Edit = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
 
   // Load initial data from localStorage
   useEffect(() => {
@@ -440,6 +468,17 @@ export const Edit = () => {
       const parsedExercise = JSON.parse(savedExercise);
       const format = parsedExercise.solutionFormat || "mermaid";
       setSolutionFormat(format);
+    }
+
+    if (savedSessionId) {
+      axios
+        .get(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${savedSessionId}`)
+        .then((res) => {
+          if (res.data.session?.draft) {
+            setCode(res.data.session.draft);
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 
@@ -476,6 +515,24 @@ export const Edit = () => {
       console.error("Failed to finish session on timer expiry:", error);
     }
   }, [sessionId]);
+
+  const handleSave = useCallback(async () => {
+    if (!sessionId) return;
+    setSaving(true);
+    setSavedAt(null);
+    try {
+      await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/draft`,
+        { draft: code }
+      );
+      setSavedAt(new Date());
+      setTimeout(() => setSavedAt(null), 2000);
+    } catch (error) {
+      console.error("Failed to save draft:", error);
+    } finally {
+      setSaving(false);
+    }
+  }, [sessionId, code]);
 
   useEffect(() => {
     if (sessionFinishedAt && !showSuccessModal) {
@@ -662,6 +719,9 @@ export const Edit = () => {
         sessionTime={sessionTime}
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
+        onSave={handleSave}
+        saving={saving}
+        savedAt={savedAt}
       />
 
       {showAlert && (
