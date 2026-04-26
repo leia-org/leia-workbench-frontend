@@ -8,6 +8,7 @@ import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
+import { SessionTimer } from "../components/SessionTimer";
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -98,6 +99,7 @@ export const Chat = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
+  const [sessionTime, setSessionTime] = useState<number | null>(null);
 
   const handleTranscriptComplete = useCallback(
     (
@@ -255,6 +257,10 @@ export const Chat = () => {
       if (response.status === 200) {
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
+        const durationSeconds = response.data.replication?.duration;
+        if (typeof durationSeconds === "number" && durationSeconds > 0) {
+          setSessionTime(durationSeconds / 60);
+        }
         setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
         setReplication(response.data.replication);
         setSession(response.data.session);
@@ -509,6 +515,23 @@ export const Chat = () => {
     }
   };
 
+  const handleTimerExpire = useCallback(async () => {
+    setConcluding(true);
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+      );
+      if (response.status === 200) {
+        setSession(response.data);
+        setShowSuccessModal(true);
+      }
+    } catch (error: any) {
+      setLoadError(error.response?.data?.error || "An unexpected error occurred");
+    } finally {
+      setConcluding(false);
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     if (session?.finishedAt && !showSuccessModal) {
       // Start countdown and redirect
@@ -622,6 +645,13 @@ export const Chat = () => {
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
         <div className="flex gap-2">
+        {sessionTime && session?.startedAt && (
+          <SessionTimer
+            durationMinutes={sessionTime}
+            sessionStartedAt={session.startedAt}
+            onExpire={handleTimerExpire}
+          />
+        )}
           <button
             onClick={() => setShowInstructions(true)}
             className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"

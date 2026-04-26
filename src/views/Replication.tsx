@@ -31,7 +31,7 @@ interface Replication {
   id: string;
   name: string;
   isActive: boolean;
-  duration: number;
+  duration: number | null;
   isRepeatable: boolean;
   isShared: boolean;
   shareToken?: string | null;
@@ -432,6 +432,29 @@ export const Replication: React.FC = () => {
           autoClose: 5000,
         });
         console.error("Update error:", err);
+      }
+    }
+  };
+
+  const handleDeleteDuration = async () => {
+    if (replication) {
+      try {
+        const resp = await axios.delete(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/duration`,
+          buildRequestConfig()
+        );
+        setReplication(resp.data);
+        setLocalReplication(structuredClone(resp.data));
+        toast.success("Replication duration removed successfully", {
+          position: "bottom-right",
+          autoClose: 5000,
+        });
+      } catch (err) {
+        toast.error("Error removing replication duration", {
+          position: "bottom-right",
+          autoClose: 5000,
+        });
+        console.error("Delete error:", err);
       }
     }
   };
@@ -953,17 +976,30 @@ export const Replication: React.FC = () => {
             <div className="flex">
               <ClockIcon className="h-5 w-5 text-gray-600 mr-2" />
               <strong>Duration:</strong>
-              <p className="mx-2">
-                {Math.floor(replication.duration / 60)}m{" "}
-                {replication.duration % 60}s
-              </p>
+              {replication.duration ? (
+                <p className="mx-2">
+                  {Math.floor(replication.duration / 60)}m{" "}
+                  {replication.duration % 60}s
+                </p>
+              ) : (
+                <p className="mx-2 text-gray-500">No time limit</p>
+              )}
               <button
                 onClick={() => setIsNewDurationModalOpen(true)}
                 className="flex text-center items-center space-x-1 text-blue-600 hover:underline mr-2"
               >
                 <PencilIcon className="h-4 w-4" />
-                <span className="text-sm">Change</span>
+                <span className="text-sm">{replication.duration ? "Change" : "Add timer"}</span>
               </button>
+              {replication.duration && (
+                <button
+                  onClick={handleDeleteDuration}
+                  className="flex text-center items-center space-x-1 text-red-600 hover:underline"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  <span className="text-sm">Remove</span>
+                </button>
+              )}
             </div>
             <div className="flex">
               <ClipboardDocumentCheckIcon className="h-5 w-5 text-gray-600 mr-2" />
@@ -1521,7 +1557,7 @@ export const Replication: React.FC = () => {
                 pattern="[0-9]*"
                 value={newDuration}
                 onChange={(e) => setNewDuration(e.target.value)}
-                placeholder="1800"
+                placeholder="Duration in seconds (e.g. 1800)"
                 className="w-full border border-gray-300 rounded-md p-2 mb-4"
               />
               <div className="flex justify-end space-x-2">
