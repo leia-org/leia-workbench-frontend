@@ -122,8 +122,8 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, userRole
           <div className="flex items-start space-x-3">
             <CubeTransparentIcon className="h-5 w-5 text-gray-400 mt-0.5" />
             <div className="overflow-hidden">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Model Name</p>
-              <p className="text-sm text-gray-800 font-semibold mt-0.5 truncate">{apiKey.modelName}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">API Key Provider</p>
+              <p className="text-sm text-gray-800 font-semibold mt-0.5 truncate">{apiKey.provider}</p>
             </div>
           </div>
 

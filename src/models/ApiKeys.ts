@@ -1,10 +1,10 @@
 export interface ApiKey {
   id: string;
   description: string;
-  modelName: string;
+  provider: string;
   baseUrl: string;
   keyValue: string;
-  managementUrl: string;
+  managementUrl?: string;
   isActive: boolean;
   isDefault: boolean;
   createdAt: string;
@@ -14,7 +14,7 @@ export interface ApiKey {
 
 export interface ApiKeyFormData {
   description: string | undefined;
-  modelName: string | undefined;
+  provider: string | undefined;
   baseUrl: string | undefined;
   keyValue: string | undefined;
   managementUrl?: string | undefined;

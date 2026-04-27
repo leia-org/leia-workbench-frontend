@@ -4,6 +4,10 @@ import { ApiKey, ApiKeyFormData } from '../models/ApiKeys';
 import { toast } from 'react-toastify';
 import { authFetch } from '../lib/api';
 
+interface ApiKeyFormError extends Error {
+  validationErrors?: Record<string, string>;
+}
+
 export const useApiKeys = () => {
   const { user, token } = useAuth();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -34,20 +38,23 @@ export const useApiKeys = () => {
 
   const saveKey = async (url: string, method: string, payload: ApiKeyFormData) => {
     const { res, data } = await authFetch(url, token, { method, body: JSON.stringify(payload) });
-            if (!res.ok) {
-              const msg = data?.message || res.statusText || `HTTP ${res.status}`;
-              throw new Error(msg);
-            }
-            const savedKey: ApiKey = data as ApiKey;
-            console.log("Saved key:", savedKey);
-            setApiKeys((prev) => {
-              if (method === "POST") {
-                return [...prev, savedKey];
-              } else {
-                return prev.map((key) => (key.id === savedKey.id ? savedKey : key));
-              }
-            });
-          };
+    if (!res.ok) {
+      const error: ApiKeyFormError = new Error(data?.message || res.statusText|| `HTTP ${res.status}`);
+      if (data.validationErrors) {
+        error.validationErrors = data.validationErrors;
+      }
+      throw error;
+    }
+    const savedKey: ApiKey = data as ApiKey;
+    console.log("Saved key:", savedKey);
+    setApiKeys((prev) => {
+      if (method === "POST") {
+        return [...prev, savedKey];
+      } else {
+        return prev.map((key) => (key.id === savedKey.id ? savedKey : key));
+      }
+    });
+  };
   const deleteKey = async (url: string, id: string) => {
     const { res, data } = await authFetch(url, token, { method: 'DELETE' });
     if (!res.ok) throw new Error(data?.message || 'Error deleting key');

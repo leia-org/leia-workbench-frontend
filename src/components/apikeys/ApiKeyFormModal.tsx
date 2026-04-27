@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { ApiKey } from "../../models/ApiKeys";
+import { useProviders } from "../../hooks/useProviders";
 
-interface ApiKeyFormModalProps {
+export interface ApiKeyFormModalProps {
   isOpen: boolean;
   mode: "create" | "edit";
   selectedKey: ApiKey | null;
@@ -9,11 +10,13 @@ interface ApiKeyFormModalProps {
   onClose: () => void;
 
   onSave: (formData: Partial<ApiKey>) => Promise<void>;
+  errors?: Record<string, string>;
 }
 
-export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, userRole, onClose, onSave }) => {
+export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, userRole, onClose, onSave, errors = {} }) => {
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { apiKeysProviderSet, isLoading: isLoadingProviders } = useProviders();
 
   useEffect(() => {
     if (isOpen) {
@@ -23,10 +26,11 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
         setFormData({
           description: "",
           keyValue: "",
-          modelName: "",
+          provider: "",
           isActive: true,
           baseUrl: "",
           managementUrl: "",
+          isDefault: false,
           isSystemApiKey: false,
         });
       }
@@ -73,16 +77,35 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
           <div className="p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Key Name (Description)</label>
-              <input type="text" name="description" value={formData.description || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Production Key" required />
+              <input type="text" name="description" value={formData.description || ""} onChange={handleChange} className={`w-full border ${errors.description ? 'border-red-500' : 'border-gray-300'} rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500`} placeholder="e.g. Production Key" required />
+              {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">API Key Value</label>
-              <input type="text" name="keyValue" value={formData.keyValue || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 font-mono" placeholder={mode === "create" ? "sk-..." : "Leave blank to keep current"} required={mode === 'create'} />
+              <input type="text" name="keyValue" value={formData.keyValue || ""} onChange={handleChange} className={`w-full border ${errors.keyValue ? 'border-red-500' : 'border-gray-300'} rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 font-mono`} placeholder={mode === "create" ? "sk-..." : "Leave blank to keep current"} required={mode === 'create'} />
+              {errors.keyValue && <p className="text-red-500 text-xs mt-1">{errors.keyValue}</p>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
-                <input type="text" name="modelName" value={formData.modelName || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. Llama-3" required />
+                <label className="block text-sm font-medium text-gray-700 mb-1">API Key Type</label>
+                <select
+                  name="provider"
+                  value={formData.provider || ""}
+                  onChange={handleChange}
+                  className={`w-full border ${errors.provider ? 'border-red-500' : 'border-gray-300'} rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500`}
+                  required
+                  disabled={isLoadingProviders}
+                >
+                  <option value="" disabled>
+                    {isLoadingProviders ? "Loading providers..." : "Select a provider"}
+                  </option>
+                  {apiKeysProviderSet.map((provider) => (
+                    <option key={provider} value={provider}>
+                      {provider}
+                    </option>
+                  ))}
+                </select>
+                {errors.provider && <p className="text-red-500 text-xs mt-1">{errors.provider}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
@@ -94,12 +117,33 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
-              <input type="url" name="baseUrl" value={formData.baseUrl || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-blue-600" placeholder="https://..." required />
+              <input type="url" name="baseUrl" value={formData.baseUrl || ""} onChange={handleChange} className={`w-full border ${errors.baseUrl ? 'border-red-500' : 'border-gray-300'} rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-blue-600`} placeholder="https://..." required />
+              {errors.baseUrl && <p className="text-red-500 text-xs mt-1">{errors.baseUrl}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Management URL <span className="text-gray-400 font-normal">(Optional)</span></label>
               <input type="url" name="managementUrl" value={formData.managementUrl || ""} onChange={handleChange} className="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-blue-600" placeholder="https://..." />
             </div>
+            {mode === "create" && (
+              <div className="pt-2 border-t border-gray-100 mt-4">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="isDefault"
+                    checked={!!formData.isDefault}
+                    onChange={handleChange}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Make this the default API Key
+                  </span>
+                </label>
+                {errors.isDefault && <p className="text-red-500 text-xs mt-1 ml-7">{errors.isDefault}</p>}
+                <p className="text-xs text-gray-500 mt-1 ml-7">
+                  If set, this API key will be used by default for operations that require it.
+                </p>
+              </div>
+            )}
             {mode === "create" && userRole && userRole === "admin" && (
               <div className="pt-2 border-t border-gray-100 mt-4">
                 <label className="flex items-center space-x-3 cursor-pointer">
@@ -114,6 +158,7 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
                     Make this a System API Key
                   </span>
                 </label>
+                {errors.isSystemApiKey && <p className="text-red-500 text-xs mt-1 ml-7">{errors.isSystemApiKey}</p>}
                 <p className="text-xs text-gray-500 mt-1 ml-7">
                   System API keys can be used by all users who have system access enabled.
                 </p>

@@ -12,12 +12,13 @@ import { useAuth } from "../context";
 
 export const ApiKeysPage: React.FC = () => {
   const {user} = useAuth();
-  const { apiKeys, isLoading, toggleDefault, savingIds, deleteKey, saveKey } = useApiKeys();
+  const { apiKeys, isLoading, toggleDefault, savingIds, deleteKey, saveKey, refetch } = useApiKeys();
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isMarkDefaultModalOpen, setIsMarkDefaultModalOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   // --- Handlers ---
   const confirmMarkDefault = async () => {
@@ -36,12 +37,14 @@ export const ApiKeysPage: React.FC = () => {
   const openCreateModal = () => {
     setFormMode("create");
     setSelectedKey(null);
+    setValidationErrors({});
     setIsFormModalOpen(true);
   };
 
   const openEditModal = (key: ApiKey) => {
     setFormMode("edit");
     setSelectedKey(key);
+    setValidationErrors({});
     setIsFormModalOpen(true);
   };
 
@@ -52,6 +55,7 @@ export const ApiKeysPage: React.FC = () => {
 
   const handleSaveKey = async (formData: Partial<ApiKey>) => {
     try {
+      setValidationErrors({});
       const isCreate = formMode === "create";
       const isSystemKey = isCreate ? formData.isSystemApiKey : selectedKey?.isSystemApiKey;
       const baseUrl = isSystemKey
@@ -65,20 +69,27 @@ export const ApiKeysPage: React.FC = () => {
       const payload: ApiKeyFormData = {
         description: formData.description,
         keyValue: formData.keyValue,
-        modelName: formData.modelName,
+        provider: formData.provider,
         baseUrl: formData.baseUrl,
         managementUrl: cleanManagementUrl,
         isActive: formData.isActive,
       };
-      if (isCreate && !isSystemKey) {
-        payload.isDefault = formData.isDefault || false;
+      if (isCreate) {
+        payload.isDefault = formData.isDefault;
       }
       await saveKey(url, method, payload);
+      await refetch();
       toast.success(isCreate ? "API Key created successfully!" : "API Key updated!");
       setIsFormModalOpen(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error(err instanceof Error ? err.message : "Failed to save API Key");
+      console.log('Errores de validación recibidos:', err);
+      if (err.validationErrors) {
+        setValidationErrors(err.validationErrors);
+        toast.error("Please correct the errors in the form.");
+      } else {
+        toast.error(err instanceof Error ? err.message : "Failed to save API Key");
+      }
       throw err;
     }
   };
@@ -185,6 +196,7 @@ export const ApiKeysPage: React.FC = () => {
           setSelectedKey(null);
         }}
         onSave={handleSaveKey}
+        errors={validationErrors}
       />
 
       {/* --- MODAL DE ELIMINACIÓN --- */}
