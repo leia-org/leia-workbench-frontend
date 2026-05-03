@@ -28,6 +28,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { useApiKeys } from "../hooks/useApiKeys";
 import { ApiKey } from "../models/ApiKeys";
+import { useProviders } from "../hooks/useProviders";
 
 interface Replication {
   id: string;
@@ -57,6 +58,8 @@ interface Replication {
       };
       runnerConfiguration: {
         provider: string;
+        modelName?: string;
+        apiKeyId?: string | null;
         audioMode?: "realtime" | null;
         realtimeConfig?: {
           model?: string;
@@ -110,7 +113,39 @@ const getFilteredVoiceOptions = (
     );
   }
 };
+const getValidModels = (
+  apiKeyId: string | null | undefined,
+  apiKeys: ApiKey[],
+  apiKeyProvidersMapped: Record<string, string[]> // <-- Cambiado a Record
+): string[] => {
+  // Implementacion parche que lo que hace es usar el listado de models obtenido del
+  //  apoKeyProviders Mapped quiza se hace que el endpoint de models lo devuelva de una
+  const modelsParch = apiKeyProvidersMapped ? Object.values(apiKeyProvidersMapped).flat() : [];
+  if (!apiKeyId) return modelsParch;
 
+  const apiKey = apiKeys.find((k) => k.id === apiKeyId);
+  if (!apiKey || !apiKey.provider) return modelsParch;
+
+  // Accedemos al Record usando corchetes en lugar de .get()
+  return apiKeyProvidersMapped[apiKey.provider] || [];
+};
+
+const getValidApiKeys = (
+  modelName: string | null | undefined,
+  apiKeys: ApiKey[],
+  apiKeyProvidersMapped: Record<string, string[]> // <-- Cambiado a Record
+): ApiKey[] => {
+  // Si no hay Model (provider) seleccionado, devolvemos todas las keys
+  if (!modelName) return apiKeys;
+
+  // Usamos Object.entries() nativo para objetos planos en lugar de Array.from()
+  const validProviders = Object.entries(apiKeyProvidersMapped)
+    .filter(([, models]) => models.includes(modelName))
+    .map(([provider]) => provider);
+
+  // Filtramos las llaves cuyo Provider incluya este modelo
+  return apiKeys.filter((key) => validProviders.includes(key.provider));
+};
 const REPLICATION_TOKENS_KEY = "replicationTokens";
 
 const readStoredReplicationTokens = (): Record<string, string> => {
@@ -159,6 +194,7 @@ export const Replication: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
   const {apiKeys, getDefaultKey} = useApiKeys();
+  const { apiKeyProvidersMapped} = useProviders();
   const defaultKey = getDefaultKey();
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(defaultKey);
   // Usamos el idx para saber qué dropdown abrir si hay múltiples Leias
@@ -642,13 +678,32 @@ export const Replication: React.FC = () => {
       const localLeiaId = localReplication.experiment.leias[idx].id;
       const localLeiaRunnerConfiguration =
         localReplication.experiment.leias[idx].runnerConfiguration;
+      const modelName =
+        localLeiaRunnerConfiguration.modelName;
+
+      if (!modelName) {
+        toast.error("Please select a valid model.", {
+          position: "bottom-right",
+          autoClose: 5000,
+        });
+        return;
+      }
+      const payload = {
+        ...localLeiaRunnerConfiguration,
+        modelName,
+      };
+
+
+      if ("provider" in payload) {
+        delete (payload as Partial<typeof payload> & { provider?: string }).provider;
+      }
 
       try {
         const resp = await axios.patch(
           `${
             import.meta.env.VITE_APP_BACKEND
           }/api/v1/replications/${replicationId}/leia/${localLeiaId}/runner-configuration`,
-          localLeiaRunnerConfiguration,
+          payload,
           buildRequestConfig()
         );
         setReplication(resp.data);
@@ -697,8 +752,7 @@ export const Replication: React.FC = () => {
       </div>
     );
   }
-
-  return (
+return (
     <div className="min-h-screen bg-gray-50">
       {isAuthorised && <Navbar />}
       <div className="max-w-4xl mx-auto p-6">
@@ -896,6 +950,25 @@ export const Replication: React.FC = () => {
           {localReplication.experiment.leias.map((item, idx) => {
             const isStartingAnySession = Boolean(startingSessionLeiaId);
             const isStartingThisSession = startingSessionLeiaId === item.id;
+            const currentApiKeyId = item.runnerConfiguration.apiKeyId || selectedKey?.id;
+            const currentModelName =
+              item.runnerConfiguration.modelName ||
+              item.runnerConfiguration.provider;
+
+            const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
+            const apiKeyDisplayName = currentApiKeyObj?.description || "Select Key";
+
+            const validModelsForLeia = getValidModels(
+              currentApiKeyId,
+              apiKeys,
+              apiKeyProvidersMapped
+            );
+
+            const validApiKeysForLeia = getValidApiKeys(
+              currentModelName,
+              apiKeys,
+              apiKeyProvidersMapped
+            );
 
             return (
               <div
@@ -977,34 +1050,46 @@ export const Replication: React.FC = () => {
                 <fieldset className="bg-white p-4 rounded-xl shadow border-solid border border-gray-400">
                   <legend>Runner</legend>
                   <div className="flex items-center space-x-2 mb-3">
-                    <div className="text-sm text-gray-700">Provider:</div>
+                    <div className="text-sm text-gray-700">Model:</div>
                     <select
-                      value={item.runnerConfiguration.provider}
+                      value={
+                        item.runnerConfiguration.modelName ||
+                        item.runnerConfiguration.provider ||
+                        ""
+                      }
                       onChange={(e) =>
                         handleLocalLeiaChange(
                           idx,
-                          "runnerConfiguration.provider",
+                          "runnerConfiguration.modelName",
                           e.target.value
                         )
                       }
                       className="border border-gray-300 rounded-md p-2"
                     >
-                      <option value="default">default</option>
-                      <option value="openai-assistant">openai-assistant</option>
+                      {/* NUEVO: Opción para deseleccionar el modelo y romper el bloqueo */}
+                      <option value="">-- Select Model --</option>
+
+                      {validModelsForLeia.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
                     </select>
                   </div>
+
                   {/* API Key Dropdown */}
                   <div className="flex items-center space-x-2 mb-3 relative">
                     <div className="text-sm text-gray-700 mr-1">API Key:</div>
 
-                    {/* Contenedor del Dropdown imitando al <select> nativo */}
                     <div className="relative flex-shrink-0">
                       <button
-                        onClick={() => setOpenDropdownIdx(openDropdownIdx === idx ? null : idx)}
+                        onClick={() =>
+                          setOpenDropdownIdx(openDropdownIdx === idx ? null : idx)
+                        }
                         className="flex items-center justify-between min-w-[180px] border border-gray-300 rounded-md p-2 text-sm bg-white hover:bg-gray-50 focus:outline-none transition-colors"
                       >
                         <span className="truncate mr-2">
-                          {selectedKey?.description}
+                          {apiKeyDisplayName}
                         </span>
                         <ChevronDownIcon className="h-4 w-4 text-gray-500" />
                       </button>
@@ -1020,14 +1105,38 @@ export const Replication: React.FC = () => {
                             <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100">
                               Select Key
                             </div>
-                            {apiKeys.map((key) => (
+
+                            {/* NUEVO: Opción para deseleccionar la API Key y romper el bloqueo */}
+                            <button
+                              onClick={() => {
+                                handleLocalLeiaChange(
+                                  idx,
+                                  "runnerConfiguration.apiKeyId",
+                                  null
+                                );
+                                setOpenDropdownIdx(null);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm italic text-gray-500 hover:bg-gray-100 border-b border-gray-100 transition-colors"
+                            >
+                              -- Clear Selection --
+                            </button>
+
+                            {validApiKeysForLeia.map((key) => (
                               <button
                                 key={key.id}
                                 onClick={() => {
-                                  setSelectedKey(key);
+                                  handleLocalLeiaChange(
+                                    idx,
+                                    "runnerConfiguration.apiKeyId",
+                                    key.id
+                                  );
                                   setOpenDropdownIdx(null);
                                 }}
-                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${selectedKey?.id === key.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"}`}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                                  currentApiKeyId === key.id
+                                    ? "bg-blue-50 text-blue-700 font-medium"
+                                    : "text-gray-700 hover:bg-gray-100"
+                                }`}
                               >
                                 {key.description}
                               </button>
@@ -1037,15 +1146,13 @@ export const Replication: React.FC = () => {
                       )}
                     </div>
                     <div className="flex items-center space-x-3 pl-2">
-
-                      {/* URL de Gestión (Dashboard) */}
-                      {selectedKey && selectedKey.id !== "system" && selectedKey.managementUrl && (
+                      {currentApiKeyObj && (!currentApiKeyObj.isSystemApiKey || user?.role === 'admin') && currentApiKeyObj.managementUrl && (
                         <a
-                          href={selectedKey.managementUrl}
+                          href={currentApiKeyObj.managementUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
-                          title={selectedKey.managementUrl}
+                          title={currentApiKeyObj.managementUrl}
                         >
                           <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -1054,7 +1161,6 @@ export const Replication: React.FC = () => {
                         </a>
                       )}
 
-                      {/* Enlace para gestionar API Keys */}
                       <Link
                         to="/administration/api-keys"
                         className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
@@ -1067,7 +1173,7 @@ export const Replication: React.FC = () => {
                       </Link>
                     </div>
                   </div>
-                  {/* --- FIN Dropdown de API Key --- */}
+
                   {/* Audio Mode Configuration */}
                   <div className="border-t pt-3 mt-3">
                     <div className="flex items-center space-x-2 mb-2">
@@ -1085,7 +1191,6 @@ export const Replication: React.FC = () => {
                               "runnerConfiguration.audioMode",
                               "realtime"
                             );
-                            // Initialize default realtimeConfig if not exists
                             if (!item.runnerConfiguration.realtimeConfig) {
                               handleLocalLeiaChange(
                                 idx,
@@ -1384,5 +1489,4 @@ export const Replication: React.FC = () => {
         )}
       </div>
     </div>
-  );
-};
+)};

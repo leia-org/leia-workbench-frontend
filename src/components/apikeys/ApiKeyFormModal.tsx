@@ -15,15 +15,18 @@ export interface ApiKeyFormModalProps {
 
 export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, userRole, onClose, onSave, errors = {} }) => {
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
+  const [initialFormData, setInitialFormData] = useState<Partial<ApiKey> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { apiKeysProviderSet, isLoading: isLoadingProviders } = useProviders();
 
   useEffect(() => {
     if (isOpen) {
       if (mode === "edit" && selectedKey) {
-        setFormData({ ...selectedKey, keyValue: "" });
+        const initialData = { ...selectedKey, keyValue: "" };
+        setFormData(initialData);
+        setInitialFormData(initialData);
       } else {
-        setFormData({
+        const newKeyData = {
           description: "",
           keyValue: "",
           provider: "",
@@ -32,7 +35,9 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
           managementUrl: "",
           isDefault: false,
           isSystemApiKey: false,
-        });
+        };
+        setFormData(newKeyData);
+        setInitialFormData(newKeyData);
       }
     }
   }, [isOpen, mode, selectedKey]);
@@ -53,7 +58,11 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onSave(formData);
+      const payload = { ...formData };
+      if (mode === 'edit' && initialFormData && payload.provider === initialFormData.provider) {
+        delete payload.provider;
+      }
+      await onSave(payload);
     } finally {
       setIsSubmitting(false);
     }

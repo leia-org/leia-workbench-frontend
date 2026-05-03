@@ -9,17 +9,17 @@ interface ProvidersData {
   models: string[];
   default: string;
   apiKeyProviders: Record<string, string[]>;
-  }
+  providerProviderModuleMap: Record<string, string>;
+}
 
 /**
  * Hook para obtener y gestionar la información de los proveedores de modelos desde el leia-runner.
  */
 export const useProviders = () => {
   const {token} = useAuth();
-    const [providersData, setProvidersData] = useState<ProvidersData>({models: [], default: '', apiKeyProviders: {}});
+  const [providersData, setProvidersData] = useState<ProvidersData>({models: [], default: '', apiKeyProviders: {}, providerProviderModuleMap: {}});
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-
   const fetchProviders = useCallback(async () => {
     if (!token) return;
 
@@ -54,12 +54,12 @@ export const useProviders = () => {
         return Object.keys(providersData.apiKeyProviders);
     },[providersData]);
 
-
     return {
     models: providersData?.models || [],
     defaultModel: providersData?.default || '',
     apiKeyProvidersMapped: providersData?.apiKeyProviders || {},
     apiKeysProviderSet: apiKeysProviderSet,
+    providerProviderModuleMap: providersData?.providerProviderModuleMap || {},
     isLoading,
     error,
     refetch: fetchProviders,
