@@ -388,7 +388,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
       {/* Main stage with optional left/right widget slots */}
       <div className="flex-1 flex items-stretch min-h-0">
         {leftSlot && (
-          <div className="w-[380px] max-w-[40%] border-r border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
+          <div className="w-[380px] max-w-[40%] h-full border-r border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
             {leftSlot}
           </div>
         )}
@@ -433,7 +433,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
         <div className="mt-2 text-sm text-neutral-500">{statusText}</div>
         </div>
         {rightSlot && (
-          <div className="w-[380px] max-w-[40%] border-l border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
+          <div className="w-[380px] max-w-[40%] h-full border-l border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
             {rightSlot}
           </div>
         )}

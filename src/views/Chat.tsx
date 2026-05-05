@@ -99,7 +99,11 @@ export const Chat = () => {
   const [lukeConfig, setLukeConfig] = useState<{
     provider: string;
     voice: string;
-    widgets?: Array<{ widgetType: string; slot: "left" | "right" | "main" }>;
+    widgets?: Array<{
+      widgetType: string;
+      slot: "left" | "right" | "main";
+      params?: Record<string, unknown>;
+    }>;
   } | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
@@ -697,6 +701,7 @@ export const Chat = () => {
                     id: `${w.widgetType}-${w.slot}`,
                     slot: w.slot,
                     Component: entry.Component,
+                    props: w.params ? { params: w.params } : undefined,
                   } as WidgetDefinition;
                 })
                 .filter((w): w is WidgetDefinition => w !== null);

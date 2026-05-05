@@ -12,6 +12,6 @@ export function WidgetSlot({ id }: WidgetSlotProps) {
     const { widgetForSlot } = useWidgetsContext();
     const widget = widgetForSlot(id);
     if (!widget) return null;
-    const { Component } = widget;
-    return <Component />;
+    const { Component, props } = widget;
+    return <Component {...(props ?? {})} />;
 }

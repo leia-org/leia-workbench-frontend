@@ -10,7 +10,11 @@ export interface WidgetDefinition {
     id: string;
     slot: SlotId;
     title?: string;
-    Component: ComponentType;
+    Component: ComponentType<any>;
+    /** Optional props passed to the rendered component. Used by widgets
+     *  that accept per-activity configuration (e.g. CodeEditorWidget
+     *  receives the problem definition through here). */
+    props?: Record<string, unknown>;
 }
 
 // A namespaced tool entry in the registry. The key is the fully-qualified
