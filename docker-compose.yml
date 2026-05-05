@@ -1,0 +1,11 @@
+services:
+  workbench-frontend:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: workbench-frontend
+    environment:
+      - PORT=80
+    ports:
+      - '8080:80'

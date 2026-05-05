@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLuke } from "@leia-org/luke-client";
-import type { TranscriptionMessage } from "@leia-org/luke-client";
+import type { FrontendTool, TranscriptionMessage } from "@leia-org/luke-client";
 
 interface LukeConfig {
   provider: string;
@@ -18,6 +18,14 @@ interface LukeAudioWidgetProps {
   showTranscription?: boolean;
   /** Kept for backward compat with previous widget; not used by the new UI. */
   mode?: string;
+  /** Frontend tools exposed to the model for this session. Changing the
+   *  reference triggers a Luke reconnect so the new set is declared at
+   *  provider setup (works for both OpenAI and Gemini). */
+  tools?: Record<string, FrontendTool>;
+  /** Content rendered in the left slot, next to the avatar. */
+  leftSlot?: React.ReactNode;
+  /** Content rendered in the right slot, next to the avatar. */
+  rightSlot?: React.ReactNode;
   onTranscriptComplete?: (
     transcript: string,
     isLeia: boolean,
@@ -215,6 +223,9 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   leiaName,
   forceMute = false,
   showTranscription: initialShowTranscription = false,
+  tools,
+  leftSlot,
+  rightSlot,
   onTranscriptComplete,
   onError,
 }) => {
@@ -224,58 +235,81 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     providers,
     selectedProvider,
     selectProvider,
+    reload,
     isRecording,
     startRecording,
     stopRecording,
     audioLevel,
     assistantAudioLevel,
     transcription,
+    sessionId,
   } = useLuke({
     serverUrl: wsUrl,
     authToken: token,
     autoConnect: true,
+    tools,
     onError,
   });
 
-  const hasAutoSelectedRef = useRef(false);
-  const hasAutoStartedRef = useRef(false);
+  // Auto-selection is keyed on `sessionId` rather than a boolean flag.
+  // When the WS reconnects (tools change → reload), `sessionId` flips,
+  // re-triggering the effect; a stale flag would let connection N+1
+  // inherit a "done" state and never re-select the configured provider.
+  const lastSelectedSessionRef = useRef<string | null>(null);
+  const lastStartedSessionRef = useRef<string | null>(null);
+
+  // Track the tools set that the provider currently has declared.
+  // Only commit a new snapshot once we've actually re-opened the WS
+  // with it — otherwise a tools change during "connecting" would
+  // silently overwrite the ref and we'd never reload.
+  const committedToolsRef = useRef(tools);
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    if (committedToolsRef.current === tools) return;
+    committedToolsRef.current = tools;
+    reload();
+  }, [tools, connectionState, reload]);
   const prevForceMuteRef = useRef(forceMute);
   const sequenceCounterRef = useRef(0);
   const emittedCountRef = useRef(0);
   const [showTranscription, setShowTranscription] = useState(initialShowTranscription);
 
-  // Auto-select the configured provider/voice once connected.
+  // Auto-select the configured provider/voice once connected. Runs
+  // once per session — when reload() opens a new WS, sessionId changes
+  // and the effect fires again on the fresh connection.
   useEffect(() => {
     if (
       isConnected &&
       providers.length > 0 &&
       lukeConfig &&
-      !hasAutoSelectedRef.current
+      sessionId &&
+      lastSelectedSessionRef.current !== sessionId
     ) {
       const target = providers.find((p) => p.name === lukeConfig.provider);
       if (target) {
         selectProvider(target.id, lukeConfig.voice);
-        hasAutoSelectedRef.current = true;
+        lastSelectedSessionRef.current = sessionId;
       }
     }
-  }, [isConnected, providers, lukeConfig, selectProvider]);
+  }, [isConnected, providers, lukeConfig, selectProvider, sessionId]);
 
-  // Auto-start recording ONCE after provider selection. After that the
-  // user controls mute/unmute via the button.
+  // Auto-start recording ONCE per session, after the configured
+  // provider has been auto-selected.
   useEffect(() => {
     if (
       selectedProvider &&
       !isRecording &&
-      hasAutoSelectedRef.current &&
-      !forceMute &&
-      !hasAutoStartedRef.current
+      sessionId &&
+      lastSelectedSessionRef.current === sessionId &&
+      lastStartedSessionRef.current !== sessionId &&
+      !forceMute
     ) {
-      hasAutoStartedRef.current = true;
+      lastStartedSessionRef.current = sessionId;
       startRecording().catch((err) => {
         console.error("Failed to start recording:", err);
       });
     }
-  }, [selectedProvider, isRecording, startRecording, forceMute]);
+  }, [selectedProvider, isRecording, startRecording, forceMute, sessionId]);
 
   // Edge-triggered forceMute handler — does NOT re-fire on isRecording changes.
   useEffect(() => {
@@ -284,7 +318,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     if (!prev && forceMute) {
       if (isRecording) stopRecording();
     } else if (prev && !forceMute) {
-      if (selectedProvider && hasAutoSelectedRef.current && !isRecording) {
+      if (selectedProvider && lastSelectedSessionRef.current && !isRecording) {
         startRecording().catch(console.error);
       }
     }
@@ -351,8 +385,14 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
         </button>
       </div>
 
-      {/* Main stage */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 select-none">
+      {/* Main stage with optional left/right widget slots */}
+      <div className="flex-1 flex items-stretch min-h-0">
+        {leftSlot && (
+          <div className="w-[380px] max-w-[40%] h-full border-r border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
+            {leftSlot}
+          </div>
+        )}
+        <div className="flex-1 flex flex-col items-center justify-center px-6 select-none relative">
         <div className="relative flex items-center justify-center">
           {/* Animated halo — scales with audioLevel */}
           <div
@@ -391,6 +431,12 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
           </div>
         )}
         <div className="mt-2 text-sm text-neutral-500">{statusText}</div>
+        </div>
+        {rightSlot && (
+          <div className="w-[380px] max-w-[40%] h-full border-l border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
+            {rightSlot}
+          </div>
+        )}
       </div>
 
       {/* Animated user voice wave: rises from the bottom, fades upward */}
