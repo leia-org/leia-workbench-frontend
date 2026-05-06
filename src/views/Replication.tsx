@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
 import { Navbar } from "../components/Navbar";
+import { WidgetsConfigPanel, type WidgetAssignment } from "./replication/WidgetsConfigPanel";
 import Switch from "react-switch";
 import { ToastContainer, toast } from "react-toastify";
 import SyntaxHighlighter from "react-syntax-highlighter";
@@ -71,6 +72,10 @@ interface Replication {
         lukeConfig?: {
           provider: string;
           voice: string;
+          widgets?: Array<{
+            widgetType: string;
+            slot: "left" | "right" | "main";
+          }>;
         };
       };
       sessionCount: number;
@@ -1451,6 +1456,17 @@ export const Replication: React.FC = () => {
                           </svg>
                           Luke voice conversation enabled
                         </div>
+
+                        <WidgetsConfigPanel
+                          widgets={(item.runnerConfiguration.lukeConfig?.widgets ?? []) as WidgetAssignment[]}
+                          onChange={(next) =>
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.lukeConfig.widgets",
+                              next
+                            )
+                          }
+                        />
                       </div>
                     )}
                   </div>

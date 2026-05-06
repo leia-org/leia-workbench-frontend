@@ -9,6 +9,11 @@ import { AudioControls } from "../components/AudioControls";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
 import { SessionTimer } from "../components/SessionTimer";
+import {
+  VoiceModeWithWidgets,
+  findCatalogEntry,
+  type WidgetDefinition,
+} from "../widgets";
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -92,7 +97,15 @@ export const Chat = () => {
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
-  const [lukeConfig, setLukeConfig] = useState<{ provider: string; voice: string } | null>(null);
+  const [lukeConfig, setLukeConfig] = useState<{
+    provider: string;
+    voice: string;
+    widgets?: Array<{
+      widgetType: string;
+      slot: "left" | "right" | "main";
+      params?: Record<string, unknown>;
+    }>;
+  } | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
@@ -709,16 +722,54 @@ export const Chat = () => {
         /* Vista Luke - Componente nativo en el centro */
         <div className="flex-1 flex flex-col overflow-hidden">
           {lukeToken.isReady && lukeConfig ? (
-            <LukeAudioWidget
-              wsUrl={lukeToken.wsUrl!}
-              token={lukeToken.token!}
-              lukeConfig={lukeConfig}
-              leiaName={leiaName || undefined}
-              forceMute={showInstructions}
-              showTranscription={!hideAudioTranscription}
-              mode="inline"
-              onTranscriptComplete={handleTranscriptComplete}
-            />
+            (() => {
+              const widgetDefs: WidgetDefinition[] = (lukeConfig.widgets ?? [])
+                .map((w) => {
+                  const entry = findCatalogEntry(w.widgetType);
+                  if (!entry) return null;
+                  return {
+                    id: `${w.widgetType}-${w.slot}`,
+                    slot: w.slot,
+                    Component: entry.Component,
+                    props: w.params ? { params: w.params } : undefined,
+                  } as WidgetDefinition;
+                })
+                .filter((w): w is WidgetDefinition => w !== null);
+
+              const base = (
+                <LukeAudioWidget
+                  wsUrl={lukeToken.wsUrl!}
+                  token={lukeToken.token!}
+                  lukeConfig={lukeConfig}
+                  leiaName={leiaName || undefined}
+                  forceMute={showInstructions}
+                  showTranscription={!hideAudioTranscription}
+                  mode="inline"
+                  onTranscriptComplete={handleTranscriptComplete}
+                />
+              );
+
+              if (widgetDefs.length === 0) return base;
+              return (
+                <VoiceModeWithWidgets widgets={widgetDefs}>
+                  {({ tools, leftSlot, rightSlot }) => (
+                    <LukeAudioWidget
+                      wsUrl={lukeToken.wsUrl!}
+                      token={lukeToken.token!}
+                      lukeConfig={lukeConfig}
+                      leiaName={leiaName || undefined}
+                      forceMute={showInstructions}
+                      showTranscription={!hideAudioTranscription}
+                      mode="inline"
+                      tools={tools as Record<string, import("@leia-org/luke-client").FrontendTool>}
+                      leftSlot={leftSlot}
+                      rightSlot={rightSlot}
+                      onTranscriptComplete={handleTranscriptComplete}
+                    />
+                  )}
+                </VoiceModeWithWidgets>
+              );
+            })()
           ) : (
             <div className="flex-1 flex items-center justify-center bg-gray-50">
               <div className="flex flex-col items-center gap-3">
