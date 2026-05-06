@@ -59,6 +59,12 @@ export const Experiment: React.FC = () => {
     fetchExperiment();
   }, [id, navigate]);
 
+  useEffect(() => {
+    if (experiment && experiment.name) {
+      setReplicationName(`${experiment.name}`);
+    }
+  }, [experiment]);
+
   const handleCreateReplication = async () => {
     try {
       const adminSecret = localStorage.getItem('adminSecret');
