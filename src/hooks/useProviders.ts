@@ -27,7 +27,7 @@ export const useProviders = () => {
     setError(null);
 
     try {
-      const { res, data } = await authFetch(`${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/runner/models`, token);
+      const { res, data } = await authFetch(`${import.meta.env.VITE_APP_BACKEND}/api/v1/provider`, token);
 
       if (!res.ok) {
         const msg = data?.message || res.statusText || `Error fetching providers: ${res.status}`;

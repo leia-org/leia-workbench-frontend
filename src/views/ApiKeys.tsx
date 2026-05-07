@@ -59,8 +59,8 @@ export const ApiKeysPage: React.FC = () => {
       const isCreate = formMode === "create";
       const isSystemKey = isCreate ? formData.isSystemApiKey : selectedKey?.isSystemApiKey;
       const baseUrl = isSystemKey
-        ? `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/system-api-keys`
-        : `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`;
+        ? `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/apiKeys/system`
+        : `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/apikeys`;
 
       const url = isCreate ? baseUrl : `${baseUrl}/${selectedKey?.id}`;
       const method = isCreate ? "POST" : "PUT";
@@ -98,8 +98,8 @@ export const ApiKeysPage: React.FC = () => {
     if (!selectedKey) return;
     try {
       const baseUrl = selectedKey.isSystemApiKey
-        ? `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/system-api-keys`
-        : `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`;
+        ? `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/apiKeys/system`
+        : `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/apikeys`;
 
       const url = `${baseUrl}/${selectedKey.id}`;
 

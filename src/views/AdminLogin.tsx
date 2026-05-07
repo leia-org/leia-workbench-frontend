@@ -36,7 +36,7 @@ export const AdminLogin: React.FC = () => {
     setMessage("");
     try {
       const response = await axios.post(
-        `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/login`,
+        `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/users/login`,
         {
           email: email.trim(),
           password: password.trim(),

@@ -698,7 +698,12 @@ export const Replication: React.FC = () => {
         delete (payload as Partial<typeof payload> & { provider?: string }).provider;
       }
 
+      if ("apiKeyRequesterId" in payload) {
+        delete (payload as Partial<typeof payload> & { apiKeyRequesterId?: string }).apiKeyRequesterId;
+      }
+
       try {
+        console.log("Payload sent:", payload);
         const resp = await axios.patch(
           `${
             import.meta.env.VITE_APP_BACKEND

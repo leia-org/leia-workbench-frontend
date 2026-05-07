@@ -21,7 +21,7 @@ export const useApiKeys = () => {
     setError(null);
 
     try {
-      const { res, data } = await authFetch(`${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys`, token);
+      const { res, data } = await authFetch(`${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/apikeys`, token);
       if (!res.ok) {
         const msg = data?.message || res.statusText || 'Error fetching API Keys';
         throw new Error(msg);
@@ -81,7 +81,7 @@ export const useApiKeys = () => {
     }));
 
     try {
-      const url = `${import.meta.env.VITE_APP_DESIGNER_BACKEND}/api/v1/users/apikeys/manage-default/${key.id}`;
+      const url = `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/apikeys/manage-default/${key.id}`;
       const { res, data } = await authFetch(url, token, { method: 'PUT' });
 
       if (!res.ok) {
