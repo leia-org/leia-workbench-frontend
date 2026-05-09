@@ -26,6 +26,8 @@ import {
   ShareIcon,
   BeakerIcon,
 } from "@heroicons/react/24/solid";
+import { UnsavedChangesModal } from "../components/UnsavedChangesModal";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import { useApiKeys } from "../hooks/useApiKeys";
 import { ApiKey } from "../models/ApiKeys";
 import { useProviders } from "../hooks/useProviders";
@@ -116,34 +118,28 @@ const getFilteredVoiceOptions = (
 const getValidModels = (
   apiKeyId: string | null | undefined,
   apiKeys: ApiKey[],
-  apiKeyProvidersMapped: Record<string, string[]> // <-- Cambiado a Record
+  apiKeyProvidersMapped: Record<string, string[]>
 ): string[] => {
-  // Implementacion parche que lo que hace es usar el listado de models obtenido del
-  //  apoKeyProviders Mapped quiza se hace que el endpoint de models lo devuelva de una
   const modelsParch = apiKeyProvidersMapped ? Object.values(apiKeyProvidersMapped).flat() : [];
   if (!apiKeyId) return modelsParch;
 
   const apiKey = apiKeys.find((k) => k.id === apiKeyId);
   if (!apiKey || !apiKey.provider) return modelsParch;
 
-  // Accedemos al Record usando corchetes en lugar de .get()
   return apiKeyProvidersMapped[apiKey.provider] || [];
 };
 
 const getValidApiKeys = (
   modelName: string | null | undefined,
   apiKeys: ApiKey[],
-  apiKeyProvidersMapped: Record<string, string[]> // <-- Cambiado a Record
+  apiKeyProvidersMapped: Record<string, string[]>
 ): ApiKey[] => {
-  // Si no hay Model (provider) seleccionado, devolvemos todas las keys
   if (!modelName) return apiKeys;
 
-  // Usamos Object.entries() nativo para objetos planos en lugar de Array.from()
   const validProviders = Object.entries(apiKeyProvidersMapped)
     .filter(([, models]) => models.includes(modelName))
     .map(([provider]) => provider);
 
-  // Filtramos las llaves cuyo Provider incluya este modelo
   return apiKeys.filter((key) => validProviders.includes(key.provider));
 };
 const REPLICATION_TOKENS_KEY = "replicationTokens";
@@ -196,9 +192,8 @@ export const Replication: React.FC = () => {
   const {apiKeys, getDefaultKey} = useApiKeys();
   const { apiKeyProvidersMapped} = useProviders();
   const defaultKey = getDefaultKey();
-  const [selectedKey, setSelectedKey] = useState<ApiKey | null>(defaultKey);
-  // Usamos el idx para saber qué dropdown abrir si hay múltiples Leias
   const [openDropdownIdx, setOpenDropdownIdx] = useState<number | null>(null);
+
   useEffect(() => {
     if (!id) return;
     setTokenReady(false);
@@ -241,13 +236,6 @@ export const Replication: React.FC = () => {
   );
 
   useEffect(() => {
-    if (defaultKey && !selectedKey) {
-      setSelectedKey(defaultKey);
-    }
-  }, [defaultKey, selectedKey]);
-
-  // Fetch replication on mount
-  useEffect(() => {
     if (!tokenReady || !id) {
       return;
     }
@@ -258,7 +246,16 @@ export const Replication: React.FC = () => {
           buildRequestConfig()
         );
         setReplication(resp.data);
-        setLocalReplication(structuredClone(resp.data));
+        const clonedData = structuredClone(resp.data);
+        if (defaultKey) {
+          clonedData.experiment.leias.forEach((leia) => {
+            if (!leia.runnerConfiguration.apiKeyId) {
+              leia.runnerConfiguration.apiKeyId = defaultKey.id;
+            }
+          });
+        }
+
+        setLocalReplication(clonedData);
       } catch (err: any) {
         if (axios.isAxiosError(err) && err.response?.status === 403) {
           if (replicationToken) {
@@ -284,6 +281,7 @@ export const Replication: React.FC = () => {
     replicationToken,
     tokenReady,
     buildRequestConfig,
+    defaultKey
   ]);
 
   const formatTimeAgo = (dateString: string) => {
@@ -443,7 +441,6 @@ export const Replication: React.FC = () => {
     }
   };
 
-  // Regenerate code
   const regenerateCode = async () => {
     try {
       const resp = await axios.patch(
@@ -493,8 +490,20 @@ export const Replication: React.FC = () => {
     }
   };
 
-  // Toggle active state
-  const toggleActive = async () => {
+  // --- UNSAVED CHANGES LOGIC ---
+  const getUnsavedLeias = useCallback(() => {
+    if (!replication || !localReplication) return [];
+    const unsaved: number[] = [];
+    localReplication.experiment.leias.forEach((localLeia, idx) => {
+      const savedLeia = replication.experiment.leias[idx];
+      if (JSON.stringify(localLeia) !== JSON.stringify(savedLeia)) {
+        unsaved.push(idx);
+      }
+    });
+    return unsaved;
+  }, [replication, localReplication]);
+
+  const executeToggleActive = async () => {
     if (!replication) return;
     try {
       const resp = await axios.patch(
@@ -522,7 +531,8 @@ export const Replication: React.FC = () => {
     }
   };
 
-  // Toggle repeatable state
+  const toggleActive = () => withUnsavedChangesCheck(executeToggleActive);
+
   const toggleRepeatable = async () => {
     if (!replication) return;
     try {
@@ -656,23 +666,15 @@ export const Replication: React.FC = () => {
 
   const handleLocalLeiaReset = (idx: number) => {
     if (localReplication && replication) {
-      console.log(
-        "replication: " +
-          replication.experiment.leias[idx].runnerConfiguration.provider
-      );
       const localReplicationCopy = structuredClone(localReplication);
       localReplicationCopy.experiment.leias[idx] =
         replication.experiment.leias[idx];
-      console.log(
-        "copy: " +
-          localReplicationCopy.experiment.leias[idx].runnerConfiguration
-            .provider
-      );
       setLocalReplication(localReplicationCopy);
     }
   };
 
-  const handleLeiaUpdate = async (idx: number) => {
+  // Modificado para devolver un booleano indicando el éxito
+  const handleLeiaUpdate = async (idx: number): Promise<boolean> => {
     if (replication && localReplication) {
       const replicationId = replication.id;
       const localLeiaId = localReplication.experiment.leias[idx].id;
@@ -686,13 +688,12 @@ export const Replication: React.FC = () => {
           position: "bottom-right",
           autoClose: 5000,
         });
-        return;
+        return false;
       }
       const payload = {
         ...localLeiaRunnerConfiguration,
         modelName,
       };
-
 
       if ("provider" in payload) {
         delete (payload as Partial<typeof payload> & { provider?: string }).provider;
@@ -703,7 +704,6 @@ export const Replication: React.FC = () => {
       }
 
       try {
-        console.log("Payload sent:", payload);
         const resp = await axios.patch(
           `${
             import.meta.env.VITE_APP_BACKEND
@@ -717,17 +717,27 @@ export const Replication: React.FC = () => {
           position: "bottom-right",
           autoClose: 5000,
         });
+        return true;
       } catch (err) {
         toast.error("Error updating leia configuration", {
           position: "bottom-right",
           autoClose: 5000,
         });
         console.error("Update error:", err);
+        return false;
       }
     }
+    return false;
   };
-
-  const startTestSession = async (leiaId: string, replicationId: string) => {
+  // Inicializamos nuestro hook pasándole las funciones que necesita para comprobar y guardar
+const {
+  isModalOpen,
+  withUnsavedChangesCheck,
+  handleConfirmSaveAndProceed,
+  handleProceedWithoutSaving,
+  handleCancelUnsavedModal,
+} = useUnsavedChanges(getUnsavedLeias, handleLeiaUpdate);
+  const executeStartTestSession = async (leiaId: string, replicationId: string) => {
     if (loading || startingSessionLeiaId || !leiaId || !replicationId) return;
     setStartingSessionLeiaId(leiaId);
     try {
@@ -747,6 +757,10 @@ export const Replication: React.FC = () => {
     } finally {
       setStartingSessionLeiaId(null);
     }
+  };
+
+  const startTestSession = (leiaId: string, replicationId: string, idx: number) => {
+    withUnsavedChangesCheck(() => executeStartTestSession(leiaId, replicationId), idx);
   };
 
   if (loading || !replication || !localReplication) {
@@ -955,7 +969,7 @@ return (
           {localReplication.experiment.leias.map((item, idx) => {
             const isStartingAnySession = Boolean(startingSessionLeiaId);
             const isStartingThisSession = startingSessionLeiaId === item.id;
-            const currentApiKeyId = item.runnerConfiguration.apiKeyId || selectedKey?.id;
+            const currentApiKeyId = item.runnerConfiguration.apiKeyId;
             const currentModelName =
               item.runnerConfiguration.modelName ||
               item.runnerConfiguration.provider;
@@ -995,7 +1009,7 @@ return (
                     </button>
                     <button
                       onClick={() => {
-                        startTestSession(item.id, replication.id);
+                        startTestSession(item.id, replication.id, idx);
                       }}
                       disabled={isStartingAnySession}
                       className={`flex items-center space-x-1 text-gray-600 hover:underline ${
@@ -1071,7 +1085,6 @@ return (
                       }
                       className="border border-gray-300 rounded-md p-2"
                     >
-                      {/* NUEVO: Opción para deseleccionar el modelo y romper el bloqueo */}
                       <option value="">-- Select Model --</option>
 
                       {validModelsForLeia.map((model) => (
@@ -1111,7 +1124,6 @@ return (
                               Select Key
                             </div>
 
-                            {/* NUEVO: Opción para deseleccionar la API Key y romper el bloqueo */}
                             <button
                               onClick={() => {
                                 handleLocalLeiaChange(
@@ -1473,6 +1485,12 @@ return (
           </div>
         )}
 
+        <UnsavedChangesModal
+          isOpen={isModalOpen}
+          onCancel={handleCancelUnsavedModal}
+          onProceedWithoutSaving={handleProceedWithoutSaving}
+          onConfirmSaveAndProceed={handleConfirmSaveAndProceed}
+        />
         {/* Sidebar */}
         {isSidebarOpen && (
           <div className="fixed inset-y-0 left-0 w-full bg-white shadow-lg z-50 overflow-auto">
