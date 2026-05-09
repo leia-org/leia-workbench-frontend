@@ -115,6 +115,7 @@ const getFilteredVoiceOptions = (
     );
   }
 };
+
 const getValidModels = (
   apiKeyId: string | null | undefined,
   apiKeys: ApiKey[],
@@ -142,6 +143,7 @@ const getValidApiKeys = (
 
   return apiKeys.filter((key) => validProviders.includes(key.provider));
 };
+
 const REPLICATION_TOKENS_KEY = "replicationTokens";
 
 const readStoredReplicationTokens = (): Record<string, string> => {
@@ -155,6 +157,13 @@ const readStoredReplicationTokens = (): Record<string, string> => {
   } catch {
     return {};
   }
+};
+
+const getErrorMessage = (err: any, fallbackMessage: string) => {
+  if (axios.isAxiosError(err) && err.response?.data) {
+    return err.response.data.message || err.response.data.error || fallbackMessage;
+  }
+  return fallbackMessage;
 };
 
 export const Replication: React.FC = () => {
@@ -348,7 +357,7 @@ export const Replication: React.FC = () => {
           autoClose: 5000,
         });
       } catch (err) {
-        toast.error("Error renaming replication", {
+        toast.error(getErrorMessage(err, "Error renaming replication"), {
           position: "bottom-right",
           autoClose: 5000,
         });
@@ -381,7 +390,7 @@ export const Replication: React.FC = () => {
           autoClose: 5000,
         });
       } catch (err) {
-        toast.error("Error updating replication duration", {
+        toast.error(getErrorMessage(err, "Error updating replication duration"), {
           position: "bottom-right",
           autoClose: 5000,
         });
@@ -407,7 +416,7 @@ export const Replication: React.FC = () => {
           autoClose: 5000,
         });
       } catch (err) {
-        toast.error("Error updating replication form", {
+        toast.error(getErrorMessage(err, "Error updating replication form"), {
           position: "bottom-right",
           autoClose: 5000,
         });
@@ -432,7 +441,7 @@ export const Replication: React.FC = () => {
           autoClose: 5000,
         });
       } catch (err) {
-        toast.error("Error deleting replication form", {
+        toast.error(getErrorMessage(err, "Error deleting replication form"), {
           position: "bottom-right",
           autoClose: 5000,
         });
@@ -457,7 +466,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error regenerating code", {
+      toast.error(getErrorMessage(err, "Error regenerating code"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -482,7 +491,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error regenerating share token", {
+      toast.error(getErrorMessage(err, "Error regenerating share token"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -523,7 +532,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error toggling active state", {
+      toast.error(getErrorMessage(err, "Error toggling active state"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -553,7 +562,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error toggling repeatable state", {
+      toast.error(getErrorMessage(err, "Error toggling repeatable state"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -581,7 +590,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error toggling shared access", {
+      toast.error(getErrorMessage(err, "Error toggling shared access"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -608,7 +617,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error toggling ask solution state", {
+      toast.error(getErrorMessage(err, "Error toggling ask solution state"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -635,7 +644,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error toggling evaluate solution state", {
+      toast.error(getErrorMessage(err, "Error toggling evaluate solution state"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -719,7 +728,7 @@ export const Replication: React.FC = () => {
         });
         return true;
       } catch (err) {
-        toast.error("Error updating leia configuration", {
+        toast.error(getErrorMessage(err, "Error updating leia configuration"), {
           position: "bottom-right",
           autoClose: 5000,
         });
@@ -729,14 +738,16 @@ export const Replication: React.FC = () => {
     }
     return false;
   };
+
   // Inicializamos nuestro hook pasándole las funciones que necesita para comprobar y guardar
-const {
-  isModalOpen,
-  withUnsavedChangesCheck,
-  handleConfirmSaveAndProceed,
-  handleProceedWithoutSaving,
-  handleCancelUnsavedModal,
-} = useUnsavedChanges(getUnsavedLeias, handleLeiaUpdate);
+  const {
+    isModalOpen,
+    withUnsavedChangesCheck,
+    handleConfirmSaveAndProceed,
+    handleProceedWithoutSaving,
+    handleCancelUnsavedModal,
+  } = useUnsavedChanges(getUnsavedLeias, handleLeiaUpdate);
+
   const executeStartTestSession = async (leiaId: string, replicationId: string) => {
     if (loading || startingSessionLeiaId || !leiaId || !replicationId) return;
     setStartingSessionLeiaId(leiaId);
@@ -749,7 +760,7 @@ const {
       const sessionId = resp.data.sessionId;
       navigate(`/chat/${sessionId}`);
     } catch (err) {
-      toast.error("Error starting test session", {
+      toast.error(getErrorMessage(err, "Error starting test session"), {
         position: "bottom-right",
         autoClose: 5000,
       });
