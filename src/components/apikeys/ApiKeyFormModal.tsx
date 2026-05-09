@@ -15,7 +15,7 @@ export interface ApiKeyFormModalProps {
 
 export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, userRole, onClose, onSave, errors = {} }) => {
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
-  const [initialFormData, setInitialFormData] = useState<Partial<ApiKey> | null>(null);
+  const [, setInitialFormData] = useState<Partial<ApiKey> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { apiKeysProviderSet, isLoading: isLoadingProviders } = useProviders();
 
@@ -59,9 +59,6 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
     setIsSubmitting(true);
     try {
       const payload = { ...formData };
-      if (mode === 'edit' && initialFormData && payload.provider === initialFormData.provider) {
-        delete payload.provider;
-      }
       await onSave(payload);
     } finally {
       setIsSubmitting(false);
@@ -125,8 +122,8 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
-              <input type="url" name="baseUrl" value={formData.baseUrl || ""} onChange={handleChange} className={`w-full border ${errors.baseUrl ? 'border-red-500' : 'border-gray-300'} rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-blue-600`} placeholder="https://..." required />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Base URL<span className="text-gray-400 font-normal">(Required for local providers)</span></label>
+              <input type="url" name="baseUrl" value={formData.baseUrl || ""} onChange={handleChange} className={`w-full border ${errors.baseUrl ? 'border-red-500' : 'border-gray-300'} rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-blue-600`} placeholder="https://..." />
               {errors.baseUrl && <p className="text-red-500 text-xs mt-1">{errors.baseUrl}</p>}
             </div>
             <div>

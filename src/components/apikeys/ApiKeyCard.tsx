@@ -127,15 +127,17 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({ apiKey, onEdit, userRole
             </div>
           </div>
 
-          <div className="flex items-start space-x-3">
-            <LinkIcon className="h-5 w-5 text-gray-400 mt-0.5" />
-            <div className="overflow-hidden">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Base URL</p>
-              <a href={apiKey.baseUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 truncate hover:underline mt-0.5 block">
-                {apiKey.baseUrl}
-              </a>
+          {apiKey.baseUrl &&(
+            <div className="flex items-start space-x-3">
+              <LinkIcon className="h-5 w-5 text-gray-400 mt-0.5" />
+              <div className="overflow-hidden">
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Base URL</p>
+                <a href={apiKey.baseUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 truncate hover:underline mt-0.5 block">
+                  {apiKey.baseUrl}
+                </a>
+              </div>
             </div>
-          </div>
+          )}
 
           {apiKey.managementUrl && (
             <div className="flex items-start space-x-3">
