@@ -1156,6 +1156,15 @@ export const Replication: React.FC = () => {
         {localReplication.experiment.isMultiLeia && (
           <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6">
             <h3 className="text-lg font-semibold">Global configuration</h3>
+            <div className="text-sm text-gray-700">
+              Sessions:{" "}
+              <strong>
+                {localReplication.experiment.leias.reduce(
+                  (total, leia) => total + (leia.sessionCount || 0),
+                  0
+                )}
+              </strong>
+            </div>
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center space-x-8">
                 <label className="text-center flex items-center">
@@ -1371,9 +1380,11 @@ export const Replication: React.FC = () => {
                     )}
                   </div>
                 </div>
-                <div className="text-sm text-gray-700">
-                  Sessions: <strong>{item.sessionCount}</strong>
-                </div>
+                {!localReplication.experiment.isMultiLeia && (
+                  <div className="text-sm text-gray-700">
+                    Sessions: <strong>{item.sessionCount}</strong>
+                  </div>
+                )}
                 {!localReplication.experiment.isMultiLeia && (
                   <div className="text-sm text-gray-700">
                     Mode: <strong>{item.configuration.mode}</strong>
