@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
 import { Navbar } from "../components/Navbar";
@@ -42,6 +42,14 @@ interface Replication {
   form: string | undefined | null;
   experiment: {
     name: string;
+    isMultiLeia?: boolean;
+    globalConfiguration?: {
+      runner: {
+        provider: string;
+      };
+      askSolution: boolean;
+      evaluateSolution: boolean;
+    };
     leias: Array<{
       configuration: {
         mode: string;
@@ -183,23 +191,39 @@ export const Replication: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
 
-  const isProviderValid = (provider: string) => {
+  const isProviderValid = useCallback((provider: string) => {
     return provider === DEFAULT_PROVIDER || availableModels.includes(provider);
-  };
+  }, [availableModels]);
 
-  const unavailableLeiaProviders: Array<{ leiaName: string; provider: string }> =
-    !localReplication || !hasFetchedAvailableModels
-      ? []
-      : localReplication.experiment.leias
-          .filter(
-            (leia) =>
-              leia.runnerConfiguration.provider &&
-              !isProviderValid(leia.runnerConfiguration.provider)
-          )
-          .map((leia) => ({
-            leiaName: leia.leia.metadata?.name || "Unknown Leia",
-            provider: leia.runnerConfiguration.provider,
-          }));
+  const unavailableProviders: Array<{ label: string; provider: string }> =
+    useMemo(() => {
+      if (!localReplication || !hasFetchedAvailableModels) {
+        return [];
+      }
+
+      if (localReplication.experiment.isMultiLeia) {
+        return (() => {
+          const provider =
+            localReplication.experiment.globalConfiguration?.runner
+              ?.provider ||
+            DEFAULT_PROVIDER;
+          return provider && !isProviderValid(provider)
+            ? [{ label: "Global runner", provider }]
+            : [];
+        })();
+      }
+
+      return localReplication.experiment.leias
+        .filter(
+          (leia) =>
+            leia.runnerConfiguration.provider &&
+            !isProviderValid(leia.runnerConfiguration.provider)
+        )
+        .map((leia) => ({
+          label: leia.leia.metadata?.name || "Unknown Leia",
+          provider: leia.runnerConfiguration.provider,
+        }));
+    }, [localReplication, hasFetchedAvailableModels, isProviderValid]);
 
   useEffect(() => {
     if (!id) return;
@@ -307,16 +331,10 @@ export const Replication: React.FC = () => {
       return;
     }
 
-    const hasUnavailableProvider = Boolean(
-      localReplication?.experiment.leias.some(
-        (leia) =>
-          leia.runnerConfiguration.provider &&
-          !isProviderValid(leia.runnerConfiguration.provider)
-      )
-    );
+    const hasUnavailableProvider = unavailableProviders.length > 0;
 
     setIsMissingProviderModalOpen(hasUnavailableProvider);
-  }, [hasFetchedAvailableModels, localReplication, availableModels]);
+  }, [hasFetchedAvailableModels, unavailableProviders]);
 
 
   const formatTimeAgo = (dateString: string) => {
@@ -774,6 +792,74 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const buildDefaultGlobalConfiguration = () => ({
+    runner: {
+      provider: DEFAULT_PROVIDER,
+    },
+    askSolution: true,
+    evaluateSolution: true,
+  });
+
+  const handleLocalGlobalConfigurationChange = (
+    key: "provider" | "askSolution" | "evaluateSolution",
+    value: string | boolean
+  ) => {
+    setLocalReplication((prev) => {
+      if (!prev) return prev;
+      const copy = structuredClone(prev);
+      copy.experiment.globalConfiguration =
+        copy.experiment.globalConfiguration || buildDefaultGlobalConfiguration();
+
+      if (key === "provider") {
+        copy.experiment.globalConfiguration.runner.provider = value as string;
+      } else {
+        copy.experiment.globalConfiguration[key] = value as boolean;
+        if (key === "askSolution" && value === false) {
+          copy.experiment.globalConfiguration.evaluateSolution = false;
+        }
+        if (key === "evaluateSolution" && value === true) {
+          copy.experiment.globalConfiguration.askSolution = true;
+        }
+      }
+      return copy;
+    });
+  };
+
+  const handleGlobalConfigurationReset = () => {
+    if (!localReplication || !replication) return;
+    const copy = structuredClone(localReplication);
+    copy.experiment.globalConfiguration =
+      replication.experiment.globalConfiguration || buildDefaultGlobalConfiguration();
+    setLocalReplication(copy);
+  };
+
+  const handleGlobalConfigurationUpdate = async () => {
+    if (!replication || !localReplication) return;
+
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${
+          replication.id
+        }/global-configuration`,
+        localReplication.experiment.globalConfiguration ||
+          buildDefaultGlobalConfiguration(),
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      toast.success("Global runner configuration updated successfully", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error("Error updating global runner configuration", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      console.error("Update error:", err);
+    }
+  };
+
   const startTestSession = async (leiaId: string, replicationId: string) => {
     if (loading || startingSessionLeiaId || !leiaId || !replicationId) return;
     setStartingSessionLeiaId(leiaId);
@@ -1067,6 +1153,168 @@ export const Replication: React.FC = () => {
           </div>
         </div>
 
+        {localReplication.experiment.isMultiLeia && (
+          <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6">
+            <h3 className="text-lg font-semibold">Global configuration</h3>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center space-x-8">
+                <label className="text-center flex items-center">
+                  <DocumentTextIcon className="h-4 w-4 text-gray-600" />
+                  <span className="text-sm text-gray-700 mx-2">
+                    Student solution
+                  </span>
+                  <Switch
+                    checked={
+                      localReplication.experiment.globalConfiguration
+                        ?.askSolution ?? true
+                    }
+                    onChange={(checked) =>
+                      handleLocalGlobalConfigurationChange(
+                        "askSolution",
+                        checked
+                      )
+                    }
+                  />
+                </label>
+                <label className="text-center flex items-center">
+                  <LightBulbIcon className="h-4 w-4 text-gray-600" />
+                  <span className="text-sm text-gray-700 mx-2">
+                    Automatic evaluation
+                  </span>
+                  <Switch
+                    checked={
+                      localReplication.experiment.globalConfiguration
+                        ?.evaluateSolution ?? true
+                    }
+                    onChange={(checked) =>
+                      handleLocalGlobalConfigurationChange(
+                        "evaluateSolution",
+                        checked
+                      )
+                    }
+                  />
+                </label>
+              </div>
+              {(() => {
+                const testLeiaId = localReplication.experiment.leias[0]?.id;
+                const isStartingGlobalSession = Boolean(startingSessionLeiaId);
+
+                return (
+                  <button
+                    onClick={() => {
+                      if (testLeiaId) {
+                        startTestSession(testLeiaId, replication.id);
+                      }
+                    }}
+                    disabled={isStartingGlobalSession || !testLeiaId}
+                    className={`flex items-center space-x-1 text-gray-600 hover:underline ${
+                      isStartingGlobalSession || !testLeiaId
+                        ? "opacity-60 cursor-not-allowed"
+                        : ""
+                    }`}
+                  >
+                    {isStartingGlobalSession ? (
+                      <>
+                        <ArrowPathIcon className="h-4 w-4 text-gray-600 animate-spin" />
+                        <span className="text-sm text-gray-700">
+                          Starting...
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <BeakerIcon className="h-4 w-4 text-gray-600" />
+                        <span className="text-sm text-gray-700">
+                          Test Session
+                        </span>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
+            </div>
+            <fieldset className="bg-white p-4 rounded-xl shadow border-solid border border-gray-400">
+              <legend>Runner</legend>
+              <div className="flex items-center space-x-2 mb-3">
+                <div className="text-sm text-gray-700">Provider:</div>
+                {(() => {
+                  const currentProvider =
+                    localReplication.experiment.globalConfiguration?.runner
+                      ?.provider || DEFAULT_PROVIDER;
+                  const isCurrentProviderValid =
+                    isProviderValid(currentProvider);
+                  const baseOptions = [DEFAULT_PROVIDER, ...availableModels];
+                  const providerOptions = isCurrentProviderValid
+                    ? baseOptions
+                    : [currentProvider, ...baseOptions];
+
+                  return (
+                    <select
+                      value={currentProvider}
+                      onChange={(e) =>
+                        handleLocalGlobalConfigurationChange(
+                          "provider",
+                          e.target.value
+                        )
+                      }
+                      className={`border rounded-md p-2 ${
+                        isCurrentProviderValid
+                          ? "border-gray-300"
+                          : "border-red-500 bg-red-50 text-red-800"
+                      }`}
+                    >
+                      {providerOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt === DEFAULT_PROVIDER
+                            ? "default"
+                            : isProviderValid(opt)
+                            ? opt
+                            : `${opt} (no disponible)`}
+                        </option>
+                      ))}
+                    </select>
+                  );
+                })()}
+              </div>
+
+              <div className="flex w-full gap-2">
+                <button
+                  onClick={handleGlobalConfigurationReset}
+                  className="mt-2 bg-gray-400 text-white rounded-lg px-4 py-2 hover:bg-gray-500 transition duration-200 w-full"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={handleGlobalConfigurationUpdate}
+                  disabled={
+                    JSON.stringify(
+                      localReplication.experiment.globalConfiguration ||
+                        buildDefaultGlobalConfiguration()
+                    ) ===
+                    JSON.stringify(
+                      replication.experiment.globalConfiguration ||
+                        buildDefaultGlobalConfiguration()
+                    )
+                  }
+                  className={`mt-2 rounded-lg px-4 py-2 transition duration-200 w-full text-white ${
+                    JSON.stringify(
+                      localReplication.experiment.globalConfiguration ||
+                        buildDefaultGlobalConfiguration()
+                    ) ===
+                    JSON.stringify(
+                      replication.experiment.globalConfiguration ||
+                        buildDefaultGlobalConfiguration()
+                    )
+                      ? "bg-blue-300 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  }`}
+                >
+                  Save
+                </button>
+              </div>
+            </fieldset>
+          </div>
+        )}
+
         {/* Leias section */}
         <h3 className="text-lg font-semibold">Leia configurations</h3>
         <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6 mt-2">
@@ -1092,42 +1340,47 @@ export const Replication: React.FC = () => {
                       <EyeIcon className="h-4 w-4" />
                       <span className="text-sm">View Content</span>
                     </button>
-                    <button
-                      onClick={() => {
-                        startTestSession(item.id, replication.id);
-                      }}
-                      disabled={isStartingAnySession}
-                      className={`flex items-center space-x-1 text-gray-600 hover:underline ${
-                        isStartingAnySession
-                          ? "opacity-60 cursor-not-allowed"
-                          : ""
-                      }`}
-                    >
-                      {isStartingThisSession ? (
-                        <>
-                          <ArrowPathIcon className="h-4 w-4 text-gray-600 ml-4 animate-spin" />
-                          <span className="text-sm text-gray-700">
-                            Starting...
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <BeakerIcon className="h-4 w-4 text-gray-600 ml-4" />
-                          <span className="text-sm text-gray-700">
-                            Test Session
-                          </span>
-                        </>
-                      )}
-                    </button>
+                    {!localReplication.experiment.isMultiLeia && (
+                      <button
+                        onClick={() => {
+                          startTestSession(item.id, replication.id);
+                        }}
+                        disabled={isStartingAnySession}
+                        className={`flex items-center space-x-1 text-gray-600 hover:underline ${
+                          isStartingAnySession
+                            ? "opacity-60 cursor-not-allowed"
+                            : ""
+                        }`}
+                      >
+                        {isStartingThisSession ? (
+                          <>
+                            <ArrowPathIcon className="h-4 w-4 text-gray-600 ml-4 animate-spin" />
+                            <span className="text-sm text-gray-700">
+                              Starting...
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <BeakerIcon className="h-4 w-4 text-gray-600 ml-4" />
+                            <span className="text-sm text-gray-700">
+                              Test Session
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="text-sm text-gray-700">
                   Sessions: <strong>{item.sessionCount}</strong>
                 </div>
-                <div className="text-sm text-gray-700">
-                  Mode: <strong>{item.configuration.mode}</strong>
-                </div>
+                {!localReplication.experiment.isMultiLeia && (
+                  <div className="text-sm text-gray-700">
+                    Mode: <strong>{item.configuration.mode}</strong>
+                  </div>
+                )}
 
+                {!localReplication.experiment.isMultiLeia && (
                 <div className="flex items-center space-x-8">
                   <label className="text-center flex items-center">
                     <DocumentTextIcon className="h-4 w-4 text-gray-600" />
@@ -1150,7 +1403,9 @@ export const Replication: React.FC = () => {
                     ></Switch>
                   </label>
                 </div>
+                )}
 
+                {!localReplication.experiment.isMultiLeia && (
                 <fieldset className="bg-white p-4 rounded-xl shadow border-solid border border-gray-400">
                   <legend>Runner</legend>
                   <div className="flex items-center space-x-2 mb-3">
@@ -1497,6 +1752,7 @@ export const Replication: React.FC = () => {
                     </button>
                   </div>
                 </fieldset>
+                )}
               </div>
             );
           })}
@@ -1660,22 +1916,22 @@ export const Replication: React.FC = () => {
           </div>
         )}
 
-        {isMissingProviderModalOpen && unavailableLeiaProviders.length > 0 && (
+        {isMissingProviderModalOpen && unavailableProviders.length > 0 && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-lg w-full mx-4">
               <h2 className="text-lg font-semibold mb-2 text-red-700">
                 Provider not available
               </h2>
               <p className="text-sm text-gray-700 mb-4">
-                Some Leias have a provider configured that is no longer in the list of available models.
+                Some runner configurations have a provider that is no longer in the list of available models.
               </p>
               <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4 max-h-56 overflow-auto">
-                {unavailableLeiaProviders.map((item) => (
+                {unavailableProviders.map((item) => (
                   <div
-                    key={`${item.leiaName}-${item.provider}`}
+                    key={`${item.label}-${item.provider}`}
                     className="text-sm text-red-800"
                   >
-                    <strong>{item.leiaName}:</strong> {item.provider}
+                    <strong>{item.label}:</strong> {item.provider}
                   </div>
                 ))}
               </div>
