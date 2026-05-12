@@ -151,7 +151,7 @@ export const Administration: React.FC = () => {
                   <ClockIcon className="w-5 h-5 text-gray-500 mr-1" />
                   <strong>Duration:</strong>
                   <p className="ml-2">
-                    {Math.floor(rep.duration / 60)}m {rep.duration % 60}s
+                    {rep.duration ? `${Math.floor(rep.duration / 60)}m ${rep.duration % 60}s` : "No time limit"}
                   </p>
                 </span>
                 <span className="flex items-center">

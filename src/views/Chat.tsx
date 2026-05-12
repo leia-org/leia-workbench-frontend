@@ -4,7 +4,16 @@ import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
+import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
+import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
+import { LukeAudioWidget } from "../components/LukeAudioWidget";
+import { SessionTimer } from "../components/SessionTimer";
+import {
+  VoiceModeWithWidgets,
+  findCatalogEntry,
+  type WidgetDefinition,
+} from "../widgets";
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -75,10 +84,10 @@ export const Chat = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [configuration, setConfiguration] = useState<Configuration | null>(
-    null
+    null,
   );
   const [replication, setReplication] = useState<Replication | null>(null);
-  const [showInstructions, setShowInstructions] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
@@ -87,48 +96,71 @@ export const Chat = () => {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
-  const [audioMode, setAudioMode] = useState<"text" | "audio">("text");
+  const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
+  const [lukeConfig, setLukeConfig] = useState<{
+    provider: string;
+    voice: string;
+    widgets?: Array<{
+      widgetType: string;
+      slot: "left" | "right" | "main";
+      params?: Record<string, unknown>;
+    }>;
+  } | null>(null);
+  const [leiaName, setLeiaName] = useState<string | null>(null);
+  const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
+  const [sessionTime, setSessionTime] = useState<number | null>(null);
+
+  const handleTranscriptComplete = useCallback(
+    (
+      transcript: string,
+      isLeia: boolean,
+      timestamp: Date,
+      sequence: number,
+    ) => {
+      const newMessage: Message = {
+        text: transcript,
+        timestamp: timestamp,
+        isLeia,
+        id: generateMessageId(),
+        sequence: sequence,
+      };
+      setMessages((prev) => {
+        const updated = [...prev, newMessage];
+
+        return updated.sort((a, b) => {
+          if (a.sequence !== undefined && b.sequence !== undefined) {
+            return a.sequence - b.sequence;
+          }
+          return (
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+        });
+      });
+    },
+    [],
+  );
+
+  const handleAudioError = useCallback((error: Error) => {
+    console.error("Audio error:", error);
+    setLoadError(error.message);
+  }, []);
 
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
     enabled: audioMode === "audio",
-    onTranscriptComplete: useCallback(
-      (
-        transcript: string,
-        isLeia: boolean,
-        timestamp: Date,
-        sequence: number
-      ) => {
-        const newMessage: Message = {
-          text: transcript,
-          timestamp: timestamp,
-          isLeia,
-          id: generateMessageId(),
-          sequence: sequence,
-        };
-        setMessages((prev) => {
-          const updated = [...prev, newMessage];
+    forceMute: showInstructions,
+    onTranscriptComplete: handleTranscriptComplete,
+    onError: handleAudioError,
+  });
 
-          return updated.sort((a, b) => {
-            if (a.sequence !== undefined && b.sequence !== undefined) {
-              return a.sequence - b.sequence;
-            }
-            return (
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-            );
-          });
-        });
-      },
-      []
-    ),
-    onError: useCallback((error: Error) => {
-      console.error("Realtime audio error:", error);
-      setLoadError(error.message);
-    }, []),
+  const lukeToken = useLukeToken({
+    sessionId: sessionId || "",
+    enabled: audioMode === "luke",
+    onError: handleAudioError,
   });
 
   // Función mejorada para scroll automático usando utilidades
@@ -177,7 +209,7 @@ export const Chat = () => {
         }/api/v1/interactions/${sessionId}/messages`,
         {
           message: failedMessage,
-        }
+        },
       );
 
       if (response.status === 200) {
@@ -232,29 +264,34 @@ export const Chat = () => {
   const loadData = useCallback(async () => {
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`,
       );
 
       if (response.status === 200) {
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
+        const durationSeconds = response.data.replication?.duration;
+        if (typeof durationSeconds === "number" && durationSeconds > 0) {
+          setSessionTime(durationSeconds / 60);
+        }
+        setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
-          response.data.leia.leia.spec.behaviour.spec.tooltip || null
+          response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
         localStorage.setItem("sessionId", response.data.session.id);
         localStorage.setItem(
           "exercise",
-          JSON.stringify(response.data.leia.leia.spec.problem.spec)
+          JSON.stringify(response.data.leia.leia.spec.problem.spec),
         );
         localStorage.setItem(
           "configuration",
-          JSON.stringify(response.data.leia.configuration)
+          JSON.stringify(response.data.leia.configuration),
         );
         localStorage.setItem(
           "replication",
-          JSON.stringify(response.data.replication)
+          JSON.stringify(response.data.replication),
         );
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
@@ -262,6 +299,15 @@ export const Chat = () => {
         if (response.data.leia?.audioMode === "realtime") {
           console.log("Audio mode detected, switching to audio interface");
           setAudioMode("audio");
+        } else if (response.data.leia?.audioMode === "luke") {
+          console.log("Luke audio mode detected");
+          setAudioMode("luke");
+          if (response.data.leia?.lukeConfig) {
+            setLukeConfig(response.data.leia.lukeConfig);
+          }
+        }
+        if (response.data.leia?.hideAudioTranscription !== undefined) {
+          setHideAudioTranscription(Boolean(response.data.leia.hideAudioTranscription));
         }
         let messages = response.data.messages;
 
@@ -275,7 +321,7 @@ export const Chat = () => {
         const sortedMessages = messages
           .sort(
             (a: Message, b: Message) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
           )
           .map((msg: Message) => ({
             ...msg,
@@ -285,7 +331,7 @@ export const Chat = () => {
       }
     } catch (error: any) {
       setLoadError(
-        error.response?.data?.error || "An unexpected error occurred"
+        error.response?.data?.error || "An unexpected error occurred",
       );
     }
     setTimeout(() => {
@@ -419,7 +465,7 @@ export const Chat = () => {
         }/api/v1/interactions/${sessionId}/messages`,
         {
           message: messageText,
-        }
+        },
       );
 
       if (response.status === 200) {
@@ -449,7 +495,13 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
-    if (!messages.length && configuration?.mode !== "transcription") return;
+    if (
+      !messages.length &&
+      configuration?.mode !== "transcription" &&
+      audioMode !== "luke" &&
+      audioMode !== "audio"
+    )
+      return;
     setConcluding(true);
     if (configuration?.askSolution) {
       navigate("/edit");
@@ -458,7 +510,7 @@ export const Chat = () => {
         const response = await axios.post(
           `${
             import.meta.env.VITE_APP_BACKEND
-          }/api/v1/interactions/${sessionId}/finish`
+          }/api/v1/interactions/${sessionId}/finish`,
         );
 
         if (response.status === 200) {
@@ -468,13 +520,30 @@ export const Chat = () => {
         }
       } catch (error: any) {
         setLoadError(
-          error.response?.data?.error || "An unexpected error occurred"
+          error.response?.data?.error || "An unexpected error occurred",
         );
       } finally {
         setConcluding(false);
       }
     }
   };
+
+  const handleTimerExpire = useCallback(async () => {
+    setConcluding(true);
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+      );
+      if (response.status === 200) {
+        setSession(response.data);
+        setShowSuccessModal(true);
+      }
+    } catch (error: any) {
+      setLoadError(error.response?.data?.error || "An unexpected error occurred");
+    } finally {
+      setConcluding(false);
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     if (session?.finishedAt && !showSuccessModal) {
@@ -560,6 +629,12 @@ export const Chat = () => {
             </div>
             <div className="px-6 py-4">
               <p className="text-gray-600">{exercise?.description}</p>
+              <p className="text-gray-600 mt-4">
+                When you're ready, click the button below to start the task.
+                {(audioMode === "audio" || audioMode === "luke")
+                  ? "Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need."
+                  : ""}
+              </p>
             </div>
             <div className="px-6 py-4 border-t flex justify-end">
               <button
@@ -583,6 +658,13 @@ export const Chat = () => {
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
         <div className="flex gap-2">
+        {sessionTime && session?.startedAt && (
+          <SessionTimer
+            durationMinutes={sessionTime}
+            sessionStartedAt={session.startedAt}
+            onExpire={handleTimerExpire}
+          />
+        )}
           <button
             onClick={() => setShowInstructions(true)}
             className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
@@ -605,7 +687,10 @@ export const Chat = () => {
             onClick={handleFinishConversation}
             disabled={
               concluding ||
-              (!messages.length && configuration?.mode != "transcription")
+              (!messages.length &&
+                configuration?.mode !== "transcription" &&
+                audioMode !== "luke" &&
+                audioMode !== "audio")
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
@@ -633,7 +718,68 @@ export const Chat = () => {
       </header>
 
       {/* Contenido principal - Condicional según el modo */}
-      {configuration?.mode === "transcription" &&
+      {audioMode === "luke" ? (
+        /* Vista Luke - Componente nativo en el centro */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {lukeToken.isReady && lukeConfig ? (
+            (() => {
+              const widgetDefs: WidgetDefinition[] = (lukeConfig.widgets ?? [])
+                .map((w) => {
+                  const entry = findCatalogEntry(w.widgetType);
+                  if (!entry) return null;
+                  return {
+                    id: `${w.widgetType}-${w.slot}`,
+                    slot: w.slot,
+                    Component: entry.Component,
+                    props: w.params ? { params: w.params } : undefined,
+                  } as WidgetDefinition;
+                })
+                .filter((w): w is WidgetDefinition => w !== null);
+
+              const base = (
+                <LukeAudioWidget
+                  wsUrl={lukeToken.wsUrl!}
+                  token={lukeToken.token!}
+                  lukeConfig={lukeConfig}
+                  leiaName={leiaName || undefined}
+                  forceMute={showInstructions}
+                  showTranscription={!hideAudioTranscription}
+                  mode="inline"
+                  onTranscriptComplete={handleTranscriptComplete}
+                />
+              );
+
+              if (widgetDefs.length === 0) return base;
+              return (
+                <VoiceModeWithWidgets widgets={widgetDefs}>
+                  {({ tools, leftSlot, rightSlot }) => (
+                    <LukeAudioWidget
+                      wsUrl={lukeToken.wsUrl!}
+                      token={lukeToken.token!}
+                      lukeConfig={lukeConfig}
+                      leiaName={leiaName || undefined}
+                      forceMute={showInstructions}
+                      showTranscription={!hideAudioTranscription}
+                      mode="inline"
+                      tools={tools as Record<string, import("@leia-org/luke-client").FrontendTool>}
+                      leftSlot={leftSlot}
+                      rightSlot={rightSlot}
+                      onTranscriptComplete={handleTranscriptComplete}
+                    />
+                  )}
+                </VoiceModeWithWidgets>
+              );
+            })()
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-gray-500 text-sm">Connecting to voice...</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : configuration?.mode === "transcription" &&
       !configuration?.data?.messages &&
       configuration?.data?.link ? (
         /* Vista de transcripción externa */
@@ -668,7 +814,7 @@ export const Chat = () => {
                 window.open(
                   configuration.data.link,
                   "_blank",
-                  "noopener,noreferrer"
+                  "noopener,noreferrer",
                 )
               }
               className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center gap-3 shadow-sm"
@@ -707,12 +853,13 @@ export const Chat = () => {
             ref={chatMessagesRef}
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
-            {messages.map((msg, index) => (
+            {hideAudioTranscription && (<LiveTranscriptionNotice/>)}
+            {!hideAudioTranscription && messages.map((msg, index, visibleMessages) => (
               <div
                 key={msg.id || index}
                 id={`message-${msg.id || index}`}
                 ref={
-                  msg.isLeia && index === messages.length - 1
+                  msg.isLeia && index === visibleMessages.length - 1
                     ? lastLeiaMessageRef
                     : null
                 }
@@ -750,10 +897,10 @@ export const Chat = () => {
                   </p>
                   {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
                   {msg.isLeia &&
-                    index === messages.length - 1 &&
+                    index === visibleMessages.length - 1 &&
                     failedMessage &&
                     msg.text.includes(
-                      "This message is taking longer than usual."
+                      "This message is taking longer than usual.",
                     ) && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <button
@@ -804,8 +951,8 @@ export const Chat = () => {
         </div>
       )}
 
-      {/* Input de chat - Solo mostrar si NO es transcripción externa */}
-      {!(
+      {/* Input de chat - Ocultar en transcripción externa y en modo luke */}
+      {audioMode !== "luke" && !(
         configuration?.mode === "transcription" &&
         !configuration?.data?.messages &&
         configuration?.data?.link
@@ -834,23 +981,36 @@ export const Chat = () => {
                     </div>
                     <div className="flex-1">
                       <p className="text-sm text-blue-800 mb-2">
-                        <strong>Message example:</strong>
+                        <strong>
+                          {audioMode === "audio"
+                            ? "Try saying:"
+                            : "Try typing:"}
+                        </strong>
                       </p>
-                      <button
-                        onClick={() =>
-                          copyToInput(
-                            tooltipMessage ||
-                              "Hi, my name is (...) and I am here to (...), nice to meet you!"
-                          )
-                        }
-                        className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
-                      >
-                        {tooltipMessage ||
-                          "Hi, my name is (...) and I am here to (...), nice to meet you!"}
-                      </button>
-                      <p className="text-xs text-blue-600 mt-1">
-                        Click to copy to input
-                      </p>
+                      {audioMode === "audio" ? (
+                        <p className="text-sm text-blue-700 bg-blue-100 rounded px-3 py-2">
+                          {tooltipMessage ||
+                            "Hi, my name is (...) and I am here to (...), nice to meet you!"}
+                        </p>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() =>
+                              copyToInput(
+                                tooltipMessage ||
+                                  "Hi, my name is (...) and I am here to (...), nice to meet you!",
+                              )
+                            }
+                            className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
+                          >
+                            {tooltipMessage ||
+                              "Hi, my name is (...) and I am here to (...), nice to meet you!"}
+                          </button>
+                          <p className="text-xs text-blue-600 mt-1">
+                            Click to copy to input
+                          </p>
+                        </>
+                      )}
                     </div>
                     <button
                       onClick={() => setShowTooltip(false)}
@@ -918,8 +1078,8 @@ export const Chat = () => {
                   configuration?.mode === "transcription"
                     ? "Disabled in transcription exercise"
                     : audioMode === "audio"
-                    ? "Audio mode enabled - Use the audio controls to speak"
-                    : "Type a message... (Shift+Enter for new line)"
+                      ? "Audio mode enabled - Use the audio controls to speak"
+                      : "Type a message... (Shift+Enter for new line)"
                 }
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
@@ -1086,11 +1246,12 @@ export const Chat = () => {
         </div>
       )}
 
-      {/* Audio Controls Floating Popup - Only shown in audio mode */}
+      {/* Audio Controls Floating Popup - Legacy realtime mode */}
       {audioMode === "audio" && (
         <AudioControls
           isConnected={realtimeAudio.isConnected}
-          isMuted={realtimeAudio.isMuted}
+          isMuted={realtimeAudio.isMuted || realtimeAudio.forceMute}
+          forceMute={realtimeAudio.forceMute}
           isLeiaSpeaking={realtimeAudio.isLeiaSpeaking}
           audioElement={realtimeAudio.audioElement}
           mediaStream={realtimeAudio.mediaStream}
@@ -1099,6 +1260,7 @@ export const Chat = () => {
           onEndSession={handleFinishConversation}
         />
       )}
+
     </div>
   );
 };

@@ -9,6 +9,7 @@ interface RealtimeEvent {
 interface UseRealtimeAudioProps {
   sessionId: string;
   enabled?: boolean;
+  forceMute?: boolean;
   onTranscriptDelta?: (delta: string, isLeia: boolean) => void;
   onTranscriptComplete?: (transcript: string, isLeia: boolean, timestamp: Date, sequence: number) => void;
   onError?: (error: Error) => void;
@@ -18,6 +19,7 @@ interface UseRealtimeAudioProps {
 export const useRealtimeAudio = ({
   sessionId,
   enabled = false,
+  forceMute = false,
   onTranscriptDelta,
   onTranscriptComplete,
   onError,
@@ -242,6 +244,38 @@ export const useRealtimeAudio = ({
     [onTranscriptDelta, onTranscriptComplete, onError, saveTranscription]
   );
 
+  const disconnect = useCallback(() => {
+    console.log("Disconnecting from Realtime API...");
+
+    if (dcRef.current) {
+      dcRef.current.close();
+      dcRef.current = null;
+    }
+
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+
+    if (leiaAudioStreamRef.current) {
+      leiaAudioStreamRef.current = null;
+    }
+
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+      audioElementRef.current.srcObject = null;
+    }
+
+    setIsConnected(false);
+    setIsLeiaSpeaking(false);
+    onConnectionChange?.(false);
+  }, [onConnectionChange]);
+
   const connect = useCallback(async () => {
     if (!enabled || isConnected) return;
 
@@ -275,6 +309,9 @@ export const useRealtimeAudio = ({
         mediaStreamRef.current = mediaStream;
 
         const audioTrack = mediaStream.getAudioTracks()[0];
+        if (audioTrack) {
+          audioTrack.enabled = forceMute ? false : !isMuted;
+        }
         pc.addTrack(audioTrack, mediaStream);
         console.log("Added microphone track");
       } catch (error) {
@@ -336,46 +373,7 @@ export const useRealtimeAudio = ({
         error instanceof Error ? error : new Error("Failed to connect")
       );
     }
-  }, [
-    enabled,
-    sessionId,
-    isConnected,
-    handleDataChannelMessage,
-    onError,
-    onConnectionChange,
-  ]);
-
-  const disconnect = useCallback(() => {
-    console.log("Disconnecting from Realtime API...");
-
-    if (dcRef.current) {
-      dcRef.current.close();
-      dcRef.current = null;
-    }
-
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-
-    if (leiaAudioStreamRef.current) {
-      leiaAudioStreamRef.current = null;
-    }
-
-    if (audioElementRef.current) {
-      audioElementRef.current.pause();
-      audioElementRef.current.srcObject = null;
-    }
-
-    setIsConnected(false);
-    setIsLeiaSpeaking(false);
-    onConnectionChange?.(false);
-  }, [onConnectionChange]);
+  }, [enabled, isConnected, handleDataChannelMessage, sessionId, onConnectionChange, forceMute, isMuted, onError, disconnect]);
 
   /**
    * Toggle microphone mute
@@ -384,11 +382,20 @@ export const useRealtimeAudio = ({
     if (mediaStreamRef.current) {
       const audioTrack = mediaStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsMuted(!audioTrack.enabled);
+        setIsMuted((prev) => !prev);
       }
     }
   }, []);
+
+  /**
+   * Apply force mute or user mute to the active track
+   */
+  useEffect(() => {
+    if (!mediaStreamRef.current) return;
+    const audioTrack = mediaStreamRef.current.getAudioTracks()[0];
+    if (!audioTrack) return;
+    audioTrack.enabled = forceMute ? false : !isMuted;
+  }, [forceMute, isMuted]);
 
   /**
    * Send text message via data channel
@@ -456,6 +463,7 @@ export const useRealtimeAudio = ({
   return {
     isConnected,
     isMuted,
+    forceMute,
     isLeiaSpeaking,
     userTranscriptBuffer,
     leiaTranscriptBuffer,

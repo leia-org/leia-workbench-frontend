@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
 import { Navbar } from "../components/Navbar";
 import { useAuth } from "../context/useAuth";
+import { WidgetsConfigPanel, type WidgetAssignment } from "./replication/WidgetsConfigPanel";
 import Switch from "react-switch";
 import { toast } from "react-toastify";
 import SyntaxHighlighter from "react-syntax-highlighter";
@@ -17,6 +18,7 @@ import {
   EyeIcon,
   LockClosedIcon,
   InformationCircleIcon,
+  LinkIcon,
   XMarkIcon,
   ClipboardDocumentCheckIcon,
   TrashIcon,
@@ -25,6 +27,7 @@ import {
   LightBulbIcon,
   ShareIcon,
   BeakerIcon,
+  ChatBubbleBottomCenterIcon
 } from "@heroicons/react/24/solid";
 import { UnsavedChangesModal } from "../components/UnsavedChangesModal";
 import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
@@ -36,7 +39,7 @@ interface Replication {
   id: string;
   name: string;
   isActive: boolean;
-  duration: number;
+  duration: number | null;
   isRepeatable: boolean;
   isShared: boolean;
   shareToken?: string | null;
@@ -62,10 +65,11 @@ interface Replication {
         provider: string;
         modelName?: string;
         apiKeyId?: string | null;
-        audioMode?: "realtime" | null;
+        audioMode?: "realtime" | "luke" | null;
+        hideAudioTranscription?: boolean | null;
         realtimeConfig?: {
           model?: string;
-          voice?: "echo" | "marin";
+          voice?: string;
           instructions?: string;
           turnDetection?: {
             type?: "server_vad" | "none";
@@ -73,6 +77,14 @@ interface Replication {
             prefix_padding_ms?: number;
             silence_duration_ms?: number;
           };
+        };
+        lukeConfig?: {
+          provider: string;
+          voice: string;
+          widgets?: Array<{
+            widgetType: string;
+            slot: "left" | "right" | "main";
+          }>;
         };
       };
       sessionCount: number;
@@ -145,6 +157,7 @@ const getValidApiKeys = (
 };
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
+const DEFAULT_PROVIDER = "default";
 
 const readStoredReplicationTokens = (): Record<string, string> => {
   try {
@@ -165,6 +178,14 @@ const getErrorMessage = (err: any, fallbackMessage: string) => {
   }
   return fallbackMessage;
 };
+const buildWorkbenchLink = (code: string, email?: string) => {
+  const url = new URL("/", window.location.origin);
+  url.searchParams.set("code", code);
+  if (email) {
+    url.searchParams.set("email", email);
+  }
+  return url.toString();
+};
 
 export const Replication: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -182,11 +203,14 @@ export const Replication: React.FC = () => {
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [copiedStudentLink, setCopiedStudentLink] = useState(false);
+  const [copiedDemoLink, setCopiedDemoLink] = useState(false);
   const [showAllVoices, setShowAllVoices] = useState<boolean>(false);
   const [startingSessionLeiaId, setStartingSessionLeiaId] = useState<
     string | null
   >(null);
-
+  const [isMissingProviderModalOpen, setIsMissingProviderModalOpen] =
+    useState(false);
   // Modals
   const [newName, setNewName] = useState<string>("");
   const [newDuration, setNewDuration] = useState<string>("");
@@ -199,9 +223,31 @@ export const Replication: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
   const {apiKeys, getDefaultKey} = useApiKeys();
-  const { apiKeyProvidersMapped} = useProviders();
+  const { apiKeyProvidersMapped, isLoading: isProvidersLoading } = useProviders();
   const defaultKey = getDefaultKey();
   const [openDropdownIdx, setOpenDropdownIdx] = useState<number | null>(null);
+
+  const availableModels = Object.values(apiKeyProvidersMapped).flat();
+  const hasProviderData = availableModels.length > 0;
+
+  const isModelAvailable = (model: string) => {
+    return model === DEFAULT_PROVIDER || availableModels.includes(model);
+  };
+
+  const unavailableLeiaProviders: Array<{ leiaName: string; provider: string }> =
+    !localReplication || isProvidersLoading || !hasProviderData
+      ? []
+      : localReplication.experiment.leias
+          .map((leia) => {
+            const currentValue = leia.runnerConfiguration.modelName ?? "";
+            return {
+              leiaName: leia.leia.metadata?.name || "Unknown Leia",
+              provider: currentValue,
+              isValid: currentValue === "" || isModelAvailable(currentValue),
+            };
+          })
+          .filter((item) => !item.isValid)
+          .map(({ leiaName, provider }) => ({ leiaName, provider }));
 
   useEffect(() => {
     if (!id) return;
@@ -292,6 +338,17 @@ export const Replication: React.FC = () => {
     buildRequestConfig,
     defaultKey
   ]);
+  useEffect(() => {
+    if (isProvidersLoading || !hasProviderData) {
+      setIsMissingProviderModalOpen(false);
+      return;
+    }
+
+    const hasUnavailableProvider = unavailableLeiaProviders.length > 0;
+
+    setIsMissingProviderModalOpen(hasUnavailableProvider);
+  }, [isProvidersLoading, hasProviderData, unavailableLeiaProviders.length]);
+
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -338,6 +395,22 @@ export const Replication: React.FC = () => {
     navigator.clipboard.writeText(link);
     setCopiedShareLink(true);
     setTimeout(() => setCopiedShareLink(false), 4000);
+  };
+
+  const handleCopyStudentLink = () => {
+    if (!replication?.code) return;
+    navigator.clipboard.writeText(buildWorkbenchLink(replication.code));
+    setCopiedStudentLink(true);
+    setTimeout(() => setCopiedStudentLink(false), 4000);
+  };
+
+  const handleCopyDemoLink = () => {
+    if (!replication?.code) return;
+    navigator.clipboard.writeText(
+      buildWorkbenchLink(replication.code, "_test_demo")
+    );
+    setCopiedDemoLink(true);
+    setTimeout(() => setCopiedDemoLink(false), 4000);
   };
 
   const handleRename = async () => {
@@ -395,6 +468,29 @@ export const Replication: React.FC = () => {
           autoClose: 5000,
         });
         console.error("Update error:", err);
+      }
+    }
+  };
+
+  const handleDeleteDuration = async () => {
+    if (replication) {
+      try {
+        const resp = await axios.delete(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/duration`,
+          buildRequestConfig()
+        );
+        setReplication(resp.data);
+        setLocalReplication(structuredClone(resp.data));
+        toast.success("Replication duration removed successfully", {
+          position: "bottom-right",
+          autoClose: 5000,
+        });
+      } catch (err) {
+        toast.error("Error removing replication duration", {
+          position: "bottom-right",
+          autoClose: 5000,
+        });
+        console.error("Delete error:", err);
       }
     }
   };
@@ -653,24 +749,23 @@ export const Replication: React.FC = () => {
   };
 
   const handleLocalLeiaChange = (idx: number, key: string, value: any) => {
-    if (localReplication) {
+    setLocalReplication((prev) => {
+      if (!prev) return prev;
+      const copy = structuredClone(prev) as any;
       const keys = key.split(".");
-      const localReplicationCopy = structuredClone(localReplication) as any;
-      let property = localReplicationCopy?.experiment.leias[idx];
+      let property = copy.experiment.leias[idx];
       for (let i = 0; i < keys.length - 1; i++) {
         if (property[keys[i]] === undefined) {
-          console.log("Property " + keys[i] + " not found");
-          return;
+          property[keys[i]] = {};
         }
         property = property[keys[i]];
       }
-
       const lastKey = keys.at(-1);
       if (lastKey) {
         property[lastKey] = value;
-        setLocalReplication(localReplicationCopy);
       }
-    }
+      return copy;
+    });
   };
 
   const handleLocalLeiaReset = (idx: number) => {
@@ -795,7 +890,7 @@ return (
             {isAuthorised && (
               <button
                 onClick={() => setIsNewNameModalOpen(true)}
-                className="flex text-center items-center space-x-1 text-blue-600 hover:underline"
+                className="flex text-center items-center space-x-1 text-blue-600 hover:underline px-2"
               >
                 <PencilIcon className="h-4 w-4" />
                 <span className="text-sm">Rename</span>
@@ -892,6 +987,61 @@ return (
               <strong>Experiment:</strong>
               <p className="ml-2">{replication.experiment.name}</p>
             </div>
+            <div className="space-y-3">
+              {(() => {
+                const studentLink = buildWorkbenchLink(replication.code);
+
+                return (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-5 w-5 text-gray-600" />
+                      <strong>Student link:</strong>
+                    </div>
+                    <div
+                      className="cursor-pointer pl-7"
+                      onClick={handleCopyStudentLink}
+                      title="Copy student link to clipboard"
+                    >
+                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
+                        {studentLink}
+                      </span>
+                    </div>
+                    {copiedStudentLink && (
+                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
+                        Copied!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const demoLink = buildWorkbenchLink(replication.code, "_test_demo");
+
+                return (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-5 w-5 text-gray-600" />
+                      <strong>Demo/Test link:</strong>
+                    </div>
+                    <div
+                      className="cursor-pointer pl-7"
+                      onClick={handleCopyDemoLink}
+                      title="Copy demo/test link to clipboard"
+                    >
+                      <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 break-all transition duration-200">
+                        {demoLink}
+                      </span>
+                    </div>
+                    {copiedDemoLink && (
+                      <div className="pl-7 text-xs font-bold text-green-600 mt-1">
+                        Copied!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
 
@@ -902,17 +1052,30 @@ return (
             <div className="flex">
               <ClockIcon className="h-5 w-5 text-gray-600 mr-2" />
               <strong>Duration:</strong>
-              <p className="mx-2">
-                {Math.floor(replication.duration / 60)}m{" "}
-                {replication.duration % 60}s
-              </p>
+              {replication.duration ? (
+                <p className="mx-2">
+                  {Math.floor(replication.duration / 60)}m{" "}
+                  {replication.duration % 60}s
+                </p>
+              ) : (
+                <p className="mx-2 text-gray-500">No time limit</p>
+              )}
               <button
                 onClick={() => setIsNewDurationModalOpen(true)}
                 className="flex text-center items-center space-x-1 text-blue-600 hover:underline mr-2"
               >
                 <PencilIcon className="h-4 w-4" />
-                <span className="text-sm">Change</span>
+                <span className="text-sm">{replication.duration ? "Change" : "Add timer"}</span>
               </button>
+              {replication.duration && (
+                <button
+                  onClick={handleDeleteDuration}
+                  className="flex text-center items-center space-x-1 text-red-600 hover:underline"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  <span className="text-sm">Remove</span>
+                </button>
+              )}
             </div>
             <div className="flex">
               <ClipboardDocumentCheckIcon className="h-5 w-5 text-gray-600 mr-2" />
@@ -971,6 +1134,7 @@ return (
                 </span>
               )}
             </div>
+            
           </div>
         </div>
 
@@ -981,9 +1145,7 @@ return (
             const isStartingAnySession = Boolean(startingSessionLeiaId);
             const isStartingThisSession = startingSessionLeiaId === item.id;
             const currentApiKeyId = item.runnerConfiguration.apiKeyId;
-            const currentModelName =
-              item.runnerConfiguration.modelName ||
-              item.runnerConfiguration.provider;
+            const currentModelName = item.runnerConfiguration.modelName ?? "";
 
             const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
             const apiKeyDisplayName = currentApiKeyObj?.description || "Select Key";
@@ -1081,29 +1243,44 @@ return (
                   <legend>Runner</legend>
                   <div className="flex items-center space-x-2 mb-3">
                     <div className="text-sm text-gray-700">Model:</div>
-                    <select
-                      value={
-                        item.runnerConfiguration.modelName ||
-                        item.runnerConfiguration.provider ||
-                        ""
-                      }
-                      onChange={(e) =>
-                        handleLocalLeiaChange(
-                          idx,
-                          "runnerConfiguration.modelName",
-                          e.target.value
-                        )
-                      }
-                      className="border border-gray-300 rounded-md p-2"
-                    >
-                      <option value="">-- Select Model --</option>
+                    {(() => {
+                      const currentValue =
+                        item.runnerConfiguration.modelName ?? "";
+                      const isCurrentValid =
+                        currentValue === "" ||
+                        currentValue === DEFAULT_PROVIDER ||
+                        validModelsForLeia.includes(currentValue);
 
-                      {validModelsForLeia.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
-                        </option>
-                      ))}
-                    </select>
+                      return (
+                        <select
+                          value={currentValue}
+                          onChange={(e) =>
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.modelName",
+                              e.target.value
+                            )
+                          }
+                          className={`border rounded-md p-2 ${
+                            isCurrentValid
+                              ? "border-gray-300"
+                              : "border-red-500 bg-red-50 text-red-800"
+                          }`}
+                        >
+                          <option value="">-- Select Model --</option>
+                          {!isCurrentValid && (
+                            <option value={currentValue}>
+                              {currentValue} (no disponible)
+                            </option>
+                          )}
+                          {validModelsForLeia.map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </div>
 
                   {/* API Key Dropdown */}
@@ -1208,17 +1385,39 @@ return (
                       <label className="text-sm text-gray-700 font-medium">
                         Audio Mode:
                       </label>
-                      <Switch
-                        checked={
-                          item.runnerConfiguration.audioMode === "realtime"
-                        }
-                        onChange={(checked) => {
-                          if (checked) {
+                      <select
+                        value={item.runnerConfiguration.audioMode || "none"}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === "none") {
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.audioMode",
+                              null
+                            );
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.hideAudioTranscription",
+                              null
+                            );
+                          } else if (value === "realtime") {
                             handleLocalLeiaChange(
                               idx,
                               "runnerConfiguration.audioMode",
                               "realtime"
                             );
+                            if (
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                null ||
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                undefined
+                            ) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                false
+                              );
+                            }
                             if (!item.runnerConfiguration.realtimeConfig) {
                               handleLocalLeiaChange(
                                 idx,
@@ -1236,16 +1435,67 @@ return (
                                 }
                               );
                             }
-                          } else {
+                          } else if (value === "luke") {
                             handleLocalLeiaChange(
                               idx,
                               "runnerConfiguration.audioMode",
-                              null
+                              "luke"
                             );
+                            if (
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                null ||
+                              item.runnerConfiguration.hideAudioTranscription ===
+                                undefined
+                            ) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                false
+                              );
+                            }
+                            if (!item.runnerConfiguration.lukeConfig) {
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig",
+                                {
+                                  provider: "gemini",
+                                  voice: "Puck",
+                                }
+                              );
+                            }
                           }
                         }}
-                      />
+                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                      >
+                        <option value="none">None</option>
+                        <option value="realtime">Legacy (OpenAI Realtime)</option>
+                        <option value="luke">Luke</option>
+                      </select>
                     </div>
+
+                    {item.runnerConfiguration.audioMode && (
+                      <div className="ml-4">
+                        <div className="flex items-center space-x-2 mt-2">
+                          <ChatBubbleBottomCenterIcon className="h-4 w-4 text-gray-600" />
+                          <label className="text-sm text-gray-700 font-medium">
+                            Hide audio transcription:
+                          </label>
+                          <Switch
+                            checked={
+                              item.runnerConfiguration
+                                .hideAudioTranscription || false
+                            }
+                            onChange={(checked) =>
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.hideAudioTranscription",
+                                checked
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {item.runnerConfiguration.audioMode === "realtime" && (
                       <div className="ml-4 space-y-2 text-sm">
@@ -1301,8 +1551,106 @@ return (
                               d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
                             />
                           </svg>
-                          Real-time voice conversation enabled
+                          Real-time voice conversation enabled (Legacy)
                         </div>
+                      </div>
+                    )}
+
+                    {item.runnerConfiguration.audioMode === "luke" && (
+                      <div className="ml-4 space-y-2 text-sm">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-600">Provider:</span>
+                          <select
+                            value={
+                              item.runnerConfiguration.lukeConfig?.provider ||
+                              "gemini"
+                            }
+                            onChange={(e) => {
+                              const provider = e.target.value;
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig.provider",
+                                provider
+                              );
+                              // Set default voice for the selected provider
+                              const defaultVoice = provider === "gemini" ? "Puck" : "alloy";
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig.voice",
+                                defaultVoice
+                              );
+                            }}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                          >
+                            <option value="openai">OpenAI</option>
+                            <option value="gemini">Gemini</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-600">Voice:</span>
+                          <select
+                            value={
+                              item.runnerConfiguration.lukeConfig?.voice ||
+                              (item.runnerConfiguration.lukeConfig?.provider === "openai" ? "alloy" : "Puck")
+                            }
+                            onChange={(e) =>
+                              handleLocalLeiaChange(
+                                idx,
+                                "runnerConfiguration.lukeConfig.voice",
+                                e.target.value
+                              )
+                            }
+                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                          >
+                            {item.runnerConfiguration.lukeConfig?.provider === "openai" ? (
+                              <>
+                                <option value="alloy">Alloy</option>
+                                <option value="ash">Ash</option>
+                                <option value="ballad">Ballad</option>
+                                <option value="coral">Coral</option>
+                                <option value="echo">Echo</option>
+                                <option value="sage">Sage</option>
+                                <option value="shimmer">Shimmer</option>
+                                <option value="verse">Verse</option>
+                              </>
+                            ) : (
+                              <>
+                                <option value="Puck">Puck</option>
+                                <option value="Charon">Charon</option>
+                                <option value="Kore">Kore</option>
+                                <option value="Fenrir">Fenrir</option>
+                                <option value="Aoede">Aoede</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                        <div className="text-xs text-blue-600 flex items-center gap-1">
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                            />
+                          </svg>
+                          Luke voice conversation enabled
+                        </div>
+
+                        <WidgetsConfigPanel
+                          widgets={(item.runnerConfiguration.lukeConfig?.widgets ?? []) as WidgetAssignment[]}
+                          onChange={(next) =>
+                            handleLocalLeiaChange(
+                              idx,
+                              "runnerConfiguration.lukeConfig.widgets",
+                              next
+                            )
+                          }
+                        />
                       </div>
                     )}
                   </div>
@@ -1409,7 +1757,7 @@ return (
                 pattern="[0-9]*"
                 value={newDuration}
                 onChange={(e) => setNewDuration(e.target.value)}
-                placeholder="1800"
+                placeholder="Duration in seconds (e.g. 1800)"
                 className="w-full border border-gray-300 rounded-md p-2 mb-4"
               />
               <div className="flex justify-end space-x-2">
@@ -1502,6 +1850,40 @@ return (
           onProceedWithoutSaving={handleProceedWithoutSaving}
           onConfirmSaveAndProceed={handleConfirmSaveAndProceed}
         />
+
+        {isMissingProviderModalOpen && unavailableLeiaProviders.length > 0 && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-lg w-full mx-4">
+              <h2 className="text-lg font-semibold mb-2 text-red-700">
+                Model not available
+              </h2>
+              <p className="text-sm text-gray-700 mb-4">
+                Some Leias have a provider configured that is no longer in the list of available models.
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4 max-h-56 overflow-auto">
+                {unavailableLeiaProviders.map((item) => (
+                  <div
+                    key={`${item.leiaName}-${item.provider}`}
+                    className="text-sm text-red-800"
+                  >
+                    <strong>{item.leiaName}:</strong> {item.provider}
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Change the provider to one that is available and save the configuration.
+              </p>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setIsMissingProviderModalOpen(false)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Understand
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Sidebar */}
         {isSidebarOpen && (
           <div className="fixed inset-y-0 left-0 w-full bg-white shadow-lg z-50 overflow-auto">

@@ -1,30 +1,15 @@
 import React, { memo } from "react";
-import { AudioVisualizer } from "./AudioVisualizer";
 
-interface AudioControlsProps {
+interface LukeAudioControlsProps {
   isConnected: boolean;
   isMuted: boolean;
   forceMute: boolean;
-  isLeiaSpeaking: boolean;
-  audioElement?: HTMLAudioElement | null;
-  mediaStream?: MediaStream | null;
-  leiaAudioStream?: MediaStream | null;
   onToggleMute: () => void;
   onEndSession: () => void;
 }
 
-export const AudioControls: React.FC<AudioControlsProps> = memo(
-  ({
-    isConnected,
-    isMuted,
-    forceMute,
-    isLeiaSpeaking,
-    audioElement,
-    mediaStream,
-    leiaAudioStream,
-    onToggleMute,
-    onEndSession,
-  }) => {
+export const LukeAudioControls: React.FC<LukeAudioControlsProps> = memo(
+  ({ isConnected, isMuted, forceMute, onToggleMute, onEndSession }) => {
     return (
       <div className="fixed bottom-8 right-8 bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 w-80 z-50">
         <div className="flex items-center justify-between mb-3">
@@ -59,40 +44,9 @@ export const AudioControls: React.FC<AudioControlsProps> = memo(
           </button>
         </div>
 
-        <div className="mb-3">
-          <div className="w-full h-20 rounded-lg overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
-            <AudioVisualizer
-              isActive={isConnected}
-              isSpeaking={isLeiaSpeaking}
-              audioElement={audioElement}
-              mediaStream={mediaStream}
-              leiaAudioStream={leiaAudioStream}
-            />
-          </div>
-        </div>
-
         <div className="text-center mb-3">
           <div className="flex items-center justify-center gap-2">
-            {isLeiaSpeaking ? (
-              <>
-                <svg
-                  className="w-5 h-5 text-blue-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"
-                  />
-                </svg>
-                <p className="text-sm font-medium text-gray-900">
-                  LEIA is speaking...
-                </p>
-              </>
-            ) : isMuted ? (
+            {isMuted ? (
               <>
                 <svg
                   className="w-5 h-5 text-gray-600"
@@ -196,4 +150,4 @@ export const AudioControls: React.FC<AudioControlsProps> = memo(
   },
 );
 
-AudioControls.displayName = "AudioControls";
+LukeAudioControls.displayName = "LukeAudioControls";

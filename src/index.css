@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Hide the <py-terminal> element PyScript may auto-inject when the
+ * code editor widget loads Pyodide. We don't surface stdout in voice
+ * mode — the result panel handles user-facing feedback. */
+py-terminal {
+    display: none !important;
+}
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
