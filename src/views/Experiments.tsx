@@ -7,11 +7,13 @@ import {
   CalendarDaysIcon,
   PencilSquareIcon,
   Squares2X2Icon,
+  StarIcon,
 } from '@heroicons/react/24/solid';
 
 interface Experiment {
   id: string;
   isPublished: boolean;
+  isMultiLeia?: boolean;
   name: string;
   leias: [{
     configuration: {
@@ -111,15 +113,23 @@ export const Experiments: React.FC = () => {
                   {exp.name}
                 </h2>
                 <div>
-                  <span
-                    className={
-                      exp.isPublished
-                        ? 'rounded-full px-2 py-1 text-xs font-semibold bg-green-100 text-green-800'
-                        : 'rounded-full px-2 py-1 text-xs font-semibold bg-red-100 text-red-800'
-                    }
-                  >
-                    {exp.isPublished ? 'Published' : 'Unpublished'}
-                  </span>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {exp.isMultiLeia && (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800">
+                        <StarIcon className="w-3 h-3" />
+                        Multi-LEIA
+                      </span>
+                    )}
+                    <span
+                      className={
+                        exp.isPublished
+                          ? 'rounded-full px-2 py-1 text-xs font-semibold bg-green-100 text-green-800'
+                          : 'rounded-full px-2 py-1 text-xs font-semibold bg-red-100 text-red-800'
+                      }
+                    >
+                      {exp.isPublished ? 'Published' : 'Unpublished'}
+                    </span>
+                  </div>
                 </div>
               </div>
 

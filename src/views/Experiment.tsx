@@ -3,10 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { StarIcon } from '@heroicons/react/24/solid';
 
 interface Experiment {
   id: string;
   isPublished: boolean;
+  isMultiLeia?: boolean;
   name: string;
   leias: [{
     configuration: {
@@ -105,7 +107,15 @@ export const Experiment: React.FC = () => {
     <div className="min-h-screen">
       <div className="fixed inset-y-0 left-0 w-full bg-white shadow-lg z-50 overflow-auto">
         <div className="sticky top-0 flex justify-between items-center p-4 border-b bg-white">
-          <h2 className="text-lg font-semibold">Experiment preview</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">Experiment preview</h2>
+            {experiment?.isMultiLeia && (
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800">
+                <StarIcon className="w-3 h-3" />
+                Multi-LEIA
+              </span>
+            )}
+          </div>
           <div>
             <button
               onClick={() => navigate('/experiments')}

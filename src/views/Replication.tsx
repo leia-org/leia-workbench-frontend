@@ -25,7 +25,8 @@ import {
   LightBulbIcon,
   ShareIcon,
   BeakerIcon,
-  ChatBubbleBottomCenterIcon
+  ChatBubbleBottomCenterIcon,
+  StarIcon
 } from "@heroicons/react/24/solid";
 
 interface Replication {
@@ -1000,7 +1001,15 @@ export const Replication: React.FC = () => {
             <div className="flex">
               <InformationCircleIcon className="h-5 w-5 text-gray-600 mr-2" />
               <strong>Experiment:</strong>
-              <p className="ml-2">{replication.experiment.name}</p>
+              <div className="ml-2 flex flex-wrap items-center gap-2">
+                <p>{replication.experiment.name}</p>
+                {replication.experiment.isMultiLeia && (
+                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800">
+                    <StarIcon className="w-3 h-3" />
+                    Multi-LEIA
+                  </span>
+                )}
+              </div>
             </div>
             <div className="space-y-3">
               {(() => {
@@ -1154,8 +1163,9 @@ export const Replication: React.FC = () => {
         </div>
 
         {localReplication.experiment.isMultiLeia && (
-          <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6">
+          <>
             <h3 className="text-lg font-semibold">Global configuration</h3>
+            <div className="space-y-4 bg-white p-4 rounded-xl shadow mb-6 mt-2">
             <div className="text-sm text-gray-700">
               Sessions:{" "}
               <strong>
@@ -1322,6 +1332,7 @@ export const Replication: React.FC = () => {
               </div>
             </fieldset>
           </div>
+          </>
         )}
 
         {/* Leias section */}
