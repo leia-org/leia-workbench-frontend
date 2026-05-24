@@ -36,6 +36,7 @@ interface Message {
   text: string;
   timestamp: Date;
   isLeia: boolean;
+  leiaId?: string | null;
   id?: string; // Agregar ID único para anclas
   sequence?: number;
 }
@@ -71,6 +72,20 @@ interface Session {
   result: string | null | undefined;
   evaluation: string | null | undefined;
   score: number | null | undefined;
+  isMultiLEIA?: boolean;
+}
+
+interface LeiaSummary {
+  id: string;
+  leia: {
+    spec: {
+      persona?: {
+        spec?: {
+          firstName?: string;
+        };
+      };
+    };
+  };
 }
 
 export const Chat = () => {
@@ -107,6 +122,7 @@ export const Chat = () => {
     }>;
   } | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
+  const [leiaNamesById, setLeiaNamesById] = useState<Record<string, string>>({});
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -217,6 +233,7 @@ export const Chat = () => {
           text: response.data.message,
           timestamp: new Date(),
           isLeia: true,
+          leiaId: response.data.leiaId || null,
           id: generateMessageId(),
         };
 
@@ -275,6 +292,19 @@ export const Chat = () => {
           setSessionTime(durationSeconds / 60);
         }
         setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
+        if (Array.isArray(response.data.leias)) {
+          const namesById = response.data.leias.reduce(
+            (acc: Record<string, string>, leia: LeiaSummary) => {
+              if (leia.id) {
+                acc[leia.id] =
+                  leia.leia.spec.persona?.spec?.firstName || "LEIA";
+              }
+              return acc;
+            },
+            {},
+          );
+          setLeiaNamesById(namesById);
+        }
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
@@ -473,6 +503,7 @@ export const Chat = () => {
           text: response.data.message,
           timestamp: new Date(),
           isLeia: true,
+          leiaId: response.data.leiaId || null,
           id: generateMessageId(),
         };
 
@@ -893,6 +924,11 @@ export const Chat = () => {
                   }`}
                 >
                   <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                    {msg.isLeia && msg.leiaId && leiaNamesById[msg.leiaId] && (
+                      <span className="block text-xs font-semibold text-blue-700 mb-1">
+                        {leiaNamesById[msg.leiaId]}
+                      </span>
+                    )}
                     {msg.text}
                   </p>
                   {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
