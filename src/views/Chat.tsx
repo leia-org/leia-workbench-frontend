@@ -462,41 +462,80 @@ export const Chat = () => {
   }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (configuration?.mode === "transcription") return;
+  e.preventDefault();
+  if (configuration?.mode === "transcription") return;
 
-    const messageText = newMessageText.trim();
-    if (!messageText) return;
+  const messageText = newMessageText.trim();
+  if (!messageText) return;
 
-    // Ocultar el tooltip cuando se envía el primer mensaje
-    setShowTooltip(false);
+  setShowTooltip(false);
+  setNewMessageText("");
 
-    setNewMessageText("");
+  if (inputRef.current) {
+    inputRef.current.style.height = "auto";
+  }
 
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-    }
-    const newMessage: Message = {
-      text: messageText,
-      timestamp: new Date(),
-      isLeia: false,
-      id: generateMessageId(),
-    };
+  const newMessage: Message = {
+    text: messageText,
+    timestamp: new Date(),
+    isLeia: false,
+    id: generateMessageId(),
+  };
 
-    setMessages((prev) => [...prev, newMessage]);
-    setSendingMessage(true);
-    // Auto-scroll disabled
-    // scrollToBottom();
+  setMessages((prev) => [...prev, newMessage]);
+  setSendingMessage(true);
 
-    try {
-      const response = await axios.post(
-        `${
-          import.meta.env.VITE_APP_BACKEND
-        }/api/v1/interactions/${sessionId}/messages`,
-        {
-          message: messageText,
-        },
-      );
+  try {
+    const url = `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`;
+
+    if (session?.isMultiLEIA) {
+      const responseStream = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: messageText }),
+      });
+
+      if (!responseStream.ok) {
+        throw new Error("Streaming request failed");
+      }
+
+      if (!responseStream.body) {
+        throw new Error("No response body");
+      }
+
+      const reader = responseStream.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("event: done")) {
+            setSendingMessage(false);
+          } else if (line.startsWith("data:")) {
+            const jsonStr = line.replace("data:", "").trim();
+            if (!jsonStr || jsonStr === "{}") continue;
+
+            const data = JSON.parse(jsonStr);
+
+            const leiaMessage: Message = {
+              text: data.message,
+              timestamp: new Date(),
+              isLeia: true,
+              leiaId: data.leiaId || null,
+              id: generateMessageId(),
+            };
+
+            setMessages((prev) => [...prev, leiaMessage]);
+          }
+        }
+      }
+    } else {
+      const response = await axios.post(url, { message: messageText });
 
       if (response.status === 200) {
         const leiaMessage: Message = {
@@ -509,21 +548,23 @@ export const Chat = () => {
 
         setMessages((prev) => [...prev, leiaMessage]);
       }
-    } catch (error) {
-      setFailedMessage(messageText);
-      setMessages((prev) => [
-        ...prev,
-        {
-          text: "This message is taking longer than usual.",
-          timestamp: new Date(),
-          isLeia: true,
-          id: generateMessageId(),
-        },
-      ]);
-    } finally {
-      setSendingMessage(false);
     }
-  };
+  } catch (error) {
+    setFailedMessage(messageText);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        text: "This message is taking longer than usual.",
+        timestamp: new Date(),
+        isLeia: true,
+        id: generateMessageId(),
+      },
+    ]);
+  } finally {
+    setSendingMessage(false);
+  }
+};
 
   const handleFinishConversation = async () => {
     if (
