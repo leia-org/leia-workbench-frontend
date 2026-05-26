@@ -1456,19 +1456,48 @@ export const Replication: React.FC = () => {
                           </svg>
                           Luke voice conversation enabled
                         </div>
-
-                        <WidgetsConfigPanel
-                          widgets={(item.runnerConfiguration.lukeConfig?.widgets ?? []) as WidgetAssignment[]}
-                          onChange={(next) =>
-                            handleLocalLeiaChange(
-                              idx,
-                              "runnerConfiguration.lukeConfig.widgets",
-                              next
-                            )
-                          }
-                        />
                       </div>
                     )}
+
+                    {/* Widgets / tool functions. Only the runtime paths
+                        that actually support function calls are allowed
+                        to declare widgets:
+                          - luke voice mode (handled by luke-server, both
+                            Gemini Live and OpenAI Realtime support
+                            tools)
+                          - text mode + 'openai-responses' provider (the
+                            only runner provider that wires tools).
+                        For every other combination (text + gemini/ollama,
+                        legacy realtime) we hide the panel and leave a
+                        hint so the admin understands why. */}
+                    {(() => {
+                      const audioMode = item.runnerConfiguration.audioMode;
+                      const runnerProvider = item.runnerConfiguration.provider;
+                      const supportsWidgets =
+                        audioMode === "luke" ||
+                        (!audioMode && runnerProvider === "openai-responses");
+                      if (supportsWidgets) {
+                        return (
+                          <div className="ml-4 mt-2">
+                            <WidgetsConfigPanel
+                              widgets={(item.runnerConfiguration.lukeConfig?.widgets ?? []) as WidgetAssignment[]}
+                              onChange={(next) =>
+                                handleLocalLeiaChange(
+                                  idx,
+                                  "runnerConfiguration.lukeConfig.widgets",
+                                  next
+                                )
+                              }
+                            />
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="ml-4 mt-3 text-xs text-gray-500 italic">
+                          Tool-function widgets are only available with Audio Mode = Luke or with the <code>openai-responses</code> runner provider. Change the provider or audio mode to configure widgets.
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex w-full gap-2">

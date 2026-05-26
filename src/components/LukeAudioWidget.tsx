@@ -273,6 +273,16 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   const sequenceCounterRef = useRef(0);
   const emittedCountRef = useRef(0);
   const [showTranscription, setShowTranscription] = useState(initialShowTranscription);
+  const transcriptListRef = useRef<HTMLDivElement | null>(null);
+
+  // Autoscroll the transcript panel to the latest message whenever it
+  // grows OR re-opens.
+  useEffect(() => {
+    if (!showTranscription) return;
+    const el = transcriptListRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [transcription, showTranscription]);
 
   // Auto-select the configured provider/voice once connected. Runs
   // once per session — when reload() opens a new WS, sessionId changes
@@ -388,7 +398,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
       {/* Main stage with optional left/right widget slots */}
       <div className="flex-1 flex items-stretch min-h-0">
         {leftSlot && (
-          <div className="w-[380px] max-w-[40%] h-full border-r border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
+          <div className="w-1/2 max-w-[50%] h-full border-r border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
             {leftSlot}
           </div>
         )}
@@ -433,7 +443,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
         <div className="mt-2 text-sm text-neutral-500">{statusText}</div>
         </div>
         {rightSlot && (
-          <div className="w-[380px] max-w-[40%] h-full border-l border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
+          <div className="w-1/2 max-w-[50%] h-full border-l border-neutral-800 bg-neutral-900/90 flex flex-col overflow-hidden z-10">
             {rightSlot}
           </div>
         )}
@@ -474,7 +484,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
               <CloseIcon />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div ref={transcriptListRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             {transcription.length === 0 ? (
               <div className="text-sm text-neutral-500 italic">
                 No transcript yet.

@@ -149,7 +149,7 @@ export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
 
     useLukeTool(
         "codeEditor_applyDiff",
-        "Edits the user's code with one or more search-and-replace operations. Each edit's `find` MUST appear exactly once in the current code (use enough surrounding context to make it unique). Use this to fix bugs, add comments, or rewrite a function for the user. Returns { applied, errors, content }. Always read the editor first so you know the current text.",
+        "Edits the user's code with one or more search-and-replace operations. Each edit's `find` MUST appear exactly once in the current code (use enough surrounding context to make it unique). MUST be called whenever the user asks you to put / add / insert / write something in the editor — including hints, examples, explanations, snippets, pseudo-code, or comments. In those cases the help goes INSIDE the editor as code comments (e.g. `// ...` or `# ...`), not as a chat reply. Also use it to fix bugs or rewrite code when explicitly authorized by the LEIA's behaviour. Returns { applied, errors, content }. Always call codeEditor_read first so you know the current text and can craft a unique `find` anchor.",
         {
             type: "object",
             properties: {
@@ -215,7 +215,19 @@ export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
                     theme="vs-dark"
                     onMount={((ed) => {
                         editorRef.current = ed as unknown as MinimalEditor;
+                        // Seed the bridge so a Send Solution click before
+                        // the first keystroke still hands over the starter.
+                        try {
+                            localStorage.setItem("mermaid_code", (ed as unknown as MinimalEditor).getValue());
+                        } catch { /* ignore quota / SSR */ }
                     }) as OnMount}
+                    onChange={(value) => {
+                        const v = value ?? "";
+                        draftsRef.current[language] = v;
+                        // Bridge to the /edit view, which seeds its editor
+                        // from localStorage["mermaid_code"].
+                        try { localStorage.setItem("mermaid_code", v); } catch { /* ignore */ }
+                    }}
                     options={{
                         minimap: { enabled: false },
                         fontSize: 13,
