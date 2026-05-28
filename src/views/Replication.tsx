@@ -47,6 +47,7 @@ interface Replication {
     globalConfiguration?: {
       runner: {
         provider: string;
+        orchestrator?: string;
       };
       askSolution: boolean;
       evaluateSolution: boolean;
@@ -130,6 +131,11 @@ const getFilteredVoiceOptions = (
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
 const DEFAULT_PROVIDER = "default";
+const DEFAULT_ORCHESTRATOR = "turn";
+const ORCHESTRATOR_OPTIONS = [
+  { value: "turn", label: "Turn" },
+  { value: "random", label: "Random" },
+];
 
 const readStoredReplicationTokens = (): Record<string, string> => {
   try {
@@ -191,6 +197,9 @@ export const Replication: React.FC = () => {
   // Side bar
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [sideBarData, setSideBarData] = useState<any>(null);
+
+  const normalizeOrchestrator = (orchestrator?: string) =>
+    orchestrator || DEFAULT_ORCHESTRATOR;
 
   const isProviderValid = useCallback((provider: string) => {
     return provider === DEFAULT_PROVIDER || availableModels.includes(provider);
@@ -796,13 +805,14 @@ export const Replication: React.FC = () => {
   const buildDefaultGlobalConfiguration = () => ({
     runner: {
       provider: DEFAULT_PROVIDER,
+      orchestrator: DEFAULT_ORCHESTRATOR,
     },
     askSolution: true,
     evaluateSolution: true,
   });
 
   const handleLocalGlobalConfigurationChange = (
-    key: "provider" | "askSolution" | "evaluateSolution",
+    key: "provider" | "orchestrator" | "askSolution" | "evaluateSolution",
     value: string | boolean
   ) => {
     setLocalReplication((prev) => {
@@ -810,9 +820,17 @@ export const Replication: React.FC = () => {
       const copy = structuredClone(prev);
       copy.experiment.globalConfiguration =
         copy.experiment.globalConfiguration || buildDefaultGlobalConfiguration();
+      const currentRunner = copy.experiment.globalConfiguration.runner;
+      copy.experiment.globalConfiguration.runner = {
+        provider: currentRunner?.provider || DEFAULT_PROVIDER,
+        orchestrator: currentRunner?.orchestrator || DEFAULT_ORCHESTRATOR,
+      };
 
       if (key === "provider") {
         copy.experiment.globalConfiguration.runner.provider = value as string;
+      } else if (key === "orchestrator") {
+        copy.experiment.globalConfiguration.runner.orchestrator =
+          value as string;
       } else {
         copy.experiment.globalConfiguration[key] = value as boolean;
         if (key === "askSolution" && value === false) {
@@ -1293,6 +1311,30 @@ export const Replication: React.FC = () => {
                     </select>
                   );
                 })()}
+              </div>
+              <div className="flex items-center space-x-2 mb-3">
+                <div className="text-sm text-gray-700">Orchestrator:</div>
+                <select
+                  value={
+                    normalizeOrchestrator(
+                      localReplication.experiment.globalConfiguration?.runner
+                        ?.orchestrator
+                    )
+                  }
+                  onChange={(e) =>
+                    handleLocalGlobalConfigurationChange(
+                      "orchestrator",
+                      e.target.value
+                    )
+                  }
+                  className="border border-gray-300 rounded-md p-2"
+                >
+                  {ORCHESTRATOR_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex w-full gap-2">
