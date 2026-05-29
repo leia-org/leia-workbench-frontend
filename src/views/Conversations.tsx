@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
 import { Navbar } from "../components/Navbar";
 import { ArrowDownTrayIcon, ArrowLeftIcon, UserCircleIcon } from "@heroicons/react/24/solid";
+import { useAuth } from "../context";
 
 interface Message {
   id: string;
@@ -47,8 +48,8 @@ export const Conversations: React.FC = () => {
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [editingScore, setEditingScore] = useState<string | null>(null);
   const [scoreValue, setScoreValue] = useState<string>("");
-  const adminSecret = localStorage.getItem("adminSecret");
-  const isAdmin = Boolean(adminSecret);
+  const { token, user } = useAuth(); // cambiado
+  const isAdmin = user?.role === "admin";
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
 
@@ -73,8 +74,8 @@ export const Conversations: React.FC = () => {
     config: AxiosRequestConfig = {}
   ): AxiosRequestConfig => {
     const headers = { ...(config.headers || {}) };
-    if (adminSecret) {
-      headers.Authorization = `Bearer ${adminSecret}`;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
     }
 
     const params = { ...(config.params || {}) };
@@ -122,7 +123,7 @@ export const Conversations: React.FC = () => {
       }
     };
     fetchConversations();
-  }, [id, adminSecret, navigate, replicationToken, tokenReady]);
+  }, [id, token, navigate, replicationToken, tokenReady]);
 
   const handleDownloadCSV = async () => {
     try {

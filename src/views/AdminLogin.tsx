@@ -1,60 +1,89 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Cog6ToothIcon } from "@heroicons/react/24/solid";
+import { Cog6ToothIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
+import { useAuth } from "../context";
+import { toast } from "react-toastify";
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
-
-  const [adminCode, setAdminCode] = useState("");
+  const { login, token } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [isManualLogin, setIsManualLogin] = useState(false);
+
+
+  useEffect(() => {
+    if (token && !isManualLogin) {
+      navigate("/administration");
+      toast.info("You are already logged in, redirecting to admin panel...");
+    }
+  }, [token, navigate, isManualLogin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminCode.trim()) {
+    if (!email.trim() || !password.trim()) {
       setSuccess(false);
-      setMessage("Please enter the administrator code");
+      setMessage("Please fill in all fields");
       return;
     }
 
     setLoading(true);
     setMessage("");
-
     try {
       const response = await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/secret`,
-        { secret: adminCode.trim() }
+        `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/users/login`,
+        {
+          email: email.trim(),
+          password: password.trim(),
+        }
       );
+      const token = response.data.token;
 
-      if (response.status === 200 && response.data) {
+      if (token) {
         setSuccess(true);
-        setMessage("Authentication successful! Redirecting...");
+        setMessage("Logged in successfully!");
+        setIsManualLogin(true);
+        login(token);
 
-        // Save to localStorage
-        localStorage.setItem("adminSecret", adminCode.trim());
-
-        // Redirect after a short delay
         setTimeout(() => {
           navigate("/administration");
         }, 1000);
       } else {
         setSuccess(false);
-        setMessage("Invalid code. Please try again.");
+        setMessage("Something went wrong, please try again later.");
       }
-    } catch (error: any) {
-      console.error("Validation error:", error);
+    } catch (error: unknown) {
       setSuccess(false);
-      setMessage(
-        error.response?.data?.message ||
-          "Authentication error. Please try again."
-      );
+
+      let errorMessage = "An error ocurred";
+
+      if (axios.isAxiosError(error) && error.response) {
+        const { status, data } = error.response;
+
+        if (status === 400 && data?.validationErrors) {
+          const validationErrors = Object.values(
+            data.validationErrors
+          ) as string[];
+          errorMessage = validationErrors.join(", ");
+        } else if (data?.message) {
+          errorMessage = data.message;
+        }
+      }
+
+      setMessage(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  if (token && !isManualLogin) {
+    return null;
+  }
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50">
       <div className="w-full max-w-md px-8 py-12 bg-white rounded-2xl shadow-xl">
@@ -70,24 +99,63 @@ export const AdminLogin: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <label
-              htmlFor="adminCode"
+              htmlFor="email"
               className="block text-sm font-medium text-gray-700"
             >
-              Administrator Code
+              Email
             </label>
             <div className="relative group">
               <input
-                type="password"
-                id="adminCode"
-                value={adminCode}
-                onChange={(e) => setAdminCode(e.target.value)}
-                className="block w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ease-in-out bg-gray-50 focus:bg-white"
-                placeholder="Enter admin code"
+                type="text"
+                id="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="block w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ease-in-out bg-gray-50 focus:bg-white group-hover:border-blue-300"
+                placeholder="Enter your email"
                 required
               />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none opacity-50">
-                <Cog6ToothIcon className="w-5 h-5 text-gray-400" />
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none transition-opacity duration-200 ease-in-out opacity-50 group-hover:opacity-100">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="w-5 h-5 text-gray-400"
+                >
+                  <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
+                </svg>
               </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Password
+            </label>
+            <div className="relative group">
+              <input
+                type={showPassword ? "text" : "password"}
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full px-4 py-3 pr-12 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ease-in-out bg-gray-50 focus:bg-white group-hover:border-blue-300"
+                placeholder="Enter the password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer hover:opacity-70 transition-opacity duration-200"
+                aria-label="Toggle password visibility"
+              >
+                {showPassword ? (
+                  <EyeIcon className="w-5 h-5 text-gray-400" />
+                ) : (
+                  <EyeSlashIcon className="w-5 h-5 text-gray-400" />
+                )}
+              </button>
             </div>
           </div>
 
@@ -118,12 +186,12 @@ export const AdminLogin: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 px-4 text-white bg-blue-600 hover:bg-blue-700 rounded-xl font-medium transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center shadow-sm hover:shadow-md"
+            className="w-full py-3 px-4 text-white bg-blue-600 hover:bg-blue-700 rounded-xl font-medium transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:bg-blue-600 flex items-center justify-center shadow-sm hover:shadow-md"
           >
             {loading ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             ) : (
-              "Sign In"
+              "Login"
             )}
           </button>
         </form>

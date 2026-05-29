@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
+import { useAuth } from '../context/useAuth';
 import axios from 'axios';
 import {
   ClockIcon,
@@ -41,9 +42,9 @@ const formatTimeAgo = (dateString: string) => {
 
   interval = Math.floor(seconds / 60);
   if (interval >= 1) return `${interval} minute${interval === 1 ? '' : 's'} ago`;
-  
+
   if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
-  
+
   return `Now`;
 };
 
@@ -52,38 +53,31 @@ export const Administration: React.FC = () => {
   const [replications, setReplications] = useState<Replication[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { token, isLoading } = useAuth();
 
   useEffect(() => {
     const fetchReplications = async () => {
       try {
-        const adminSecret = localStorage.getItem('adminSecret');
-        if (!adminSecret) {
-          navigate('/login');
-          return;
-        }
+        if (isLoading) {return;}
         const response = await axios.get<Replication[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
         setReplications(response.data);
         console.log('Replications:', response.data);
       } catch (error: any) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          setTimeout(() => navigate('/login'), 2000);
-        } else {
-          console.error('Failed to load replications:', error);
-        }
+        console.error('Failed to load replications:', error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchReplications();
-  }, [navigate]);
+  }, [navigate, token, isLoading]);
 
   const handleView = (id: string) => {
     navigate(`/replications/${id}`);
@@ -125,7 +119,7 @@ export const Administration: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <div 
+                <div
                   className="flex flex-col cursor-pointer"
                   onClick={() => handleCopy(rep.code, id)}
                   title="Copy code to clipboard"
@@ -172,7 +166,7 @@ export const Administration: React.FC = () => {
                 </span>
               </div>
 
-              <button 
+              <button
                 className="mt-4 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
                 onClick={() => handleView(id)}
               >

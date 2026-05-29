@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
+import { useAuth } from '../context/useAuth';
 import axios from 'axios';
 import {
   InformationCircleIcon,
@@ -42,9 +43,9 @@ const formatTimeAgo = (dateString: string) => {
 
   interval = Math.floor(seconds / 60);
   if (interval >= 1) return `${interval} minute${interval === 1 ? '' : 's'} ago`;
-  
+
   if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
-  
+
   return `Now`;
 };
 
@@ -52,38 +53,30 @@ export const Experiments: React.FC = () => {
   const navigate = useNavigate();
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const { token } = useAuth();
 
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        const adminSecret = localStorage.getItem('adminSecret');
-        if (!adminSecret) {
-          navigate('/login');
-          return;
-        }
         const response = await axios.get<Experiment[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
         setExperiments(response.data);
         console.log('Experiments:', response.data);
       } catch (error: any) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          setTimeout(() => navigate('/login'), 2000);
-        } else {
-          console.error('Failed to load experiments:', error);
-        }
+        console.error('Failed to load experiments:', error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchExperiments();
-  }, [navigate]);
+  }, [token]);
 
   const handleView = (id: string) => {
     navigate(`/experiments/${id}`);
@@ -150,7 +143,7 @@ export const Experiments: React.FC = () => {
                 </span>
               </div>
 
-              <button 
+              <button
                 className="mt-4 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
                 onClick={() => handleView(id)}
               >

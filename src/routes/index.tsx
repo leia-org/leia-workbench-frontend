@@ -11,9 +11,20 @@ import { Experiment } from '../views/Experiment';
 import { Conversations } from '../views/Conversations';
 import { LiveDashboard } from '../views/LiveDashboard';
 import { SpectatorView } from '../views/SpectatorView';
+import { AuthProvider } from '../context';
+import { Outlet } from 'react-router-dom';
+import { ApiKeysPage } from '../views/ApiKeys';
+import ProtectedRoute from '../components/ProtectedRoute';
+
 
 export const router = createBrowserRouter([
-  {
+   {element:(
+    <AuthProvider>
+        <Outlet />
+    </AuthProvider>
+   ),
+
+    children:[{
     path: '/',
     element: <Login />,
   },
@@ -29,9 +40,27 @@ export const router = createBrowserRouter([
     path: '/create',
     element: <CreateLeia />,
   },
+
   {
-    path: '/administration',
-    element: <Administration />,
+    element: <ProtectedRoute requiredRoles={['admin', 'advanced']} />,
+    children: [
+      {
+        path: '/administration',
+        element: <Administration />,
+      },
+      {
+        path: '/administration/api-keys',
+        element: <ApiKeysPage />,
+      },
+      {
+        path: '/experiments',
+        element: <Experiments />,
+      },
+      {
+        path: '/experiments/:id',
+        element: <Experiment />,
+      },
+    ],
   },
   {
     path: '/login',
@@ -53,16 +82,9 @@ export const router = createBrowserRouter([
     path: '/spectate/:sessionId',
     element: <SpectatorView />,
   },
-  {
-    path: '/experiments',
-    element: <Experiments />,
-  },
-  {
-    path: '/experiments/:id',
-    element: <Experiment />,
-  },
+
   {
     path: '*',
     element: <Navigate to="/" replace />,
-  },
+  },]}
 ]);
