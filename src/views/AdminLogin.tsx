@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Cog6ToothIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
+import { jwtDecode } from "jwt-decode";
 import { useAuth } from "../context";
+import type { DecodedToken } from "../context";
 import { toast } from "react-toastify";
 import { TurnstileWidget } from "../components/TurnstileWidget";
 
@@ -56,6 +58,16 @@ export const AdminLogin: React.FC = () => {
       const token = response.data.token;
 
       if (token) {
+        const { role } = jwtDecode<DecodedToken>(token);
+
+        if (!["admin", "advanced"].includes(role)) {
+          setSuccess(false);
+          setMessage("Instructors cannot access workbench administration.");
+          setTurnstileToken("");
+          setTurnstileKey((key) => key + 1);
+          return;
+        }
+
         setSuccess(true);
         setMessage("Logged in successfully!");
         setIsManualLogin(true);
