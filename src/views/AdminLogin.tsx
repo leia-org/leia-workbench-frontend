@@ -1,9 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Cog6ToothIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
+import { jwtDecode } from "jwt-decode";
 import { useAuth } from "../context";
+import type { DecodedToken } from "../context";
 import { toast } from "react-toastify";
+import { TurnstileWidget } from "../components/TurnstileWidget";
+import { isTurnstileEnabled } from "../config/turnstile";
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
@@ -15,7 +19,11 @@ export const AdminLogin: React.FC = () => {
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
   const [isManualLogin, setIsManualLogin] = useState(false);
-
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileKey, setTurnstileKey] = useState(0);
+  const handleTurnstileTokenChange = useCallback((token: string) => {
+    setTurnstileToken(token);
+  }, []);
 
   useEffect(() => {
     if (token && !isManualLogin) {
@@ -31,6 +39,11 @@ export const AdminLogin: React.FC = () => {
       setMessage("Please fill in all fields");
       return;
     }
+    if (isTurnstileEnabled && !turnstileToken) {
+      setSuccess(false);
+      setMessage("Please complete the verification challenge.");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
@@ -40,11 +53,24 @@ export const AdminLogin: React.FC = () => {
         {
           email: email.trim(),
           password: password.trim(),
+          ...(isTurnstileEnabled && {
+            "cf-turnstile-response": turnstileToken,
+          }),
         }
       );
       const token = response.data.token;
 
       if (token) {
+        const { role } = jwtDecode<DecodedToken>(token);
+
+        if (!["admin", "advanced"].includes(role)) {
+          setSuccess(false);
+          setMessage("Instructors cannot access workbench administration.");
+          setTurnstileToken("");
+          setTurnstileKey((key) => key + 1);
+          return;
+        }
+
         setSuccess(true);
         setMessage("Logged in successfully!");
         setIsManualLogin(true);
@@ -76,6 +102,8 @@ export const AdminLogin: React.FC = () => {
       }
 
       setMessage(errorMessage);
+      setTurnstileToken("");
+      setTurnstileKey((key) => key + 1);
     } finally {
       setLoading(false);
     }
@@ -183,9 +211,16 @@ export const AdminLogin: React.FC = () => {
             </div>
           )}
 
+          {isTurnstileEnabled && (
+            <TurnstileWidget
+              key={turnstileKey}
+              onTokenChange={handleTurnstileTokenChange}
+            />
+          )}
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (isTurnstileEnabled && !turnstileToken)}
             className="w-full py-3 px-4 text-white bg-blue-600 hover:bg-blue-700 rounded-xl font-medium transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:bg-blue-600 flex items-center justify-center shadow-sm hover:shadow-md"
           >
             {loading ? (
