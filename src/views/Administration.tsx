@@ -1,20 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Navbar } from '../components/Navbar';
-import axios from 'axios';
+import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
-  ClockIcon,
-  ArrowPathIcon,
-  InformationCircleIcon,
-  CalendarDaysIcon,
-  PencilSquareIcon,
-} from '@heroicons/react/24/solid';
+  Box,
+  ButtonBase,
+  Button,
+  Stack,
+  Typography,
+  Skeleton,
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
+import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
+import AdminLayout from "../components/admin/AdminLayout";
+import MasterDetailLayout, {
+  MasterDetailEmptyState,
+} from "../components/admin/MasterDetailLayout";
+import StatusDot from "../components/admin/StatusDot";
+import CodeChip from "../components/admin/CodeChip";
+import { formatTimeAgo } from "../components/admin/RelativeTime";
+import { writeReplicationName } from "../lib/replicationNames";
+import FilterButton, {
+  type FilterGroup,
+  type FilterState,
+  type SortOption,
+  type SortState,
+} from "../components/admin/FilterButton";
 
 interface Replication {
   id: string;
   name: string;
   isActive: boolean;
-  duration: number;
+  duration: number | null;
   isRepeatable: boolean;
   code: string;
   createdAt: string;
@@ -22,43 +41,319 @@ interface Replication {
   experiment: { name: string };
 }
 
-const formatTimeAgo = (dateString: string) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+const formatDuration = (seconds: number | null) => {
+  if (!seconds) return "Untimed";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m && s) return `${m}m ${s}s`;
+  if (m) return `${m}m`;
+  return `${s}s`;
+};
 
-  let interval = Math.floor(seconds / 31536000);
-  if (interval >= 1) return `${interval} year${interval === 1 ? '' : 's'} ago`;
+interface RowProps {
+  item: Replication;
+  selected: boolean;
+  onClick: () => void;
+  onCopyCode: () => void;
+  copied: boolean;
+}
 
-  interval = Math.floor(seconds / 2592000);
-  if (interval >= 1) return `${interval} month${interval === 1 ? '' : 's'} ago`;
+const ReplicationRow: React.FC<RowProps> = ({
+  item,
+  selected,
+  onClick,
+  onCopyCode,
+  copied,
+}) => {
+  return (
+    <ButtonBase
+      onClick={onClick}
+      aria-current={selected ? "page" : undefined}
+      sx={{
+        width: "100%",
+        minHeight: 64,
+        px: 2,
+        py: 1.5,
+        textAlign: "left",
+        display: "flex",
+        alignItems: "stretch",
+        justifyContent: "space-between",
+        borderBottom: "1px solid",
+        borderColor: "divider",
+        position: "relative",
+        bgcolor: selected ? "surfaces.selected" : "transparent",
+        "&:hover": {
+          bgcolor: selected ? "surfaces.selected" : "surfaces.hover",
+        },
+        "&::before": selected
+          ? {
+              content: '""',
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 2,
+              backgroundColor: "primary.main",
+            }
+          : {},
+      }}
+    >
+      <Box sx={{ minWidth: 0, flex: 1, pr: 2 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <StatusDot color={item.isActive ? "success" : "neutral"} />
+          <Typography
+            variant="subtitle2"
+            sx={{
+              color: selected ? "primary.dark" : "text.primary",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {item.name}
+          </Typography>
+        </Box>
+        <Typography
+          variant="caption"
+          sx={{
+            display: "block",
+            color: "text.secondary",
+            mt: 0.5,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {item.experiment?.name ?? "—"}
+          {" · "}
+          {formatDuration(item.duration)}
+          {" · "}
+          {item.isRepeatable ? "Repeatable" : "Single-run"}
+        </Typography>
+      </Box>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: 0.5,
+          flexShrink: 0,
+        }}
+      >
+        <Box
+          // Stop click on the code chip from bubbling to the row selection.
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopyCode();
+          }}
+          sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}
+          title="Copy code"
+        >
+          <CodeChip onClick={onCopyCode}>{item.code}</CodeChip>
+          {copied && (
+            <Typography
+              variant="caption"
+              sx={{ color: "success.main", fontWeight: 600, fontSize: 10 }}
+            >
+              Copied
+            </Typography>
+          )}
+        </Box>
+        <Typography variant="caption" sx={{ color: "text.disabled" }}>
+          {formatTimeAgo(item.updatedAt)}
+        </Typography>
+      </Box>
+    </ButtonBase>
+  );
+};
 
-  interval = Math.floor(seconds / 86400);
-  if (interval >= 1) return `${interval} day${interval === 1 ? '' : 's'} ago`;
+const DetailRow: React.FC<{ label: string; children: React.ReactNode }> = ({
+  label,
+  children,
+}) => (
+  <Box sx={{ display: "flex", py: 1, alignItems: "flex-start" }}>
+    <Typography
+      sx={{
+        width: 140,
+        flexShrink: 0,
+        fontSize: 13,
+        color: "text.secondary",
+      }}
+    >
+      {label}
+    </Typography>
+    <Box sx={{ flex: 1, fontSize: 14, color: "text.primary", minWidth: 0 }}>
+      {children}
+    </Box>
+  </Box>
+);
 
-  interval = Math.floor(seconds / 3600);
-  if (interval >= 1) return `${interval} hour${interval === 1 ? '' : 's'} ago`;
+const ReplicationDetail: React.FC<{
+  item: Replication;
+  onOpen: () => void;
+  onLive: () => void;
+  onConversations: () => void;
+  onCopyCode: () => void;
+  copied: boolean;
+}> = ({ item, onOpen, onLive, onConversations, onCopyCode, copied }) => {
+  return (
+    <Box sx={{ p: 4, maxWidth: 880 }}>
+      <Typography
+        sx={{
+          fontSize: 24,
+          fontWeight: 600,
+          letterSpacing: "-0.015em",
+          color: "text.primary",
+        }}
+      >
+        {item.name}
+      </Typography>
+      <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
+        <Box
+          sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 0.75,
+            px: 1,
+            py: 0.25,
+            border: "1px solid",
+            borderColor: item.isActive ? "success.main" : "divider",
+            color: item.isActive ? "success.main" : "text.secondary",
+            borderRadius: "999px",
+            fontSize: 11,
+            fontWeight: 500,
+            bgcolor: item.isActive ? "rgba(22,163,74,0.06)" : "transparent",
+          }}
+        >
+          <StatusDot color={item.isActive ? "success" : "neutral"} />
+          {item.isActive ? "Active" : "Inactive"}
+        </Box>
+      </Box>
 
-  interval = Math.floor(seconds / 60);
-  if (interval >= 1) return `${interval} minute${interval === 1 ? '' : 's'} ago`;
-  
-  if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
-  
-  return `Now`;
+      <Box sx={{ mt: 4 }}>
+        <DetailRow label="Code">
+          <Stack direction="row" alignItems="center" gap={1}>
+            <CodeChip onClick={onCopyCode} title="Copy code">
+              {item.code}
+            </CodeChip>
+            {copied && (
+              <Typography
+                variant="caption"
+                sx={{ color: "success.main", fontWeight: 600 }}
+              >
+                Copied!
+              </Typography>
+            )}
+          </Stack>
+        </DetailRow>
+        <DetailRow label="Experiment">{item.experiment?.name ?? "—"}</DetailRow>
+        <DetailRow label="Duration">{formatDuration(item.duration)}</DetailRow>
+        <DetailRow label="Repeatable">
+          {item.isRepeatable ? "Yes" : "No"}
+        </DetailRow>
+        <DetailRow label="Last updated">
+          {formatTimeAgo(item.updatedAt)}
+        </DetailRow>
+        <DetailRow label="Created">
+          {new Date(item.createdAt).toLocaleString()}
+        </DetailRow>
+      </Box>
+
+      <Stack direction="row" gap={1} sx={{ mt: 4 }}>
+        <Button
+          variant="contained"
+          startIcon={<OpenInNewIcon sx={{ fontSize: 16 }} />}
+          onClick={onOpen}
+        >
+          Open
+        </Button>
+        <Button
+          variant="outlined"
+          color="inherit"
+          startIcon={<MonitorHeartOutlinedIcon sx={{ fontSize: 16 }} />}
+          onClick={onLive}
+          sx={{ borderColor: "divider", color: "text.primary" }}
+        >
+          Live
+        </Button>
+        <Button
+          variant="outlined"
+          color="inherit"
+          startIcon={<ForumOutlinedIcon sx={{ fontSize: 16 }} />}
+          onClick={onConversations}
+          sx={{ borderColor: "divider", color: "text.primary" }}
+        >
+          Conversations
+        </Button>
+      </Stack>
+    </Box>
+  );
 };
 
 export const Administration: React.FC = () => {
   const navigate = useNavigate();
   const [replications, setReplications] = useState<Replication[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<FilterState>({});
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  const handleCopyCode = (rep: Replication) => {
+    navigator.clipboard.writeText(rep.code);
+    setCopiedCodeId(rep.id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
+  const [sort, setSort] = useState<SortState>({ by: "updated", dir: "desc" });
+
+  const sortOptions: SortOption[] = useMemo(
+    () => [
+      { id: "name", label: "Name" },
+      { id: "updated", label: "Last updated" },
+      { id: "created", label: "Created" },
+      { id: "code", label: "Code" },
+      { id: "status", label: "Status" },
+    ],
+    []
+  );
+
+  const filterGroups: FilterGroup[] = useMemo(
+    () => [
+      {
+        id: "status",
+        label: "Status",
+        options: [
+          { value: "active", label: "Active" },
+          { value: "inactive", label: "Inactive" },
+        ],
+      },
+      {
+        id: "repeatable",
+        label: "Repeatable",
+        options: [
+          { value: "yes", label: "Repeatable" },
+          { value: "no", label: "Single-run" },
+        ],
+      },
+      {
+        id: "duration",
+        label: "Duration",
+        options: [
+          { value: "timed", label: "Has time limit" },
+          { value: "untimed", label: "Untimed" },
+        ],
+      },
+    ],
+    []
+  );
 
   useEffect(() => {
     const fetchReplications = async () => {
       try {
-        const adminSecret = localStorage.getItem('adminSecret');
+        const adminSecret = localStorage.getItem("adminSecret");
         if (!adminSecret) {
-          navigate('/login');
+          navigate("/login");
           return;
         }
         const response = await axios.get<Replication[]>(
@@ -70,12 +365,19 @@ export const Administration: React.FC = () => {
           }
         );
         setReplications(response.data);
-        console.log('Replications:', response.data);
-      } catch (error: any) {
+        // Seed the name cache so deep-linked breadcrumbs render the
+        // replication name instantly the next time the user opens one.
+        for (const r of response.data) {
+          if (r.id && r.name) writeReplicationName(r.id, r.name);
+        }
+        if (response.data.length > 0) {
+          setSelectedId(response.data[0].id);
+        }
+      } catch (error: unknown) {
         if (axios.isAxiosError(error) && error.response?.status === 401) {
-          setTimeout(() => navigate('/login'), 2000);
+          setTimeout(() => navigate("/login"), 2000);
         } else {
-          console.error('Failed to load replications:', error);
+          console.error("Failed to load replications:", error);
         }
       } finally {
         setLoading(false);
@@ -85,103 +387,230 @@ export const Administration: React.FC = () => {
     fetchReplications();
   }, [navigate]);
 
-  const handleView = (id: string) => {
-    navigate(`/replications/${id}`);
-  };
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const statusFilter = filters.status ?? [];
+    const repeatFilter = filters.repeatable ?? [];
+    const durationFilter = filters.duration ?? [];
+    const matched = replications.filter((r) => {
+      if (
+        q &&
+        !(
+          r.name.toLowerCase().includes(q) ||
+          r.code.toLowerCase().includes(q)
+        )
+      ) {
+        return false;
+      }
+      if (statusFilter.length > 0) {
+        const wantsActive = statusFilter.includes("active");
+        const wantsInactive = statusFilter.includes("inactive");
+        if (!((r.isActive && wantsActive) || (!r.isActive && wantsInactive))) {
+          return false;
+        }
+      }
+      if (repeatFilter.length > 0) {
+        const wantsYes = repeatFilter.includes("yes");
+        const wantsNo = repeatFilter.includes("no");
+        if (!((r.isRepeatable && wantsYes) || (!r.isRepeatable && wantsNo))) {
+          return false;
+        }
+      }
+      if (durationFilter.length > 0) {
+        const hasDuration = Boolean(r.duration);
+        const wantsTimed = durationFilter.includes("timed");
+        const wantsUntimed = durationFilter.includes("untimed");
+        if (!((hasDuration && wantsTimed) || (!hasDuration && wantsUntimed))) {
+          return false;
+        }
+      }
+      return true;
+    });
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const sorted = [...matched].sort((a, b) => {
+      switch (sort.by) {
+        case "name":
+          return a.name.localeCompare(b.name) * dir;
+        case "code":
+          return a.code.localeCompare(b.code) * dir;
+        case "created":
+          return (
+            (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * dir
+          );
+        case "status":
+          // Active first when desc, inactive first when asc.
+          return ((a.isActive ? 1 : 0) - (b.isActive ? 1 : 0)) * dir;
+        case "updated":
+        default:
+          return (
+            (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * dir
+          );
+      }
+    });
+    return sorted;
+  }, [replications, search, filters, sort]);
 
-  const handleCopy = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 4000);
-  };
+  const selected = useMemo(
+    () => filtered.find((r) => r.id === selectedId) ?? null,
+    [filtered, selectedId]
+  );
 
-  if (loading) {
-    return <div className="text-center py-20">Loading replications...</div>;
-  }
+  // Route directly to the experiments list — same target the old
+  // Navbar's "New Replication" link used. Renders as a real anchor
+  // (right-click "open in new tab" works) but intercepts plain clicks
+  // to keep navigation inside the SPA.
+  const headerActions = (
+    <Button
+      component="a"
+      href="/experiments"
+      onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
+        if (
+          e.button !== 0 ||
+          e.metaKey ||
+          e.ctrlKey ||
+          e.shiftKey ||
+          e.altKey
+        ) {
+          return;
+        }
+        e.preventDefault();
+        navigate("/experiments");
+      }}
+      variant="contained"
+      size="small"
+      startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+    >
+      New Replication
+    </Button>
+  );
 
   return (
-    <div className="min-h-screen">
-      <Navbar/>
-      <div className="m-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {replications.map(rep => {
-          const id = rep.id;
-          return (
-            <div key={id} className="relative bg-white rounded-2xl shadow p-4 flex flex-col justify-between hover:shadow-lg transition duration-200">
-              <div className='flex justify-between'>
-                {/* Title */}
-                <h2 className="text-lg font-bold truncate my-auto">
-                  {rep.name}
-                </h2>
-                <div>
-                  <span
-                    className={
-                      rep.isActive
-                        ? 'rounded-full px-2 py-1 text-xs font-semibold bg-green-100 text-green-800'
-                        : 'rounded-full px-2 py-1 text-xs font-semibold bg-red-100 text-red-800'
-                    }
-                  >
-                    {rep.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div 
-                  className="flex flex-col cursor-pointer"
-                  onClick={() => handleCopy(rep.code, id)}
-                  title="Copy code to clipboard"
-                >
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-semibold text-gray-500 hover:text-gray-700 transition duration-200">
-                      {rep.code}
-                    </span>
-                    {copiedId === id && (
-                    <span className="text-xs font-bold text-green-600 mt-1">
-                      Copied!
-                    </span>
-                  )}
-                  </div>
-                </div>
-                <span className="ml-2 text-sm text-gray-400">
-                  <CalendarDaysIcon className="w-4 h-4 inline-block" />
-                  {new Date(rep.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-
-              <div className="mt-4 space-y-1 text-sm text-gray-700">
-                <span className="flex items-center">
-                  <InformationCircleIcon className="w-5 h-5 text-gray-500 mr-1" />
-                  <strong>Experiment:</strong>
-                  <p className="ml-2">{rep.experiment.name}</p>
-                </span>
-                <span className="flex items-center">
-                  <ClockIcon className="w-5 h-5 text-gray-500 mr-1" />
-                  <strong>Duration:</strong>
-                  <p className="ml-2">
-                    {rep.duration ? `${Math.floor(rep.duration / 60)}m ${rep.duration % 60}s` : "No time limit"}
-                  </p>
-                </span>
-                <span className="flex items-center">
-                  <ArrowPathIcon className="w-5 h-5 text-gray-500 mr-1" />
-                  <strong>Repeatable:</strong>
-                  <p className="ml-2">{rep.isRepeatable ? 'yes' : 'no'}</p>
-                </span>
-                <span className="flex items-center">
-                  <PencilSquareIcon className="w-5 h-5 text-gray-500 mr-1" />
-                  <strong>Last Updated:</strong>
-                  <p className="ml-2">{formatTimeAgo(rep.updatedAt)}</p>
-                </span>
-              </div>
-
-              <button 
-                className="mt-4 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-200"
-                onClick={() => handleView(id)}
-              >
-                Details
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <AdminLayout title="Replications" actions={headerActions} flush>
+      <MasterDetailLayout
+        storageKey="adminMD:replications.width"
+        searchPlaceholder="Search replications..."
+        searchValue={search}
+        onSearchChange={setSearch}
+        listHeaderActions={
+          <FilterButton
+            groups={filterGroups}
+            value={filters}
+            onChange={setFilters}
+            sortOptions={sortOptions}
+            sortValue={sort}
+            onSortChange={setSort}
+            matchedCount={filtered.length}
+          />
+        }
+        isListEmpty={!loading && filtered.length === 0}
+        emptyListMessage={
+          replications.length === 0
+            ? "No replications yet."
+            : "No replications match your search."
+        }
+        list={
+          loading
+            ? Array.from({ length: 8 }).map((_, i) => (
+                <ReplicationRowSkeleton key={i} />
+              ))
+            : filtered.map((rep) => (
+                <ReplicationRow
+                  key={rep.id}
+                  item={rep}
+                  selected={rep.id === selectedId}
+                  onClick={() => setSelectedId(rep.id)}
+                  onCopyCode={() => handleCopyCode(rep)}
+                  copied={copiedCodeId === rep.id}
+                />
+              ))
+        }
+        detail={
+          loading ? (
+            <ReplicationDetailSkeleton />
+          ) : selected ? (
+            <ReplicationDetail
+              item={selected}
+              onOpen={() => navigate(`/replications/${selected.id}`)}
+              onLive={() => navigate(`/replications/${selected.id}/live`)}
+              onConversations={() =>
+                navigate(`/replications/${selected.id}/conversations`)
+              }
+              onCopyCode={() => handleCopyCode(selected)}
+              copied={copiedCodeId === selected.id}
+            />
+          ) : (
+            <MasterDetailEmptyState
+              icon={<LayersOutlinedIcon sx={{ fontSize: 32 }} />}
+              message="Select a replication to see details"
+            />
+          )
+        }
+      />
+    </AdminLayout>
   );
 };
+
+const ReplicationRowSkeleton: React.FC = () => (
+  <Box
+    sx={{
+      minHeight: 64,
+      px: 2,
+      py: 1.5,
+      display: "flex",
+      justifyContent: "space-between",
+      borderBottom: "1px solid",
+      borderColor: "divider",
+    }}
+  >
+    <Box sx={{ flex: 1, pr: 2 }}>
+      <Skeleton variant="text" width="60%" height={18} />
+      <Skeleton
+        variant="text"
+        width="80%"
+        height={14}
+        sx={{ mt: 0.5 }}
+      />
+    </Box>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 0.5,
+      }}
+    >
+      <Skeleton variant="rounded" width={60} height={18} />
+      <Skeleton variant="text" width={50} height={12} />
+    </Box>
+  </Box>
+);
+
+const ReplicationDetailSkeleton: React.FC = () => (
+  <Box sx={{ p: 4, maxWidth: 880 }}>
+    <Skeleton variant="text" width={240} height={32} />
+    <Skeleton
+      variant="rounded"
+      width={80}
+      height={22}
+      sx={{ mt: 1, borderRadius: 999 }}
+    />
+    <Box sx={{ mt: 4 }}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Box key={i} sx={{ display: "flex", py: 1 }}>
+          <Skeleton variant="text" width={120} height={18} />
+          <Skeleton
+            variant="text"
+            width="40%"
+            height={18}
+            sx={{ ml: 2 }}
+          />
+        </Box>
+      ))}
+    </Box>
+    <Box sx={{ mt: 4, display: "flex", gap: 1 }}>
+      <Skeleton variant="rounded" width={88} height={32} />
+      <Skeleton variant="rounded" width={88} height={32} />
+      <Skeleton variant="rounded" width={120} height={32} />
+    </Box>
+  </Box>
+);
