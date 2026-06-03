@@ -19,6 +19,7 @@ import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import { IconButton } from "@mui/material";
 import { readReplicationName } from "../../lib/replicationNames";
+import { useAuth } from "../../context";
 
 export const ADMIN_SIDEBAR_WIDTH = 240;
 
@@ -123,14 +124,15 @@ export const AdminSidebar: React.FC = () => {
   // - admin (default): full workspace + admin/logout.
   // - scoped: share-token visitor; we only surface the single replication
   //   they're authorised to manage. No Experiments, no global list.
-  const adminSecret =
-    typeof window !== "undefined" ? localStorage.getItem("adminSecret") : null;
+  // A logged-in user (JWT in the auth context) is never "scoped"; scoped mode
+  // is only for share-token visitors landing on a single replication.
+  const { token, logout } = useAuth();
   const scopedReplicationId = useMemo(
     () => replicationIdFromPath(location.pathname),
     [location.pathname]
   );
   const isScoped =
-    !adminSecret && scopedReplicationId !== null &&
+    !token && scopedReplicationId !== null &&
     hasStoredShareToken(scopedReplicationId);
 
   const isSelected = (item: NavItem) => {
@@ -148,7 +150,7 @@ export const AdminSidebar: React.FC = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("adminSecret");
+    logout();
     navigate("/login");
   };
 
