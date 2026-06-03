@@ -1,17 +1,36 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Cog6ToothIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { jwtDecode } from "jwt-decode";
+import { toast } from "react-toastify";
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  CssBaseline,
+  IconButton,
+  InputAdornment,
+  InputBase,
+  ThemeProvider,
+  Typography,
+} from "@mui/material";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
+import { adminTheme } from "../components/admin/theme";
+import { SplitLoginLayout } from "./Login";
 import { useAuth } from "../context";
 import type { DecodedToken } from "../context";
-import { toast } from "react-toastify";
 import { TurnstileWidget } from "../components/TurnstileWidget";
 import { isTurnstileEnabled } from "../config/turnstile";
+import "@fontsource-variable/manrope/index.css";
+import "@fontsource-variable/jetbrains-mono/index.css";
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
   const { login, token } = useAuth();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -21,8 +40,9 @@ export const AdminLogin: React.FC = () => {
   const [isManualLogin, setIsManualLogin] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileKey, setTurnstileKey] = useState(0);
-  const handleTurnstileTokenChange = useCallback((token: string) => {
-    setTurnstileToken(token);
+
+  const handleTurnstileTokenChange = useCallback((value: string) => {
+    setTurnstileToken(value);
   }, []);
 
   useEffect(() => {
@@ -47,6 +67,7 @@ export const AdminLogin: React.FC = () => {
 
     setLoading(true);
     setMessage("");
+
     try {
       const response = await axios.post(
         `${import.meta.env.VITE_AUTH_SERVICE_BACKEND}/api/v1/users/login`,
@@ -58,10 +79,10 @@ export const AdminLogin: React.FC = () => {
           }),
         }
       );
-      const token = response.data.token;
+      const newToken = response.data.token;
 
-      if (token) {
-        const { role } = jwtDecode<DecodedToken>(token);
+      if (newToken) {
+        const { role } = jwtDecode<DecodedToken>(newToken);
 
         if (!["admin", "advanced"].includes(role)) {
           setSuccess(false);
@@ -74,11 +95,9 @@ export const AdminLogin: React.FC = () => {
         setSuccess(true);
         setMessage("Logged in successfully!");
         setIsManualLogin(true);
-        login(token);
+        login(newToken);
 
-        setTimeout(() => {
-          navigate("/administration");
-        }, 1000);
+        setTimeout(() => navigate("/administration"), 1000);
       } else {
         setSuccess(false);
         setMessage("Something went wrong, please try again later.");
@@ -86,7 +105,7 @@ export const AdminLogin: React.FC = () => {
     } catch (error: unknown) {
       setSuccess(false);
 
-      let errorMessage = "An error ocurred";
+      let errorMessage = "An error occurred";
 
       if (axios.isAxiosError(error) && error.response) {
         const { status, data } = error.response;
@@ -112,129 +131,211 @@ export const AdminLogin: React.FC = () => {
   if (token && !isManualLogin) {
     return null;
   }
+
+  const submitDisabled = loading || (isTurnstileEnabled && !turnstileToken);
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      <div className="w-full max-w-md px-8 py-12 bg-white rounded-2xl shadow-xl">
-        <div className="text-center mb-10">
-          <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center transform rotate-12 shadow-lg">
-              <Cog6ToothIcon className="w-10 h-10 text-white transform -rotate-12" />
-            </div>
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Panel</h1>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Email
-            </label>
-            <div className="relative group">
-              <input
-                type="text"
-                id="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="block w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ease-in-out bg-gray-50 focus:bg-white group-hover:border-blue-300"
-                placeholder="Enter your email"
-                required
-              />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none transition-opacity duration-200 ease-in-out opacity-50 group-hover:opacity-100">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className="w-5 h-5 text-gray-400"
-                >
-                  <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Password
-            </label>
-            <div className="relative group">
-              <input
-                type={showPassword ? "text" : "password"}
-                id="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="block w-full px-4 py-3 pr-12 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ease-in-out bg-gray-50 focus:bg-white group-hover:border-blue-300"
-                placeholder="Enter the password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer hover:opacity-70 transition-opacity duration-200"
-                aria-label="Toggle password visibility"
-              >
-                {showPassword ? (
-                  <EyeIcon className="w-5 h-5 text-gray-400" />
-                ) : (
-                  <EyeSlashIcon className="w-5 h-5 text-gray-400" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          {message && (
-            <div
-              className={`${
-                success
-                  ? "bg-green-50 text-green-600"
-                  : "bg-red-50 text-red-600"
-              } text-sm rounded-lg p-3 flex items-center transition-all duration-200 ease-in-out`}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="w-5 h-5 mr-2 flex-shrink-0"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              {message}
-            </div>
-          )}
-
-          {isTurnstileEnabled && (
-            <TurnstileWidget
-              key={turnstileKey}
-              onTokenChange={handleTurnstileTokenChange}
-            />
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || (isTurnstileEnabled && !turnstileToken)}
-            className="w-full py-3 px-4 text-white bg-blue-600 hover:bg-blue-700 rounded-xl font-medium transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:bg-blue-600 flex items-center justify-center shadow-sm hover:shadow-md"
+    <ThemeProvider theme={adminTheme}>
+      <CssBaseline />
+      <SplitLoginLayout
+        eyebrow="Administration"
+        title="Run replications. Watch sessions. Audit conversations."
+        subtitle="Sign in with your administrator account to unlock the workbench."
+      >
+        <Box
+          component="form"
+          onSubmit={handleSubmit}
+          sx={{ width: "100%", maxWidth: 420 }}
+        >
+          <Typography
+            sx={{
+              fontSize: 26,
+              fontWeight: 700,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+              mb: 1,
+              lineHeight: 1.15,
+            }}
           >
-            {loading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            ) : (
-              "Login"
-            )}
-          </button>
-        </form>
-      </div>
+            Admin sign in
+          </Typography>
+          <Typography
+            sx={{
+              fontSize: 14,
+              color: "text.secondary",
+              mb: 4.5,
+              lineHeight: 1.55,
+            }}
+          >
+            Enter your administrator credentials to access the workbench.
+          </Typography>
 
-      <p className="mt-8 text-center text-sm text-gray-500">
-        Powered by the LEIA team
-      </p>
-    </div>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <AuthField
+              id="email"
+              label="Email"
+              value={email}
+              onChange={setEmail}
+              type="text"
+              autoComplete="email"
+              placeholder="you@example.com"
+              autoFocus
+            />
+
+            <AuthField
+              id="password"
+              label="Password"
+              value={password}
+              onChange={setPassword}
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="••••••••••••"
+              endAdornment={
+                <InputAdornment position="end" sx={{ mr: 0.5 }}>
+                  <IconButton
+                    aria-label="Toggle password visibility"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    edge="end"
+                    size="small"
+                  >
+                    {showPassword ? (
+                      <VisibilityOffOutlinedIcon sx={{ fontSize: 20 }} />
+                    ) : (
+                      <VisibilityOutlinedIcon sx={{ fontSize: 20 }} />
+                    )}
+                  </IconButton>
+                </InputAdornment>
+              }
+            />
+
+            {message && (
+              <Alert
+                severity={success ? "success" : "error"}
+                variant="standard"
+                sx={{
+                  py: 0.75,
+                  fontSize: 13,
+                  borderRadius: 1.5,
+                  "& .MuiAlert-message": { py: 0.25 },
+                }}
+              >
+                {message}
+              </Alert>
+            )}
+
+            {isTurnstileEnabled && (
+              <Box sx={{ display: "flex", justifyContent: "center" }}>
+                <TurnstileWidget
+                  key={turnstileKey}
+                  onTokenChange={handleTurnstileTokenChange}
+                />
+              </Box>
+            )}
+
+            <Button
+              type="submit"
+              variant="contained"
+              size="large"
+              fullWidth
+              disabled={submitDisabled}
+              endIcon={
+                loading ? undefined : <ArrowForwardIcon sx={{ fontSize: 18 }} />
+              }
+              sx={{
+                mt: 1,
+                py: 1.5,
+                fontSize: 14,
+                fontWeight: 600,
+                letterSpacing: "-0.005em",
+                borderRadius: 1.5,
+                textTransform: "none",
+              }}
+            >
+              {loading ? (
+                <CircularProgress size={18} sx={{ color: "white" }} />
+              ) : (
+                "Sign in"
+              )}
+            </Button>
+          </Box>
+        </Box>
+      </SplitLoginLayout>
+    </ThemeProvider>
   );
 };
+
+interface AuthFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type: string;
+  placeholder?: string;
+  autoComplete?: string;
+  autoFocus?: boolean;
+  endAdornment?: React.ReactNode;
+}
+
+const AuthField: React.FC<AuthFieldProps> = ({
+  id,
+  label,
+  value,
+  onChange,
+  type,
+  placeholder,
+  autoComplete,
+  autoFocus,
+  endAdornment,
+}) => (
+  <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+    <Typography
+      component="label"
+      htmlFor={id}
+      sx={{
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: "text.disabled",
+      }}
+    >
+      {label}
+    </Typography>
+    <InputBase
+      id={id}
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      autoComplete={autoComplete}
+      autoFocus={autoFocus}
+      endAdornment={endAdornment}
+      required
+      fullWidth
+      sx={{
+        px: 1.75,
+        py: 1.25,
+        fontSize: 14.5,
+        bgcolor: "surfaces.subtle",
+        borderRadius: 1.5,
+        border: "1px solid",
+        borderColor: "divider",
+        transition: "border-color 120ms ease, background-color 120ms ease",
+        "& input::placeholder": {
+          color: "text.disabled",
+          opacity: 1,
+        },
+        "&:hover": {
+          borderColor: "text.disabled",
+        },
+        "&.Mui-focused, &:focus-within": {
+          borderColor: "primary.main",
+          bgcolor: "background.paper",
+          boxShadow: "0 0 0 3px rgba(37, 99, 235, 0.12)",
+        },
+      }}
+    />
+  </Box>
+);
+
+export default AdminLogin;

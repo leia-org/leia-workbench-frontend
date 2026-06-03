@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
@@ -12,8 +12,24 @@ import { SessionTimer } from "../components/SessionTimer";
 import {
   VoiceModeWithWidgets,
   findCatalogEntry,
+  useWidgetsContext,
   type WidgetDefinition,
 } from "../widgets";
+import type { FrontendTool } from "@leia-org/luke-client";
+
+// Bridge component: registered inside a WidgetsProvider, syncs the live
+// tools registry to a ref owned by the parent so non-hook code (form
+// submit handlers, tool round-trip loops) can read it on demand without
+// having to be re-rendered when the set changes.
+const ToolsBridge: React.FC<{
+  onTools: (tools: Record<string, FrontendTool>) => void;
+}> = ({ onTools }) => {
+  const { tools } = useWidgetsContext();
+  useEffect(() => {
+    onTools(tools as Record<string, FrontendTool>);
+  }, [tools, onTools]);
+  return null;
+};
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -111,6 +127,45 @@ export const Chat = () => {
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
+  // Live mirror of the widget-registered tools. handleSubmit reads it on
+  // each turn without re-binding, and the tool round-trip loop uses it to
+  // execute calls coming back from the model.
+  const toolsRef = useRef<Record<string, FrontendTool>>({});
+  const handleToolsSync = useCallback((t: Record<string, FrontendTool>) => {
+    toolsRef.current = t;
+  }, []);
+
+  // Resolve the configured widgets against the local catalog once per
+  // lukeConfig change. Same shape used in luke mode and text mode.
+  const widgetDefs = useMemo<WidgetDefinition[]>(() => {
+    const list = lukeConfig?.widgets ?? [];
+    return list
+      .map((w) => {
+        const entry = findCatalogEntry(w.widgetType);
+        if (!entry) return null;
+        return {
+          id: `${w.widgetType}-${w.slot}`,
+          slot: w.slot,
+          Component: entry.Component,
+          props: w.params ? { params: w.params } : undefined,
+        } as WidgetDefinition;
+      })
+      .filter((w): w is WidgetDefinition => w !== null);
+  }, [lukeConfig]);
+
+  // Text mode renders an extra side panel that hosts the same widgets
+  // luke mode mounts. The panel is what registers the tool functions in
+  // the WidgetsProvider, so without it the tools payload would be empty.
+  const hasTextWidgets =
+    audioMode !== "luke" &&
+    audioMode !== "audio" &&
+    configuration?.mode !== "transcription" &&
+    widgetDefs.length > 0;
+  // Which sides we need to make room for. The chat column carves out the
+  // same half (left or right) that the panel occupies, otherwise the
+  // panel sits on top of the messages.
+  const hasLeftSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "left");
+  const hasRightSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "right");
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
 
@@ -203,23 +258,14 @@ export const Chat = () => {
     setFailedMessage(null);
 
     try {
-      const response = await axios.post(
-        `${
-          import.meta.env.VITE_APP_BACKEND
-        }/api/v1/interactions/${sessionId}/messages`,
-        {
-          message: failedMessage,
-        },
-      );
-
-      if (response.status === 200) {
+      const leiaText = await runMessageTurn(failedMessage);
+      if (leiaText) {
         const leiaMessage: Message = {
-          text: response.data.message,
+          text: leiaText,
           timestamp: new Date(),
           isLeia: true,
           id: generateMessageId(),
         };
-
         setMessages((prev) => [...prev, leiaMessage]);
       }
     } catch (error) {
@@ -302,9 +348,12 @@ export const Chat = () => {
         } else if (response.data.leia?.audioMode === "luke") {
           console.log("Luke audio mode detected");
           setAudioMode("luke");
-          if (response.data.leia?.lukeConfig) {
-            setLukeConfig(response.data.leia.lukeConfig);
-          }
+        }
+        // Widgets live on lukeConfig.widgets but apply to every chat mode
+        // that supports tool round-trips (luke + text). Always hydrate the
+        // config when it's present so text mode can mount the same widgets.
+        if (response.data.leia?.lukeConfig) {
+          setLukeConfig(response.data.leia.lukeConfig);
         }
         if (response.data.leia?.hideAudioTranscription !== undefined) {
           setHideAudioTranscription(Boolean(response.data.leia.hideAudioTranscription));
@@ -431,6 +480,71 @@ export const Chat = () => {
     }
   }, [messages]);
 
+  // Computes the wire-format tool list from the live registry. Strips
+  // `execute` (frontend-only) and keeps only what the runner needs to
+  // declare them to OpenAI Responses.
+  const buildToolsPayload = useCallback(() => {
+    const entries = Object.entries(toolsRef.current);
+    return entries.map(([name, tool]) => ({
+      name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+  }, []);
+
+  // Runs a single user turn against the backend, looping while the model
+  // returns tool calls. Each call is executed via the local tools
+  // registry and its output shipped back as a function_call_output.
+  // Resolves with the model's final text response.
+  const runMessageTurn = useCallback(
+    async (initialMessage: string | null): Promise<string> => {
+      const toolsPayload = buildToolsPayload();
+      const baseUrl = `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`;
+
+      const initialBody: Record<string, unknown> = {};
+      if (initialMessage !== null) initialBody.message = initialMessage;
+      if (toolsPayload.length > 0) initialBody.tools = toolsPayload;
+
+      let response = await axios.post(baseUrl, initialBody);
+      // Cap the round-trip depth so a misbehaving tool loop cannot brick
+      // the UI. Matches the practical ceiling we see in tool-using flows.
+      for (let i = 0; i < 8; i++) {
+        const calls = response.data?.toolCalls;
+        if (!Array.isArray(calls) || calls.length === 0) break;
+
+        const results = await Promise.all(
+          calls.map(async (call: { callId: string; name: string; arguments: string }) => {
+            const tool = toolsRef.current[call.name];
+            let output: unknown;
+            if (!tool) {
+              output = { error: `tool '${call.name}' is not registered on this client` };
+            } else {
+              let args: Record<string, unknown> = {};
+              try {
+                args = call.arguments ? JSON.parse(call.arguments) : {};
+              } catch {
+                args = {};
+              }
+              try {
+                output = await tool.execute(args);
+              } catch (err) {
+                output = { error: (err as Error).message ?? "tool execution failed" };
+              }
+            }
+            return { callId: call.callId, output };
+          })
+        );
+
+        const continuationBody: Record<string, unknown> = { toolResults: results };
+        if (toolsPayload.length > 0) continuationBody.tools = toolsPayload;
+        response = await axios.post(baseUrl, continuationBody);
+      }
+
+      return typeof response.data?.message === "string" ? response.data.message : "";
+    },
+    [buildToolsPayload, sessionId]
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (configuration?.mode === "transcription") return;
@@ -459,23 +573,14 @@ export const Chat = () => {
     // scrollToBottom();
 
     try {
-      const response = await axios.post(
-        `${
-          import.meta.env.VITE_APP_BACKEND
-        }/api/v1/interactions/${sessionId}/messages`,
-        {
-          message: messageText,
-        },
-      );
-
-      if (response.status === 200) {
+      const leiaText = await runMessageTurn(messageText);
+      if (leiaText) {
         const leiaMessage: Message = {
-          text: response.data.message,
+          text: leiaText,
           timestamp: new Date(),
           isLeia: true,
           id: generateMessageId(),
         };
-
         setMessages((prev) => [...prev, leiaMessage]);
       }
     } catch (error) {
@@ -694,28 +799,60 @@ export const Chat = () => {
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {concluding ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span className="hidden sm:inline">Processing...</span>
-              </>
-            ) : (
-              <>
-                <span className="hidden sm:inline">
-                  {configuration?.askSolution
-                    ? "Go to Editor"
-                    : "Finish Session"}
-                </span>
-                <span className="sm:hidden">
-                  {configuration?.askSolution
-                    ? "Go to Editor"
-                    : "Finish Session"}
-                </span>
-              </>
-            )}
+            {(() => {
+              const hasCodeEditorWidget =
+                audioMode !== "audio" &&
+                !!lukeConfig?.widgets?.some((w) => w.widgetType === "codeEditor");
+              const askSolutionLabel = hasCodeEditorWidget
+                ? "Send Solution"
+                : "Go to Editor";
+              return concluding ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span className="hidden sm:inline">Processing...</span>
+                </>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">
+                    {configuration?.askSolution
+                      ? askSolutionLabel
+                      : "Finish Session"}
+                  </span>
+                  <span className="sm:hidden">
+                    {configuration?.askSolution
+                      ? askSolutionLabel
+                      : "Finish Session"}
+                  </span>
+                </>
+              );
+            })()}
           </button>
         </div>
       </header>
+
+      {/* Widget side panel — text mode only. Luke mode renders its own
+          slots inside LukeAudioWidget; here we mount the same widgets in
+          a fixed right pane and bridge their tools out to the round-trip
+          loop owned by handleSubmit. */}
+      {hasTextWidgets && (
+        <VoiceModeWithWidgets widgets={widgetDefs}>
+          {({ rightSlot, leftSlot }) => (
+            <>
+              <ToolsBridge onTools={handleToolsSync} />
+              {rightSlot && (
+                <div className="fixed top-14 right-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-l border-neutral-800">
+                  {rightSlot}
+                </div>
+              )}
+              {leftSlot && (
+                <div className="fixed top-14 left-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-r border-neutral-800">
+                  {leftSlot}
+                </div>
+              )}
+            </>
+          )}
+        </VoiceModeWithWidgets>
+      )}
 
       {/* Contenido principal - Condicional según el modo */}
       {audioMode === "luke" ? (
@@ -723,19 +860,6 @@ export const Chat = () => {
         <div className="flex-1 flex flex-col overflow-hidden">
           {lukeToken.isReady && lukeConfig ? (
             (() => {
-              const widgetDefs: WidgetDefinition[] = (lukeConfig.widgets ?? [])
-                .map((w) => {
-                  const entry = findCatalogEntry(w.widgetType);
-                  if (!entry) return null;
-                  return {
-                    id: `${w.widgetType}-${w.slot}`,
-                    slot: w.slot,
-                    Component: entry.Component,
-                    props: w.params ? { params: w.params } : undefined,
-                  } as WidgetDefinition;
-                })
-                .filter((w): w is WidgetDefinition => w !== null);
-
               const base = (
                 <LukeAudioWidget
                   wsUrl={lukeToken.wsUrl!}
@@ -847,6 +971,10 @@ export const Chat = () => {
             minHeight: "400px",
             maxHeight: mobileUtils.isMobile() ? "calc(100vh - 140px)" : "none",
             background: "#f9fafb",
+            // Carve out the half that the widget panel occupies so the
+            // messages don't slide under it.
+            paddingLeft: hasLeftSidePanel ? "50%" : undefined,
+            paddingRight: hasRightSidePanel ? "50%" : undefined,
           }}
         >
           <div
@@ -957,7 +1085,13 @@ export const Chat = () => {
         !configuration?.data?.messages &&
         configuration?.data?.link
       ) && (
-        <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-gray-50 z-10 chat-input">
+        <div
+          className="fixed bottom-0 px-4 pb-6 bg-gray-50 z-10 chat-input"
+          style={{
+            left: hasLeftSidePanel ? "50%" : 0,
+            right: hasRightSidePanel ? "50%" : 0,
+          }}
+        >
           <div className="max-w-3xl mx-auto relative">
             {/* Tooltip de mensaje de ejemplo */}
             {showTooltip && messages.length === 0 && (
