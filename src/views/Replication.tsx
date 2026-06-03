@@ -6,6 +6,11 @@ import { readReplicationName } from "../lib/replicationNames";
 import { ToastContainer, toast } from "react-toastify";
 
 import AdminLayout from "../components/admin/AdminLayout";
+import { useAuth } from "../context/useAuth";
+import { useApiKeys } from "../hooks/useApiKeys";
+import { useProviders } from "../hooks/useProviders";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
+import { UnsavedChangesModal } from "../components/UnsavedChangesModal";
 import { ReplicationSubSidebar, type SectionId } from "./replication/ReplicationSubSidebar";
 import { GeneralSection } from "./replication/sections/GeneralSection";
 import { LeiasSection } from "./replication/sections/LeiasSection";
@@ -29,6 +34,16 @@ const readStoredReplicationTokens = (): Record<string, string> => {
   }
 };
 
+// Pull the most descriptive message available out of an axios error so the
+// toast surfaces the backend's validation/error text when present.
+const getErrorMessage = (err: unknown, fallbackMessage: string): string => {
+  if (axios.isAxiosError(err) && err.response?.data) {
+    const data = err.response.data as { message?: string; error?: string };
+    return data.message || data.error || fallbackMessage;
+  }
+  return fallbackMessage;
+};
+
 const buildWorkbenchLink = (code: string, email?: string) => {
   const url = new URL("/", window.location.origin);
   url.searchParams.set("code", code);
@@ -42,12 +57,13 @@ export const Replication: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const { token, user } = useAuth();
+  // Replications can be administered by admins and advanced users alike.
+  const isAuthorised = user?.role === "admin" || user?.role === "advanced";
   const [replication, setReplication] = useState<ReplicationData | null>(null);
   const [localReplication, setLocalReplication] =
     useState<ReplicationData | null>(null);
   const [loading, setLoading] = useState(true);
-  const adminSecret = localStorage.getItem("adminSecret");
-  const isAdmin = Boolean(adminSecret);
   const [copied, setCopied] = useState<boolean>(false);
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
@@ -57,11 +73,21 @@ export const Replication: React.FC = () => {
   const [startingSessionLeiaId, setStartingSessionLeiaId] = useState<
     string | null
   >(null);
-  const [availableModels, setAvailableModels] = useState<Array<string>>([]);
-  const [hasFetchedAvailableModels, setHasFetchedAvailableModels] =
-    useState(false);
   const [isMissingProviderModalOpen, setIsMissingProviderModalOpen] =
     useState(false);
+
+  // BYOK: API keys + provider/model catalogue.
+  const { apiKeys, getDefaultKey } = useApiKeys();
+  const { apiKeyProvidersMapped, isLoading: isProvidersLoading } =
+    useProviders();
+  const defaultKey = getDefaultKey();
+
+  // Flattened list of every model the available API keys can serve.
+  const availableModels = useMemo(
+    () => Object.values(apiKeyProvidersMapped).flat(),
+    [apiKeyProvidersMapped]
+  );
+  const hasProviderData = availableModels.length > 0;
 
   // Section + active LEIA driven by URL query so things deep-link.
   const searchParams = useMemo(
@@ -87,9 +113,9 @@ export const Replication: React.FC = () => {
     [navigate, location.pathname, location.search]
   );
 
-  const isProviderValid = useCallback(
-    (provider: string) =>
-      provider === DEFAULT_PROVIDER || availableModels.includes(provider),
+  const isModelAvailable = useCallback(
+    (model: string) =>
+      model === DEFAULT_PROVIDER || availableModels.includes(model),
     [availableModels]
   );
 
@@ -97,18 +123,19 @@ export const Replication: React.FC = () => {
     leiaName: string;
     provider: string;
   }> =
-    !localReplication || !hasFetchedAvailableModels
+    !localReplication || isProvidersLoading || !hasProviderData
       ? []
       : localReplication.experiment.leias
-          .filter(
-            (leia) =>
-              leia.runnerConfiguration.provider &&
-              !isProviderValid(leia.runnerConfiguration.provider)
-          )
-          .map((leia) => ({
-            leiaName: leia.leia.metadata?.name || "Unknown Leia",
-            provider: leia.runnerConfiguration.provider,
-          }));
+          .map((leia) => {
+            const currentValue = leia.runnerConfiguration.modelName ?? "";
+            return {
+              leiaName: leia.leia.metadata?.name || "Unknown Leia",
+              provider: currentValue,
+              isValid: currentValue === "" || isModelAvailable(currentValue),
+            };
+          })
+          .filter((item) => !item.isValid)
+          .map(({ leiaName, provider }) => ({ leiaName, provider }));
 
   useEffect(() => {
     if (!id) return;
@@ -130,8 +157,8 @@ export const Replication: React.FC = () => {
   const buildRequestConfig = useCallback(
     (config: AxiosRequestConfig = {}): AxiosRequestConfig => {
       const headers = { ...(config.headers || {}) };
-      if (adminSecret) {
-        headers.Authorization = `Bearer ${adminSecret}`;
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
       }
       const params = { ...(config.params || {}) };
       if (replicationToken) {
@@ -146,7 +173,7 @@ export const Replication: React.FC = () => {
       }
       return finalConfig;
     },
-    [adminSecret, replicationToken]
+    [token, replicationToken]
   );
 
   useEffect(() => {
@@ -158,7 +185,16 @@ export const Replication: React.FC = () => {
           buildRequestConfig()
         );
         setReplication(resp.data);
-        setLocalReplication(structuredClone(resp.data));
+        // Seed each LEIA that has no API key yet with the user's default key.
+        const clonedData = structuredClone(resp.data);
+        if (defaultKey) {
+          clonedData.experiment.leias.forEach((leia) => {
+            if (!leia.runnerConfiguration.apiKeyId) {
+              leia.runnerConfiguration.apiKeyId = defaultKey.id;
+            }
+          });
+        }
+        setLocalReplication(clonedData);
         if (id && resp.data?.name) writeReplicationName(id, resp.data.name);
       } catch (err: unknown) {
         if (axios.isAxiosError(err) && err.response?.status === 403) {
@@ -168,7 +204,8 @@ export const Replication: React.FC = () => {
               autoClose: 5000,
             });
           } else {
-            setTimeout(() => navigate("/login"), 2000);
+            toast.error("No tienes permisos para acceder a esta réplica.");
+            navigate("/login");
           }
         } else {
           console.error("Load error:", err);
@@ -178,42 +215,22 @@ export const Replication: React.FC = () => {
       }
     };
     fetchReplication();
-  }, [id, navigate, replicationToken, tokenReady, buildRequestConfig]);
+  }, [
+    id,
+    navigate,
+    replicationToken,
+    tokenReady,
+    buildRequestConfig,
+    defaultKey,
+  ]);
 
   useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const resp = await axios.get<{ models: string[] }>(
-          `${import.meta.env.VITE_APP_BACKEND}/api/v1/runner/models`,
-          buildRequestConfig()
-        );
-        setAvailableModels(
-          Array.isArray(resp.data?.models) ? resp.data.models : []
-        );
-        setHasFetchedAvailableModels(true);
-      } catch (err) {
-        console.error("Error fetching available models:", err);
-        setAvailableModels([]);
-        setHasFetchedAvailableModels(false);
-      }
-    };
-    fetchModels();
-  }, [buildRequestConfig]);
-
-  useEffect(() => {
-    if (!hasFetchedAvailableModels) {
+    if (isProvidersLoading || !hasProviderData) {
       setIsMissingProviderModalOpen(false);
       return;
     }
-    const hasUnavailableProvider = Boolean(
-      localReplication?.experiment.leias.some(
-        (leia) =>
-          leia.runnerConfiguration.provider &&
-          !isProviderValid(leia.runnerConfiguration.provider)
-      )
-    );
-    setIsMissingProviderModalOpen(hasUnavailableProvider);
-  }, [hasFetchedAvailableModels, localReplication, isProviderValid]);
+    setIsMissingProviderModalOpen(unavailableLeiaProviders.length > 0);
+  }, [isProvidersLoading, hasProviderData, unavailableLeiaProviders.length]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(replication?.code || "");
@@ -261,7 +278,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error renaming replication", {
+      toast.error(getErrorMessage(err, "Error renaming replication"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -284,7 +301,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error updating replication duration", {
+      toast.error(getErrorMessage(err, "Error updating replication duration"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -306,7 +323,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error removing replication duration", {
+      toast.error(getErrorMessage(err, "Error removing replication duration"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -329,7 +346,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error updating replication form", {
+      toast.error(getErrorMessage(err, "Error updating replication form"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -351,7 +368,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error deleting replication form", {
+      toast.error(getErrorMessage(err, "Error deleting replication form"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -373,7 +390,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error regenerating code", {
+      toast.error(getErrorMessage(err, "Error regenerating code"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -382,7 +399,7 @@ export const Replication: React.FC = () => {
   };
 
   const regenerateShareToken = async () => {
-    if (!isAdmin) return;
+    if (!isAuthorised) return;
     try {
       const resp = await axios.patch(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/regenerate-share-token`,
@@ -396,7 +413,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error regenerating share token", {
+      toast.error(getErrorMessage(err, "Error regenerating share token"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -404,7 +421,22 @@ export const Replication: React.FC = () => {
     }
   };
 
-  const toggleActive = async () => {
+  // --- UNSAVED CHANGES LOGIC ---
+  // Compute which LEIAs differ from their saved counterpart so actions like
+  // activating or starting a test session can prompt to save first.
+  const getUnsavedLeias = useCallback(() => {
+    if (!replication || !localReplication) return [];
+    const unsaved: number[] = [];
+    localReplication.experiment.leias.forEach((localLeia, idx) => {
+      const savedLeia = replication.experiment.leias[idx];
+      if (JSON.stringify(localLeia) !== JSON.stringify(savedLeia)) {
+        unsaved.push(idx);
+      }
+    });
+    return unsaved;
+  }, [replication, localReplication]);
+
+  const executeToggleActive = async () => {
     if (!replication) return;
     try {
       const resp = await axios.patch(
@@ -421,7 +453,7 @@ export const Replication: React.FC = () => {
         { position: "bottom-right", autoClose: 5000 }
       );
     } catch (err) {
-      toast.error("Error toggling active state", {
+      toast.error(getErrorMessage(err, "Error toggling active state"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -446,7 +478,7 @@ export const Replication: React.FC = () => {
         { position: "bottom-right", autoClose: 5000 }
       );
     } catch (err) {
-      toast.error("Error toggling repeatable state", {
+      toast.error(getErrorMessage(err, "Error toggling repeatable state"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -455,7 +487,7 @@ export const Replication: React.FC = () => {
   };
 
   const toggleShared = async () => {
-    if (!replication || !isAdmin) return;
+    if (!replication || !isAuthorised) return;
     try {
       const resp = await axios.patch(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/toggle-shared`,
@@ -471,7 +503,7 @@ export const Replication: React.FC = () => {
         { position: "bottom-right", autoClose: 5000 }
       );
     } catch (err) {
-      toast.error("Error toggling shared access", {
+      toast.error(getErrorMessage(err, "Error toggling shared access"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -495,7 +527,7 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error toggling ask solution state", {
+      toast.error(getErrorMessage(err, "Error toggling ask solution state"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -519,10 +551,13 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
     } catch (err) {
-      toast.error("Error toggling evaluate solution state", {
-        position: "bottom-right",
-        autoClose: 5000,
-      });
+      toast.error(
+        getErrorMessage(err, "Error toggling evaluate solution state"),
+        {
+          position: "bottom-right",
+          autoClose: 5000,
+        }
+      );
       console.error("Update error:", err);
     }
   };
@@ -559,16 +594,44 @@ export const Replication: React.FC = () => {
     }
   };
 
-  const handleLeiaUpdate = async (idx: number) => {
-    if (!replication || !localReplication) return;
+  // Returns true on success so the unsaved-changes flow can decide whether to
+  // continue with a pending action (toggle active / start test session).
+  const handleLeiaUpdate = async (idx: number): Promise<boolean> => {
+    if (!replication || !localReplication) return false;
     const replicationId = replication.id;
     const localLeiaId = localReplication.experiment.leias[idx].id;
     const localLeiaRunnerConfiguration =
       localReplication.experiment.leias[idx].runnerConfiguration;
+    const modelName = localLeiaRunnerConfiguration.modelName;
+
+    if (!modelName) {
+      toast.error("Please select a valid model.", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      return false;
+    }
+
+    // Send `modelName` (BYOK) and drop the legacy/derived fields the backend
+    // no longer accepts on this endpoint.
+    const payload = {
+      ...localLeiaRunnerConfiguration,
+      modelName,
+    };
+    if ("provider" in payload) {
+      delete (payload as Partial<typeof payload> & { provider?: string })
+        .provider;
+    }
+    if ("apiKeyRequesterId" in payload) {
+      delete (
+        payload as Partial<typeof payload> & { apiKeyRequesterId?: string }
+      ).apiKeyRequesterId;
+    }
+
     try {
       const resp = await axios.patch(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${replicationId}/leia/${localLeiaId}/runner-configuration`,
-        localLeiaRunnerConfiguration,
+        payload,
         buildRequestConfig()
       );
       setReplication(resp.data);
@@ -577,16 +640,34 @@ export const Replication: React.FC = () => {
         position: "bottom-right",
         autoClose: 5000,
       });
+      return true;
     } catch (err) {
-      toast.error("Error updating leia configuration", {
+      toast.error(getErrorMessage(err, "Error updating leia configuration"), {
         position: "bottom-right",
         autoClose: 5000,
       });
       console.error("Update error:", err);
+      return false;
     }
   };
 
-  const startTestSession = async (leiaId: string, replicationId: string) => {
+  // Wire up the unsaved-changes guard with the dirty-detection + save logic.
+  const {
+    isModalOpen,
+    withUnsavedChangesCheck,
+    handleConfirmSaveAndProceed,
+    handleProceedWithoutSaving,
+    handleCancelUnsavedModal,
+  } = useUnsavedChanges(getUnsavedLeias, handleLeiaUpdate);
+
+  const toggleActive = async () => {
+    withUnsavedChangesCheck(executeToggleActive);
+  };
+
+  const executeStartTestSession = async (
+    leiaId: string,
+    replicationId: string
+  ) => {
     if (loading || startingSessionLeiaId || !leiaId || !replicationId) return;
     setStartingSessionLeiaId(leiaId);
     try {
@@ -598,7 +679,7 @@ export const Replication: React.FC = () => {
       const sessionId = resp.data.sessionId;
       navigate(`/chat/${sessionId}`);
     } catch (err) {
-      toast.error("Error starting test session", {
+      toast.error(getErrorMessage(err, "Error starting test session"), {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -606,6 +687,17 @@ export const Replication: React.FC = () => {
     } finally {
       setStartingSessionLeiaId(null);
     }
+  };
+
+  const startTestSession = (
+    leiaId: string,
+    replicationId: string,
+    idx: number
+  ) => {
+    withUnsavedChangesCheck(
+      () => executeStartTestSession(leiaId, replicationId),
+      idx
+    );
   };
 
   if (loading || !replication || !localReplication) {
@@ -648,7 +740,10 @@ export const Replication: React.FC = () => {
             activeLeiaId={leiaFromQuery}
             onLeiaSelect={(leiaId) => setSection("leias", leiaId)}
             availableModels={availableModels}
-            hasFetchedAvailableModels={hasFetchedAvailableModels}
+            hasFetchedAvailableModels={hasProviderData}
+            apiKeys={apiKeys}
+            apiKeyProvidersMapped={apiKeyProvidersMapped}
+            userRole={user?.role}
             onLocalLeiaChange={handleLocalLeiaChange}
             onLocalLeiaReset={handleLocalLeiaReset}
             onLeiaUpdate={handleLeiaUpdate}
@@ -675,7 +770,7 @@ export const Replication: React.FC = () => {
         return (
           <GeneralSection
             replication={replication}
-            isAdmin={isAdmin}
+            isAdmin={isAuthorised}
             onRename={handleRename}
             onChangeDuration={handleChangeDuration}
             onDeleteDuration={handleDeleteDuration}
@@ -732,6 +827,13 @@ export const Replication: React.FC = () => {
         </Box>
       </Box>
 
+      <UnsavedChangesModal
+        isOpen={isModalOpen}
+        onCancel={handleCancelUnsavedModal}
+        onProceedWithoutSaving={handleProceedWithoutSaving}
+        onConfirmSaveAndProceed={handleConfirmSaveAndProceed}
+      />
+
       <Dialog
         open={isMissingProviderModalOpen && unavailableLeiaProviders.length > 0}
         onClose={() => setIsMissingProviderModalOpen(false)}
@@ -739,12 +841,12 @@ export const Replication: React.FC = () => {
         fullWidth
       >
         <DialogTitle sx={{ color: "error.main" }}>
-          Provider not available
+          Model not available
         </DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-            Some LEIAs have a provider configured that is no longer in the list
-            of available models.
+            Some LEIAs have a model configured that is no longer in the list of
+            available models.
           </Typography>
           <Box
             sx={{
@@ -768,7 +870,7 @@ export const Replication: React.FC = () => {
             ))}
           </Box>
           <Typography variant="body2" sx={{ color: "text.secondary", mt: 2 }}>
-            Change the provider to one that is available and save the
+            Change the model to one that is available and save the
             configuration.
           </Typography>
         </DialogContent>

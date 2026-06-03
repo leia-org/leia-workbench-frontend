@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
+import { useAuth } from "../context";
 import AdminLayout from "../components/admin/AdminLayout";
 import MasterDetailLayout, {
   MasterDetailEmptyState,
@@ -223,6 +224,7 @@ const ExperimentDetail: React.FC<{
 
 export const Experiments: React.FC = () => {
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -273,16 +275,11 @@ export const Experiments: React.FC = () => {
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        const adminSecret = localStorage.getItem("adminSecret");
-        if (!adminSecret) {
-          navigate("/login");
-          return;
-        }
         const response = await axios.get<Experiment[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
@@ -302,7 +299,7 @@ export const Experiments: React.FC = () => {
     };
 
     fetchExperiments();
-  }, [navigate]);
+  }, [navigate, token]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

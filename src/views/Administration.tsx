@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useAuth } from "../context/useAuth";
 import {
   Box,
   ButtonBase,
@@ -295,6 +296,7 @@ export const Administration: React.FC = () => {
   const navigate = useNavigate();
   const [replications, setReplications] = useState<Replication[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const { token, isLoading } = useAuth();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>({});
@@ -351,16 +353,12 @@ export const Administration: React.FC = () => {
   useEffect(() => {
     const fetchReplications = async () => {
       try {
-        const adminSecret = localStorage.getItem("adminSecret");
-        if (!adminSecret) {
-          navigate("/login");
-          return;
-        }
+        if (isLoading) return;
         const response = await axios.get<Replication[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
@@ -385,7 +383,7 @@ export const Administration: React.FC = () => {
     };
 
     fetchReplications();
-  }, [navigate]);
+  }, [navigate, token, isLoading]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

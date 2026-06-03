@@ -13,7 +13,11 @@ export interface ReplicationLeia {
     spec: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   };
   runnerConfiguration: {
-    provider: string;
+    // Legacy provider field — superseded by `modelName` (BYOK) but kept so
+    // pre-migration replications still type-check on load.
+    provider?: string;
+    modelName?: string;
+    apiKeyId?: string | null;
     audioMode?: "realtime" | "luke" | null;
     hideAudioTranscription?: boolean | null;
     realtimeConfig?: {

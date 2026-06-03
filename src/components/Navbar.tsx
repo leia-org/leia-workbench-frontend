@@ -1,17 +1,35 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/useAuth";
+
 import {
   HomeIcon,
   PlusIcon,
-  ArrowRightEndOnRectangleIcon,
 } from "@heroicons/react/24/solid";
+import {
+  Bars3Icon,
+  UserIcon,
+  KeyIcon,
+  ArrowRightEndOnRectangleIcon
+} from "@heroicons/react/24/outline";
 
 export const Navbar: React.FC = () => {
+  const { logout, user } = useAuth();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const navigate = useNavigate();
-
   const handleLogout = () => {
-    localStorage.removeItem("adminSecret");
-    navigate("/login");
+    logout();
+  };
+
+  const handleProfile = () => {
+    // TODO: Implementar navegación a perfil o acción correspondiente
+    console.log("Navegar a Profile");
+    setIsMenuOpen(false);
+  };
+
+  const handleApiKeys = () => {
+    navigate("/administration/api-keys");
+    setIsMenuOpen(false);
   };
 
   return (
@@ -48,13 +66,47 @@ export const Navbar: React.FC = () => {
               <PlusIcon className="h-5 w-5 mr-1" />
               New Replication
             </Link>
-            <button
-              onClick={handleLogout}
-              className="flex items-center px-3 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition duration-200"
-            >
-              <ArrowRightEndOnRectangleIcon className="h-5 w-5 mr-1" />
-              Logout
-            </button>
+
+            <span className="text-sm text-gray-700 hidden sm:block">
+              {user?.email}
+            </span>
+
+            <div className="relative">
+              <button
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className={`p-2 rounded-md border text-gray-600 hover:bg-gray-50 focus:outline-none transition duration-200 ${
+                  isMenuOpen ? "border-blue-500 ring-1 ring-blue-500" : "border-gray-200"
+                }`}
+              >
+                <Bars3Icon className="h-5 w-5" />
+              </button>
+
+              {isMenuOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 border border-gray-100 z-50">
+                  <button
+                    onClick={handleProfile}
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition duration-150"
+                  >
+                    <UserIcon className="h-4 w-4 mr-2 text-gray-500" />
+                    Profile
+                  </button>
+                  <button
+                    onClick={handleApiKeys}
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition duration-150"
+                  >
+                    <KeyIcon className="h-4 w-4 mr-2 text-gray-500" />
+                    My-Api keys
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition duration-150"
+                  >
+                    <ArrowRightEndOnRectangleIcon className="h-4 w-4 mr-2 text-gray-500" />
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -15,6 +15,7 @@ import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
+import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import { IconButton } from "@mui/material";
 import { readReplicationName } from "../../lib/replicationNames";
@@ -42,6 +43,12 @@ const WORKSPACE_ITEMS: NavItem[] = [
     path: "/experiments",
     icon: <ScienceOutlinedIcon sx={{ fontSize: 18 }} />,
     matchPrefix: "/experiments",
+  },
+  {
+    label: "API Keys",
+    path: "/administration/api-keys",
+    icon: <VpnKeyOutlinedIcon sx={{ fontSize: 18 }} />,
+    matchPrefix: "/administration/api-keys",
   },
 ];
 
@@ -130,7 +137,8 @@ export const AdminSidebar: React.FC = () => {
     if (item.matchPrefix) {
       if (item.matchPrefix === "/administration") {
         return (
-          location.pathname.startsWith("/administration") ||
+          (location.pathname.startsWith("/administration") &&
+            !location.pathname.startsWith("/administration/api-keys")) ||
           location.pathname.startsWith("/replications")
         );
       }

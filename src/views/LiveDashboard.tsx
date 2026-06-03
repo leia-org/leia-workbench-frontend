@@ -35,6 +35,7 @@ import StatusDot from "../components/admin/StatusDot";
 import { formatTimeAgo } from "../components/admin/RelativeTime";
 import LeiaPreviewDrawer from "../components/admin/LeiaPreview";
 import { writeReplicationName } from "../lib/replicationNames";
+import { useAuth } from "../context/useAuth";
 
 interface LiveSession {
   id: string;
@@ -167,7 +168,8 @@ export const LiveDashboard = () => {
     open: false,
     url: "",
   });
-  const adminSecret = localStorage.getItem("adminSecret");
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
 
@@ -199,7 +201,9 @@ export const LiveDashboard = () => {
   const buildRequestConfig = useCallback(
     (config: AxiosRequestConfig = {}) => {
       const headers = { ...(config.headers || {}) };
-      if (adminSecret) headers.Authorization = `Bearer ${adminSecret}`;
+      if (token && isAdmin) {
+        headers.Authorization = `Bearer ${token}`;
+      }
       const params = { ...(config.params || {}) };
       if (replicationToken) params.token = replicationToken;
       const final: AxiosRequestConfig = { ...config };
@@ -207,7 +211,7 @@ export const LiveDashboard = () => {
       if (Object.keys(params).length > 0) final.params = params;
       return final;
     },
-    [adminSecret, replicationToken]
+    [token, isAdmin, replicationToken]
   );
 
   const fetchSessions = useCallback(async () => {
@@ -290,9 +294,13 @@ export const LiveDashboard = () => {
   useEffect(() => {
     if (!tokenReady || !replicationId) return;
     const authPayload: Record<string, string> = {};
-    if (adminSecret) authPayload.adminSecret = adminSecret;
-    else if (replicationToken) authPayload.shareToken = replicationToken;
-    else return;
+    if (token && isAdmin) {
+      authPayload.token = token;
+    } else if (replicationToken) {
+      authPayload.shareToken = replicationToken;
+    } else {
+      return;
+    }
 
     const newSocket = io(import.meta.env.VITE_APP_BACKEND, {
       auth: authPayload,
@@ -340,7 +348,7 @@ export const LiveDashboard = () => {
       newSocket.emit("dashboard:leave", replicationId);
       newSocket.disconnect();
     };
-  }, [adminSecret, replicationId, replicationToken, tokenReady]);
+  }, [token, isAdmin, replicationId, replicationToken, tokenReady]);
 
   const handleShareLink = async (sessionId: string, open: boolean = true) => {
     try {

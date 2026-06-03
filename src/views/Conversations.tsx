@@ -30,6 +30,7 @@ import {
 import StatusDot from "../components/admin/StatusDot";
 import { formatTimeAgo } from "../components/admin/RelativeTime";
 import { writeReplicationName } from "../lib/replicationNames";
+import { useAuth } from "../context";
 
 interface Message {
   id: string;
@@ -101,8 +102,8 @@ export const Conversations: React.FC = () => {
   const [search, setSearch] = useState("");
   const [editingScore, setEditingScore] = useState(false);
   const [scoreValue, setScoreValue] = useState<string>("");
-  const adminSecret = localStorage.getItem("adminSecret");
-  const isAdmin = Boolean(adminSecret);
+  const { token, user } = useAuth(); // cambiado
+  const isAdmin = user?.role === "admin";
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
 
@@ -125,7 +126,7 @@ export const Conversations: React.FC = () => {
   const buildRequestConfig = useCallback(
     (config: AxiosRequestConfig = {}): AxiosRequestConfig => {
       const headers = { ...(config.headers || {}) };
-      if (adminSecret) headers.Authorization = `Bearer ${adminSecret}`;
+      if (token) headers.Authorization = `Bearer ${token}`;
       const params = { ...(config.params || {}) };
       if (replicationToken) params.token = replicationToken;
       const final: AxiosRequestConfig = { ...config };
@@ -133,7 +134,7 @@ export const Conversations: React.FC = () => {
       if (Object.keys(params).length > 0) final.params = params;
       return final;
     },
-    [adminSecret, replicationToken]
+    [token, replicationToken]
   );
 
   useEffect(() => {
