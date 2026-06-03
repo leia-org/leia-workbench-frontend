@@ -1,13 +1,26 @@
 import React, { useState } from "react";
-import { Navbar } from "../components/Navbar";
 import { toast } from "react-toastify";
-import { PlusIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Typography,
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
+import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import { ApiKeyCard } from "../components/apikeys/ApiKeyCard";
 import { ApiKeyFormModal } from "../components/apikeys/ApiKeyFormModal";
 import { ApiKeyMarkDefaultModal } from "../components/apikeys/ApiKeyMarkDefaultModal";
 import type { ApiKey, ApiKeyFormData } from "../models/ApiKeys";
 import { useApiKeys } from "../hooks/useApiKeys";
 import { useAuth } from "../context";
+import AdminLayout from "../components/admin/AdminLayout";
 
 
 export const ApiKeysPage: React.FC = () => {
@@ -117,33 +130,59 @@ export const ApiKeysPage: React.FC = () => {
   const renderContent = () => {
     if (isLoading) {
       return (
-        <div className="flex flex-col items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
-          <p className="text-gray-500 font-medium">Loading your API Keys...</p>
-        </div>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            py: 10,
+          }}
+        >
+          <CircularProgress size={40} sx={{ mb: 2 }} />
+          <Typography sx={{ color: "text.secondary", fontWeight: 500 }}>
+            Loading your API Keys...
+          </Typography>
+        </Box>
       );
     }
     if (apiKeys.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-gray-200 border-dashed shadow-sm">
-          <svg className="h-12 w-12 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-          </svg>
-          <p className="text-gray-500 mb-4 text-center max-w-sm">
-            You don't have any custom API Keys configured yet. Add one to get started.
-          </p>
-          <button
-            onClick={openCreateModal}
-            className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium border border-blue-200"
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            py: 10,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            border: "1px dashed",
+            borderColor: "divider",
+            boxShadow: 1,
+          }}
+        >
+          <VpnKeyOutlinedIcon sx={{ fontSize: 48, color: "text.disabled", mb: 2 }} />
+          <Typography
+            sx={{ color: "text.secondary", mb: 2, textAlign: "center", maxWidth: 360 }}
           >
+            You don't have any custom API Keys configured yet. Add one to get started.
+          </Typography>
+          <Button variant="outlined" onClick={openCreateModal}>
             Create your first key
-          </button>
-        </div>
+          </Button>
+        </Box>
       );
     }
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" },
+          gap: 3,
+        }}
+      >
         {apiKeys.map((key) => (
           <ApiKeyCard
             key={key.id}
@@ -155,35 +194,29 @@ export const ApiKeysPage: React.FC = () => {
             isSaving={!!savingIds?.[key.id]}
           />
         ))}
-      </div>
+      </Box>
     );
   };
 
+  const headerActions = (
+    <Button
+      variant="contained"
+      startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+      onClick={openCreateModal}
+    >
+      New API key
+    </Button>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-
-      {/* Contenido Principal */}
-      <div className="max-w-6xl mx-auto p-6">
-        {/* Cabecera */}
-        <div className="flex items-center justify-between mb-8 mt-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">My API Keys</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Manage your model configurations and programmatic access keys.
-            </p>
-          </div>
-          <button
-            onClick={openCreateModal}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
-          >
-            <PlusIcon className="h-4 w-4 mr-2" />
-            Add New Key
-          </button>
-        </div>
-
+    <AdminLayout
+      title="API Keys"
+      subtitle="Manage your model configurations and programmatic access keys."
+      actions={headerActions}
+    >
+      <Box sx={{ maxWidth: 1100, width: "100%", mx: "auto" }}>
         {renderContent()}
-      </div>
+      </Box>
 
       {/* --- MODAL FORMULARIO (Creación / Edición) --- */}
       <ApiKeyFormModal
@@ -200,36 +233,67 @@ export const ApiKeysPage: React.FC = () => {
       />
 
       {/* --- MODAL DE ELIMINACIÓN --- */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden transform transition-all">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-900">Delete API Key?</h3>
-                <button onClick={() => {
-                  setIsDeleteModalOpen(false);
-                  setSelectedKey(null);
-                }} className="text-gray-400 hover:text-gray-500"><XMarkIcon className="h-5 w-5" /></button>
-              </div>
-              <p className="text-sm text-gray-600 mb-6">
-                Are you sure you want to delete the key <span className="font-semibold text-gray-800">"{selectedKey?.description}"</span>?
-                This action cannot be undone and any application using this key will stop working immediately.
-              </p>
+      <Dialog
+        open={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setSelectedKey(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: 18,
+            fontWeight: 700,
+          }}
+        >
+          Delete API Key?
+          <IconButton
+            aria-label="close"
+            onClick={() => {
+              setIsDeleteModalOpen(false);
+              setSelectedKey(null);
+            }}
+            sx={{ color: "text.disabled" }}
+          >
+            <CloseIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            Are you sure you want to delete the key{" "}
+            <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+              "{selectedKey?.description}"
+            </Box>
+            ? This action cannot be undone and any application using this key will
+            stop working immediately.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            variant="outlined"
+            color="inherit"
+            onClick={() => setIsDeleteModalOpen(false)}
+            sx={{ borderColor: "divider", color: "text.primary" }}
+          >
+            Cancel
+          </Button>
+          <Button variant="contained" color="error" onClick={confirmDelete}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-              <div className="flex justify-end space-x-3 mt-6">
-                <button onClick={() => setIsDeleteModalOpen(false)} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">Cancel</button>
-                <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">Delete</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       {/* --- MODAL MARCAR/DESMARCAR DEFAULT --- */}
       {isMarkDefaultModalOpen && (<ApiKeyMarkDefaultModal
         apiKey={selectedKey}
         onClose={() => { setIsMarkDefaultModalOpen(false); setSelectedKey(null); }}
         onConfirm={confirmMarkDefault}
       />)}
-    </div>
+    </AdminLayout>
   );
 };
