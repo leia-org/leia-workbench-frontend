@@ -39,6 +39,14 @@ interface Message {
   timestamp: string;
 }
 
+interface SupervisorFlag {
+  category: string;
+  severity: "low" | "medium" | "high";
+  note: string;
+  quote?: string | null;
+  at?: string;
+}
+
 interface Session {
   id: string;
   startedAt: string;
@@ -48,6 +56,7 @@ interface Session {
   score: number | null;
   messages: Message[];
   user: { email: string } | null;
+  supervisorFlags?: SupervisorFlag[] | null;
 }
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
@@ -777,6 +786,74 @@ const SessionDetail: React.FC<{
           >
             <ReactMarkdown>{session.evaluation}</ReactMarkdown>
           </Paper>
+        </>
+      )}
+
+      {session.supervisorFlags && session.supervisorFlags.length > 0 && (
+        <>
+          <Divider sx={{ my: 3 }} />
+          <Typography
+            variant="overline"
+            sx={{ display: "block", mb: 1.5, color: "error.main" }}
+          >
+            Supervisor flags ({session.supervisorFlags.length})
+          </Typography>
+          <Stack gap={1.5} sx={{ mb: 1 }}>
+            {session.supervisorFlags.map((flag, idx) => (
+              <Paper
+                key={idx}
+                variant="outlined"
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2,
+                  borderLeft: "3px solid",
+                  borderColor:
+                    flag.severity === "high"
+                      ? "error.main"
+                      : flag.severity === "medium"
+                        ? "warning.main"
+                        : "divider",
+                }}
+              >
+                <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
+                  <Chip
+                    size="small"
+                    label={flag.severity}
+                    sx={{
+                      height: 18,
+                      fontSize: 10,
+                      textTransform: "uppercase",
+                      bgcolor:
+                        flag.severity === "high"
+                          ? "rgba(211,47,47,0.1)"
+                          : flag.severity === "medium"
+                            ? "rgba(237,108,2,0.1)"
+                            : "surfaces.subtle",
+                      color:
+                        flag.severity === "high"
+                          ? "error.main"
+                          : flag.severity === "medium"
+                            ? "warning.main"
+                            : "text.secondary",
+                    }}
+                  />
+                  <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary" }}>
+                    {flag.category}
+                  </Typography>
+                </Stack>
+                <Typography sx={{ fontSize: 13, color: "text.primary" }}>
+                  {flag.note}
+                </Typography>
+                {flag.quote ? (
+                  <Typography
+                    sx={{ fontSize: 12, color: "text.disabled", fontStyle: "italic", mt: 0.5 }}
+                  >
+                    “{flag.quote}”
+                  </Typography>
+                ) : null}
+              </Paper>
+            ))}
+          </Stack>
         </>
       )}
 
