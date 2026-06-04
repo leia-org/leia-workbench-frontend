@@ -1,7 +1,9 @@
 import React from "react";
+import { buildAvatarCandidateSources } from "../lib/avatar";
 
 interface PersonaAvatarProps {
   src?: string | null;
+  fallbackSrc?: string | null;
   alt: string;
   label?: string | null;
   size?: "sm" | "md" | "lg" | "xl";
@@ -21,29 +23,6 @@ const textSizeClasses = {
   md: "text-sm",
   lg: "text-lg",
   xl: "text-7xl",
-};
-
-const avatarPublicBaseUrl = (import.meta.env.VITE_AVATAR_PUBLIC_URL || "")
-  .replace(/\/+$/g, "");
-
-export const resolveAvatarSrc = (value?: string | null): string => {
-  const trimmedValue = typeof value === "string" ? value.trim() : "";
-  if (!trimmedValue) return "";
-
-  if (/^(https?:|data:image\/|blob:)/i.test(trimmedValue)) {
-    return trimmedValue;
-  }
-
-  const normalizedValue = trimmedValue.replace(/^\/+/g, "");
-  if (!normalizedValue.startsWith("images/")) {
-    return "";
-  }
-
-  if (!avatarPublicBaseUrl) {
-    return normalizedValue;
-  }
-
-  return `${avatarPublicBaseUrl}/${normalizedValue}`;
 };
 
 export const getInitials = (value?: string | null): string => {
@@ -66,19 +45,24 @@ export const getInitials = (value?: string | null): string => {
 
 export const PersonaAvatar: React.FC<PersonaAvatarProps> = ({
   src,
+  fallbackSrc,
   alt,
   label,
   size = "md",
   className = "",
   fallbackClassName = "bg-blue-50 text-blue-700",
 }) => {
-  const resolvedSrc = resolveAvatarSrc(src);
-  const [imageFailed, setImageFailed] = React.useState(false);
+  const candidateSources = React.useMemo(
+    () => buildAvatarCandidateSources(src, fallbackSrc),
+    [src, fallbackSrc],
+  );
+  const [currentSourceIndex, setCurrentSourceIndex] = React.useState(0);
+  const resolvedSrc = candidateSources[currentSourceIndex] || "";
   const initials = getInitials(label || alt);
 
   React.useEffect(() => {
-    setImageFailed(false);
-  }, [resolvedSrc]);
+    setCurrentSourceIndex(0);
+  }, [candidateSources]);
 
   return (
     <div
@@ -86,13 +70,20 @@ export const PersonaAvatar: React.FC<PersonaAvatarProps> = ({
       title={label || alt}
       aria-label={alt}
     >
-      {resolvedSrc && !imageFailed ? (
+      {resolvedSrc ? (
         <img
           src={resolvedSrc}
           alt={alt}
           className="h-full w-full object-cover"
           loading="lazy"
-          onError={() => setImageFailed(true)}
+          onError={() => {
+            setCurrentSourceIndex((previousIndex) => {
+              const nextIndex = previousIndex + 1;
+              return nextIndex < candidateSources.length
+                ? nextIndex
+                : candidateSources.length;
+            });
+          }}
         />
       ) : (
         <span

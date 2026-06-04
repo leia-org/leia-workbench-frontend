@@ -10,6 +10,7 @@ import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
 import { PersonaAvatar } from "../components/PersonaAvatar";
 import { SessionTimer } from "../components/SessionTimer";
+import { buildOriginalAvatarPath } from "../lib/avatar";
 import {
   VoiceModeWithWidgets,
   findCatalogEntry,
@@ -68,6 +69,34 @@ const extractPersonaSpec = (value: unknown): Record<string, unknown> => {
     | undefined;
 
   return leia?.leia?.spec?.persona?.spec || {};
+};
+
+const extractLeiaResourceIds = (
+  value: unknown,
+): { leiaId: string; personaId: string; problemId: string } => {
+  const leiaEntry = value as
+    | {
+        id?: unknown;
+        leia?: {
+          id?: unknown;
+          spec?: {
+            persona?: {
+              id?: unknown;
+            };
+            problem?: {
+              id?: unknown;
+            };
+          };
+        };
+      }
+    | null
+    | undefined;
+
+  return {
+    leiaId: getString(leiaEntry?.leia?.id ?? leiaEntry?.id),
+    personaId: getString(leiaEntry?.leia?.spec?.persona?.id),
+    problemId: getString(leiaEntry?.leia?.spec?.problem?.id),
+  };
 };
 
 interface Message {
@@ -146,6 +175,9 @@ export const Chat = () => {
   } | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
+  const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<
+    string | null
+  >(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -350,6 +382,12 @@ export const Chat = () => {
             null,
         );
         setPersonaAvatar(getString(personaSpec.avatar) || null);
+        const resourceIds = extractLeiaResourceIds(response.data.leia);
+        setPersonaAvatarFallbackSrc(
+          buildOriginalAvatarPath("personas", resourceIds.personaId) ||
+            buildOriginalAvatarPath("leias", resourceIds.leiaId) ||
+            null,
+        );
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
@@ -896,6 +934,7 @@ export const Chat = () => {
                   lukeConfig={lukeConfig}
                   leiaName={leiaName || undefined}
                   avatarSrc={personaAvatar || undefined}
+                  avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
                   forceMute={showInstructions}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
@@ -913,6 +952,7 @@ export const Chat = () => {
                       lukeConfig={lukeConfig}
                       leiaName={leiaName || undefined}
                       avatarSrc={personaAvatar || undefined}
+                      avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
                       forceMute={showInstructions}
                       showTranscription={!hideAudioTranscription}
                       mode="inline"
@@ -1032,9 +1072,10 @@ export const Chat = () => {
                   }`}
                 >
                   {msg.isLeia ? (
-                    personaAvatar ? (
+                    personaAvatar || personaAvatarFallbackSrc ? (
                       <PersonaAvatar
                         src={personaAvatar}
+                        fallbackSrc={personaAvatarFallbackSrc}
                         alt={`${leiaName || "LEIA"} avatar`}
                         label={leiaName || "LEIA"}
                         size="sm"
@@ -1107,9 +1148,10 @@ export const Chat = () => {
             ))}
             {sendingMessage && (
               <div className="flex items-end gap-2">
-                {personaAvatar ? (
+                {personaAvatar || personaAvatarFallbackSrc ? (
                   <PersonaAvatar
                     src={personaAvatar}
+                    fallbackSrc={personaAvatarFallbackSrc}
                     alt={`${leiaName || "LEIA"} avatar`}
                     label={leiaName || "LEIA"}
                     size="sm"

@@ -16,6 +16,8 @@ interface LukeAudioWidgetProps {
   leiaName?: string;
   /** Persona avatar URL or storage key, when available. */
   avatarSrc?: string;
+  /** Fallback avatar path to try before initials placeholder. */
+  avatarFallbackSrc?: string;
   forceMute?: boolean;
   /** Initial visibility of the transcription side panel. */
   showTranscription?: boolean;
@@ -225,6 +227,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   lukeConfig,
   leiaName,
   avatarSrc,
+  avatarFallbackSrc,
   forceMute = false,
   showTranscription: initialShowTranscription = false,
   tools,
@@ -427,6 +430,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
 
           <PersonaAvatar
             src={avatarSrc}
+            fallbackSrc={avatarFallbackSrc}
             alt={`${leiaName || "LEIA"} avatar`}
             label={leiaName || "LEIA"}
             size="xl"
