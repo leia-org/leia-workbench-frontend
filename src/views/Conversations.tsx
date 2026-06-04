@@ -806,7 +806,6 @@ const SessionDetail: React.FC<{
                 sx={{
                   p: 1.5,
                   borderRadius: 2,
-                  borderLeft: "3px solid",
                   borderColor:
                     flag.severity === "high"
                       ? "error.main"
