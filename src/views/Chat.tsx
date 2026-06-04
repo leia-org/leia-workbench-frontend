@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { UserCircleIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
@@ -492,6 +492,11 @@ export const Chat = () => {
     }));
   }, []);
 
+  // A short coaching message the background supervisor may push to the
+  // student (delivered piggybacked on a turn's response). Instructor-only
+  // flags never reach here — only an explicit nudge does.
+  const [nudge, setNudge] = useState<string | null>(null);
+
   // Runs a single user turn against the backend, looping while the model
   // returns tool calls. Each call is executed via the local tools
   // registry and its output shipped back as a function_call_output.
@@ -505,7 +510,17 @@ export const Chat = () => {
       if (initialMessage !== null) initialBody.message = initialMessage;
       if (toolsPayload.length > 0) initialBody.tools = toolsPayload;
 
+      // The supervisor may piggyback a nudge on any response in the round-trip
+      // (including an intermediate toolCalls response), so capture it whenever
+      // it appears, not just on the final turn.
+      const captureNudge = (resp: { data?: { nudge?: unknown } }) => {
+        if (typeof resp.data?.nudge === "string" && resp.data.nudge.trim()) {
+          setNudge(resp.data.nudge.trim());
+        }
+      };
+
       let response = await axios.post(baseUrl, initialBody);
+      captureNudge(response);
       // Cap the round-trip depth so a misbehaving tool loop cannot brick
       // the UI. Matches the practical ceiling we see in tool-using flows.
       for (let i = 0; i < 8; i++) {
@@ -538,6 +553,7 @@ export const Chat = () => {
         const continuationBody: Record<string, unknown> = { toolResults: results };
         if (toolsPayload.length > 0) continuationBody.tools = toolsPayload;
         response = await axios.post(baseUrl, continuationBody);
+        captureNudge(response);
       }
 
       return typeof response.data?.message === "string" ? response.data.message : "";
@@ -1072,6 +1088,22 @@ export const Chat = () => {
                 </div>
                 <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
                   <TypingAnimation />
+                </div>
+              </div>
+            )}
+            {nudge && (
+              <div className="flex justify-center my-2">
+                <div className="max-w-xl w-full bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 shadow-sm flex items-start gap-3">
+                  <SparklesIcon className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-900 flex-1">{nudge}</p>
+                  <button
+                    type="button"
+                    onClick={() => setNudge(null)}
+                    className="text-amber-400 hover:text-amber-600 flex-shrink-0"
+                    aria-label="Dismiss"
+                  >
+                    <XMarkIcon className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             )}
