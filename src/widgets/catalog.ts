@@ -16,8 +16,8 @@ export interface WidgetCatalogEntry {
 export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     {
         widgetType: "codeEditor",
-        label: "Code editor",
-        description: "Monaco code editor. LEIA can read, comment and rewrite code while you talk.",
+        label: "Editor",
+        description: "Monaco editor (JavaScript, Python or plain text). LEIA can read, comment and rewrite the content while you talk.",
         Component: CodeEditorWidget,
     },
 ];

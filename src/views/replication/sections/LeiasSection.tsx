@@ -371,11 +371,19 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
               value={currentApiKeyId ?? ""}
               onChange={(e) => {
                 const value = e.target.value;
+                const newKeyId = value === "" ? null : value;
                 onLocalLeiaChange(
                   idx,
                   "runnerConfiguration.apiKeyId",
-                  value === "" ? null : value
+                  newKeyId
                 );
+                // Preselect the key's default model when the current one no
+                // longer fits the new key's provider.
+                const key = apiKeys.find((k) => k.id === newKeyId);
+                const validModels = getValidModels(newKeyId, apiKeys, apiKeyProvidersMapped);
+                if (key?.model && validModels.includes(key.model) && !validModels.includes(currentModelName)) {
+                  onLocalLeiaChange(idx, "runnerConfiguration.modelName", key.model);
+                }
               }}
               renderValue={(selected) => {
                 if (!selected) {

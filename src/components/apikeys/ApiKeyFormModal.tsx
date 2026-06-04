@@ -37,7 +37,8 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
   const [, setInitialFormData] = useState<Partial<ApiKey> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { apiKeysProviderSet, isLoading: isLoadingProviders } = useProviders();
+  const { apiKeysProviderSet, apiKeyProvidersMapped, isLoading: isLoadingProviders } = useProviders();
+  const providerModels = (formData.provider && apiKeyProvidersMapped?.[formData.provider]) || [];
 
   useEffect(() => {
     if (isOpen) {
@@ -50,6 +51,7 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
           description: "",
           keyValue: "",
           provider: "",
+          model: "",
           isActive: true,
           baseUrl: "",
           managementUrl: "",
@@ -77,6 +79,9 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
       setFormData(prev => ({ ...prev, [name]: checked }));
     } else if (name === 'isActive') {
       setFormData(prev => ({ ...prev, isActive: value === 'Active' }));
+    } else if (name === 'provider') {
+      // Changing provider invalidates the chosen model.
+      setFormData(prev => ({ ...prev, provider: value, model: "" }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
@@ -195,6 +200,41 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
                 </Select>
               </FormControl>
             </Stack>
+            <FormControl
+              fullWidth
+              disabled={!formData.provider || isLoadingProviders || providerModels.length === 0}
+            >
+              <InputLabel id="api-key-model-label" shrink>Default Model (Optional)</InputLabel>
+              <Select
+                labelId="api-key-model-label"
+                label="Default Model (Optional)"
+                name="model"
+                value={formData.model || ""}
+                onChange={handleChange}
+                displayEmpty
+                renderValue={(selected) =>
+                  selected
+                    ? (selected as string)
+                    : (
+                      <Typography component="span" sx={{ color: "text.disabled" }}>
+                        {!formData.provider
+                          ? "Select a provider first"
+                          : providerModels.length === 0
+                            ? "No models for this provider"
+                            : "-- none --"}
+                      </Typography>
+                    )
+                }
+              >
+                <MenuItem value=""><em>-- none --</em></MenuItem>
+                {providerModels.map((m) => (
+                  <MenuItem key={m} value={m}>{m}</MenuItem>
+                ))}
+              </Select>
+              <Typography variant="caption" sx={{ color: "text.secondary", mt: 0.5, ml: 1.75 }}>
+                Preselected wherever this key is used (you can still change it there).
+              </Typography>
+            </FormControl>
             <TextField
               label="Base URL (Required for local providers)"
               name="baseUrl"
