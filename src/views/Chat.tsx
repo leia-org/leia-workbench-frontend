@@ -89,6 +89,42 @@ interface Session {
   score: number | null | undefined;
 }
 
+type WidgetConfig = {
+  widgetType: string;
+  slot?: "left" | "right" | "main";
+  params?: Record<string, unknown>;
+  tools?: Array<unknown>;
+};
+
+type ChatLukeConfig = {
+  provider: string;
+  voice: string;
+  widgets?: WidgetConfig[];
+};
+
+type LeiaSessionPayload = {
+  lukeConfig?: Partial<ChatLukeConfig> | null;
+  leia?: {
+    spec?: {
+      problem?: {
+        spec?: {
+          widgets?: WidgetConfig[];
+        };
+      };
+    };
+  };
+};
+
+const DEFAULT_LUKE_CONFIG = {
+  provider: "gemini",
+  voice: "Puck",
+} satisfies Pick<ChatLukeConfig, "provider" | "voice">;
+
+function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[] {
+  const widgets = leia?.leia?.spec?.problem?.spec?.widgets;
+  return Array.isArray(widgets) ? widgets : [];
+}
+
 export const Chat = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
@@ -113,15 +149,7 @@ export const Chat = () => {
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
-  const [lukeConfig, setLukeConfig] = useState<{
-    provider: string;
-    voice: string;
-    widgets?: Array<{
-      widgetType: string;
-      slot: "left" | "right" | "main";
-      params?: Record<string, unknown>;
-    }>;
-  } | null>(null);
+  const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
@@ -143,9 +171,10 @@ export const Chat = () => {
       .map((w) => {
         const entry = findCatalogEntry(w.widgetType);
         if (!entry) return null;
+        const slot = w.slot === "left" ? "left" : "right";
         return {
-          id: `${w.widgetType}-${w.slot}`,
-          slot: w.slot,
+          id: `${w.widgetType}-${slot}`,
+          slot,
           Component: entry.Component,
           props: w.params ? { params: w.params } : undefined,
         } as WidgetDefinition;
@@ -349,11 +378,24 @@ export const Chat = () => {
           console.log("Luke audio mode detected");
           setAudioMode("luke");
         }
-        // Widgets live on lukeConfig.widgets but apply to every chat mode
-        // that supports tool round-trips (luke + text). Always hydrate the
-        // config when it's present so text mode can mount the same widgets.
-        if (response.data.leia?.lukeConfig) {
-          setLukeConfig(response.data.leia.lukeConfig);
+        // Widgets authored in Designer live on problem.spec.widgets. Older
+        // replications may still carry them under lukeConfig.widgets, so use
+        // the problem definition first and keep the runner config as fallback.
+        const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
+        const problemWidgets = getProblemWidgets(responseLeia);
+        const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
+        const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
+          ? runnerLukeConfig.widgets
+          : [];
+        const widgets = problemWidgets.length > 0 ? problemWidgets : runnerWidgets;
+        if (runnerLukeConfig || widgets.length > 0) {
+          setLukeConfig({
+            provider: runnerLukeConfig?.provider ?? DEFAULT_LUKE_CONFIG.provider,
+            voice: runnerLukeConfig?.voice ?? DEFAULT_LUKE_CONFIG.voice,
+            widgets,
+          });
+        } else {
+          setLukeConfig(null);
         }
         if (response.data.leia?.hideAudioTranscription !== undefined) {
           setHideAudioTranscription(Boolean(response.data.leia.hideAudioTranscription));
