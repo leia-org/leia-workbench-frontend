@@ -8,6 +8,7 @@ import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
+import { PersonaAvatar } from "../components/PersonaAvatar";
 import { SessionTimer } from "../components/SessionTimer";
 import {
   VoiceModeWithWidgets,
@@ -47,6 +48,27 @@ const TypingAnimation = () => (
     ></div>
   </div>
 );
+
+const getString = (value: unknown): string => {
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const extractPersonaSpec = (value: unknown): Record<string, unknown> => {
+  const leia = value as
+    | {
+        leia?: {
+          spec?: {
+            persona?: {
+              spec?: Record<string, unknown>;
+            };
+          };
+        };
+      }
+    | null
+    | undefined;
+
+  return leia?.leia?.spec?.persona?.spec || {};
+};
 
 interface Message {
   text: string;
@@ -123,6 +145,7 @@ export const Chat = () => {
     }>;
   } | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
+  const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -314,13 +337,19 @@ export const Chat = () => {
       );
 
       if (response.status === 200) {
+        const personaSpec = extractPersonaSpec(response.data.leia);
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
         const durationSeconds = response.data.replication?.duration;
         if (typeof durationSeconds === "number" && durationSeconds > 0) {
           setSessionTime(durationSeconds / 60);
         }
-        setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
+        setLeiaName(
+          getString(personaSpec.firstName) ||
+            getString(personaSpec.fullName) ||
+            null,
+        );
+        setPersonaAvatar(getString(personaSpec.avatar) || null);
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
@@ -866,6 +895,7 @@ export const Chat = () => {
                   token={lukeToken.token!}
                   lukeConfig={lukeConfig}
                   leiaName={leiaName || undefined}
+                  avatarSrc={personaAvatar || undefined}
                   forceMute={showInstructions}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
@@ -882,6 +912,7 @@ export const Chat = () => {
                       token={lukeToken.token!}
                       lukeConfig={lukeConfig}
                       leiaName={leiaName || undefined}
+                      avatarSrc={personaAvatar || undefined}
                       forceMute={showInstructions}
                       showTranscription={!hideAudioTranscription}
                       mode="inline"
@@ -996,12 +1027,21 @@ export const Chat = () => {
                 }`}
               >
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${
                     msg.isLeia ? "bg-blue-50" : "bg-blue-600"
                   }`}
                 >
                   {msg.isLeia ? (
-                    <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                    personaAvatar ? (
+                      <PersonaAvatar
+                        src={personaAvatar}
+                        alt={`${leiaName || "LEIA"} avatar`}
+                        label={leiaName || "LEIA"}
+                        size="sm"
+                      />
+                    ) : (
+                      <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                    )
                   ) : (
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -1067,9 +1107,18 @@ export const Chat = () => {
             ))}
             {sendingMessage && (
               <div className="flex items-end gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <UserCircleIcon className="w-5 h-5 text-blue-700" />
-                </div>
+                {personaAvatar ? (
+                  <PersonaAvatar
+                    src={personaAvatar}
+                    alt={`${leiaName || "LEIA"} avatar`}
+                    label={leiaName || "LEIA"}
+                    size="sm"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                  </div>
+                )}
                 <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
                   <TypingAnimation />
                 </div>
