@@ -840,7 +840,6 @@ const SessionDetail: React.FC<{
                   py: 1,
                   borderRadius: 1.5,
                   bgcolor: "rgba(211,47,47,0.05)",
-                  borderLeft: "3px solid",
                   borderColor:
                     flag.severity === "high"
                       ? "error.main"
