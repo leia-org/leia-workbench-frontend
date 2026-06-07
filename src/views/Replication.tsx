@@ -75,6 +75,9 @@ export const Replication: React.FC = () => {
   >(null);
   const [isMissingProviderModalOpen, setIsMissingProviderModalOpen] =
     useState(false);
+  const [invalidLeiaFields, setInvalidLeiaFields] = useState<
+    Record<string, string[]>
+  >({});
 
   // BYOK: API keys + provider/model catalogue.
   const { apiKeys, getDefaultKey } = useApiKeys();
@@ -436,6 +439,24 @@ export const Replication: React.FC = () => {
     return unsaved;
   }, [replication, localReplication]);
 
+  // Marca en rojo los campos que el backend señala como inválidos para cada Leia.
+  const markInvalidLeiaFieldsFromError = (err: unknown) => {
+    const invalidLeias =
+      axios.isAxiosError(err) && err.response?.data?.invalidLeias;
+    if (!Array.isArray(invalidLeias)) return;
+    setInvalidLeiaFields((prev) => {
+      const next = { ...prev };
+      invalidLeias.forEach(
+        (entry: { leiaId?: string; missingFields?: string[] }) => {
+          if (entry?.leiaId) {
+            next[String(entry.leiaId)] = entry.missingFields ?? [];
+          }
+        }
+      );
+      return next;
+    });
+  };
+
   const executeToggleActive = async () => {
     if (!replication) return;
     try {
@@ -446,6 +467,8 @@ export const Replication: React.FC = () => {
       );
       setReplication(resp.data);
       setLocalReplication(structuredClone(resp.data));
+      // Activación correcta: limpiamos cualquier marca de error previa.
+      setInvalidLeiaFields({});
       toast.success(
         replication.isActive
           ? "Replication is now inactive"
@@ -453,6 +476,8 @@ export const Replication: React.FC = () => {
         { position: "bottom-right", autoClose: 5000 }
       );
     } catch (err) {
+      // Si el backend detalla qué campos invalidan cada Leia, los señalamos en rojo.
+      markInvalidLeiaFieldsFromError(err);
       toast.error(getErrorMessage(err, "Error toggling active state"), {
         position: "bottom-right",
         autoClose: 5000,
@@ -577,9 +602,20 @@ export const Replication: React.FC = () => {
         }
         property = property[keys[i]];
       }
-      const lastKey = keys.at(-1);
+      const lastKey = keys[keys.length - 1];
       if (lastKey) {
         property[lastKey] = value;
+      }
+      // Al editar modelo o clave de una Leia, retiramos su marca de campos inválidos.
+      if (key.startsWith("runnerConfiguration.")) {
+        const leiaId = copy.experiment.leias[idx]?.id;
+        if (leiaId && invalidLeiaFields[leiaId]) {
+          setInvalidLeiaFields((prev) => {
+            const next = { ...prev };
+            delete next[leiaId];
+            return next;
+          });
+        }
       }
       return copy;
     });
@@ -605,6 +641,10 @@ export const Replication: React.FC = () => {
     const modelName = localLeiaRunnerConfiguration.modelName;
 
     if (!modelName) {
+      setInvalidLeiaFields((prev) => ({
+        ...prev,
+        [localLeiaId]: ["modelName"],
+      }));
       toast.error("Please select a valid model.", {
         position: "bottom-right",
         autoClose: 5000,
@@ -642,6 +682,8 @@ export const Replication: React.FC = () => {
       });
       return true;
     } catch (err) {
+      // Si el modelo no es válido (p. ej. no mapeado a proveedor), lo marcamos en rojo.
+      markInvalidLeiaFieldsFromError(err);
       toast.error(getErrorMessage(err, "Error updating leia configuration"), {
         position: "bottom-right",
         autoClose: 5000,
@@ -751,6 +793,7 @@ export const Replication: React.FC = () => {
             onToggleEvaluateSolution={toggleEvaluateSolution}
             onStartTestSession={startTestSession}
             startingSessionLeiaId={startingSessionLeiaId}
+            invalidLeiaFields={invalidLeiaFields}
           />
         );
       case "settings":
