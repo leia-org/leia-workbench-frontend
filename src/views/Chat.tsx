@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { UserCircleIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
@@ -140,6 +140,42 @@ interface Session {
   score: number | null | undefined;
 }
 
+type WidgetConfig = {
+  widgetType: string;
+  slot?: "left" | "right" | "main";
+  params?: Record<string, unknown>;
+  tools?: Array<unknown>;
+};
+
+type ChatLukeConfig = {
+  provider: string;
+  voice: string;
+  widgets?: WidgetConfig[];
+};
+
+type LeiaSessionPayload = {
+  lukeConfig?: Partial<ChatLukeConfig> | null;
+  leia?: {
+    spec?: {
+      problem?: {
+        spec?: {
+          widgets?: WidgetConfig[];
+        };
+      };
+    };
+  };
+};
+
+const DEFAULT_LUKE_CONFIG = {
+  provider: "gemini",
+  voice: "Puck",
+} satisfies Pick<ChatLukeConfig, "provider" | "voice">;
+
+function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[] {
+  const widgets = leia?.leia?.spec?.problem?.spec?.widgets;
+  return Array.isArray(widgets) ? widgets : [];
+}
+
 export const Chat = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
@@ -164,15 +200,7 @@ export const Chat = () => {
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
-  const [lukeConfig, setLukeConfig] = useState<{
-    provider: string;
-    voice: string;
-    widgets?: Array<{
-      widgetType: string;
-      slot: "left" | "right" | "main";
-      params?: Record<string, unknown>;
-    }>;
-  } | null>(null);
+  const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
   const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<
@@ -198,9 +226,10 @@ export const Chat = () => {
       .map((w) => {
         const entry = findCatalogEntry(w.widgetType);
         if (!entry) return null;
+        const slot = w.slot === "left" ? "left" : "right";
         return {
-          id: `${w.widgetType}-${w.slot}`,
-          slot: w.slot,
+          id: `${w.widgetType}-${slot}`,
+          slot,
           Component: entry.Component,
           props: w.params ? { params: w.params } : undefined,
         } as WidgetDefinition;
@@ -416,11 +445,24 @@ export const Chat = () => {
           console.log("Luke audio mode detected");
           setAudioMode("luke");
         }
-        // Widgets live on lukeConfig.widgets but apply to every chat mode
-        // that supports tool round-trips (luke + text). Always hydrate the
-        // config when it's present so text mode can mount the same widgets.
-        if (response.data.leia?.lukeConfig) {
-          setLukeConfig(response.data.leia.lukeConfig);
+        // Widgets authored in Designer live on problem.spec.widgets. Older
+        // replications may still carry them under lukeConfig.widgets, so use
+        // the problem definition first and keep the runner config as fallback.
+        const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
+        const problemWidgets = getProblemWidgets(responseLeia);
+        const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
+        const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
+          ? runnerLukeConfig.widgets
+          : [];
+        const widgets = problemWidgets.length > 0 ? problemWidgets : runnerWidgets;
+        if (runnerLukeConfig || widgets.length > 0) {
+          setLukeConfig({
+            provider: runnerLukeConfig?.provider ?? DEFAULT_LUKE_CONFIG.provider,
+            voice: runnerLukeConfig?.voice ?? DEFAULT_LUKE_CONFIG.voice,
+            widgets,
+          });
+        } else {
+          setLukeConfig(null);
         }
         if (response.data.leia?.hideAudioTranscription !== undefined) {
           setHideAudioTranscription(Boolean(response.data.leia.hideAudioTranscription));
@@ -559,6 +601,11 @@ export const Chat = () => {
     }));
   }, []);
 
+  // A short coaching message the background supervisor may push to the
+  // student (delivered piggybacked on a turn's response). Instructor-only
+  // flags never reach here — only an explicit nudge does.
+  const [nudge, setNudge] = useState<string | null>(null);
+
   // Runs a single user turn against the backend, looping while the model
   // returns tool calls. Each call is executed via the local tools
   // registry and its output shipped back as a function_call_output.
@@ -572,7 +619,17 @@ export const Chat = () => {
       if (initialMessage !== null) initialBody.message = initialMessage;
       if (toolsPayload.length > 0) initialBody.tools = toolsPayload;
 
+      // The supervisor may piggyback a nudge on any response in the round-trip
+      // (including an intermediate toolCalls response), so capture it whenever
+      // it appears, not just on the final turn.
+      const captureNudge = (resp: { data?: { nudge?: unknown } }) => {
+        if (typeof resp.data?.nudge === "string" && resp.data.nudge.trim()) {
+          setNudge(resp.data.nudge.trim());
+        }
+      };
+
       let response = await axios.post(baseUrl, initialBody);
+      captureNudge(response);
       // Cap the round-trip depth so a misbehaving tool loop cannot brick
       // the UI. Matches the practical ceiling we see in tool-using flows.
       for (let i = 0; i < 8; i++) {
@@ -605,6 +662,7 @@ export const Chat = () => {
         const continuationBody: Record<string, unknown> = { toolResults: results };
         if (toolsPayload.length > 0) continuationBody.tools = toolsPayload;
         response = await axios.post(baseUrl, continuationBody);
+        captureNudge(response);
       }
 
       return typeof response.data?.message === "string" ? response.data.message : "";
@@ -1165,6 +1223,22 @@ export const Chat = () => {
                 )}
                 <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
                   <TypingAnimation />
+                </div>
+              </div>
+            )}
+            {nudge && (
+              <div className="flex justify-center my-2">
+                <div className="max-w-xl w-full bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 shadow-sm flex items-start gap-3">
+                  <SparklesIcon className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-900 flex-1">{nudge}</p>
+                  <button
+                    type="button"
+                    onClick={() => setNudge(null)}
+                    className="text-amber-400 hover:text-amber-600 flex-shrink-0"
+                    aria-label="Dismiss"
+                  >
+                    <XMarkIcon className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             )}

@@ -37,6 +37,14 @@ import LeiaPreviewDrawer from "../components/admin/LeiaPreview";
 import { writeReplicationName } from "../lib/replicationNames";
 import { useAuth } from "../context/useAuth";
 
+interface SupervisorFlag {
+  category: string;
+  severity: "low" | "medium" | "high";
+  note: string;
+  quote?: string | null;
+  at?: string;
+}
+
 interface LiveSession {
   id: string;
   user: { email: string; id: string };
@@ -50,6 +58,8 @@ interface LiveSession {
     isLeia: boolean;
     timestamp: string;
   } | null;
+  supervisorFlags?: SupervisorFlag[];
+  supervisorFlagCount?: number;
 }
 
 // Loose typing for the parsed LEIA spec returned by the workbench-backend.
@@ -332,6 +342,31 @@ export const LiveDashboard = () => {
           prev.map((s) =>
             s.id === data.sessionId
               ? { ...s, finishedAt: data.finishedAt, isActive: false }
+              : s
+          )
+        );
+      }
+    );
+    newSocket.on(
+      "session:supervisorFlag",
+      (data: {
+        sessionId: string;
+        flags?: SupervisorFlag[];
+        flagCount?: number;
+      }) => {
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === data.sessionId
+              ? {
+                  ...s,
+                  supervisorFlags: [
+                    ...(s.supervisorFlags || []),
+                    ...(data.flags || []),
+                  ],
+                  supervisorFlagCount:
+                    data.flagCount ??
+                    (s.supervisorFlagCount || 0) + (data.flags?.length || 0),
+                }
               : s
           )
         );
@@ -658,6 +693,20 @@ const SessionRow: React.FC<{
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
           {formatTimeAgo(item.startedAt)}
         </Typography>
+        {item.supervisorFlagCount ? (
+          <Chip
+            size="small"
+            label={`⚑ ${item.supervisorFlagCount}`}
+            sx={{
+              height: 20,
+              fontSize: 11,
+              fontWeight: 600,
+              mt: 0.5,
+              bgcolor: "rgba(211,47,47,0.08)",
+              color: "error.main",
+            }}
+          />
+        ) : null}
       </Box>
     </ButtonBase>
   );
@@ -770,6 +819,51 @@ const SessionDetail: React.FC<{
           </Typography>
         )}
       </Paper>
+
+      {item.supervisorFlags && item.supervisorFlags.length > 0 && (
+        <Paper
+          variant="outlined"
+          sx={{ p: 2.5, borderRadius: 2, mb: 3, borderColor: "error.light" }}
+        >
+          <Typography
+            variant="overline"
+            sx={{ display: "block", color: "error.main", mb: 1 }}
+          >
+            Supervisor flags ({item.supervisorFlags.length})
+          </Typography>
+          <Stack gap={1}>
+            {item.supervisorFlags.map((flag, idx) => (
+              <Box
+                key={idx}
+                sx={{
+                  px: 1.5,
+                  py: 1,
+                  borderRadius: 1.5,
+                  bgcolor: "rgba(211,47,47,0.05)",
+                  borderColor:
+                    flag.severity === "high"
+                      ? "error.main"
+                      : flag.severity === "medium"
+                        ? "warning.main"
+                        : "divider",
+                }}
+              >
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase" }}>
+                  {flag.category} · {flag.severity}
+                </Typography>
+                <Typography sx={{ fontSize: 13, color: "text.primary", mt: 0.25 }}>
+                  {flag.note}
+                </Typography>
+                {flag.quote ? (
+                  <Typography sx={{ fontSize: 12, color: "text.disabled", fontStyle: "italic", mt: 0.25 }}>
+                    “{flag.quote}”
+                  </Typography>
+                ) : null}
+              </Box>
+            ))}
+          </Stack>
+        </Paper>
+      )}
 
       <Box sx={{ mb: 4 }}>
         <DetailRow label="Started">
