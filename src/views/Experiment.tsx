@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { useAuth } from '../context';
 
 interface Experiment {
   id: string;
@@ -20,6 +21,7 @@ interface Experiment {
 
 export const Experiment: React.FC = () => {
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [experiment, setExperiment] = useState<Experiment>();
   const [loading, setLoading] = useState<boolean>(true);
   const { id } = useParams<{ id: string }>();
@@ -30,42 +32,34 @@ export const Experiment: React.FC = () => {
   useEffect(() => {
     const fetchExperiment = async () => {
       try {
-        const adminSecret = localStorage.getItem('adminSecret');
-        if (!adminSecret) {
-          navigate('/login');
-          return;
-        }
         const response = await axios.get<Experiment>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments/${id}`,
           {
             headers: {
-              Authorization: `Bearer ${adminSecret}`,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
         setExperiment(response.data);
         console.log('Experiment:', response.data);
       } catch (error: any) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          setTimeout(() => navigate('/login'), 2000);
-        } else {
-          console.error('Failed to load experiments:', error);
-        }
+        console.error('Failed to load experiments:', error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchExperiment();
-  }, [id, navigate]);
+  }, [id, token]);
+
+  useEffect(() => {
+    if (experiment && experiment.name) {
+      setReplicationName(`${experiment.name}`);
+    }
+  }, [experiment]);
 
   const handleCreateReplication = async () => {
     try {
-      const adminSecret = localStorage.getItem('adminSecret');
-      if (!adminSecret) {
-        navigate('/login');
-        return;
-      }
       const response = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
         {
@@ -74,7 +68,7 @@ export const Experiment: React.FC = () => {
         },
         {
           headers: {
-            Authorization: `Bearer ${adminSecret}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
@@ -83,11 +77,7 @@ export const Experiment: React.FC = () => {
       setReplicationName('');
       navigate(`/replications/${response.data.id}`);
     } catch (error: any) {
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        setTimeout(() => navigate('/login'), 2000);
-      } else {
-        console.error('Failed to create replication:', error);
-      }
+      console.error('Failed to create replication:', error);
     }
   };
 
@@ -102,7 +92,7 @@ export const Experiment: React.FC = () => {
           <h2 className="text-lg font-semibold">Experiment preview</h2>
           <div>
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/experiments')}
               className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition duration-200"
             >
               Go back
@@ -115,8 +105,8 @@ export const Experiment: React.FC = () => {
             </button>
           </div>
         </div>
-        <SyntaxHighlighter 
-          language="json" 
+        <SyntaxHighlighter
+          language="json"
           style={docco}
           wrapLongLines={true}
           showLineNumbers={true}
@@ -133,7 +123,7 @@ export const Experiment: React.FC = () => {
               setReplicationName('');
             }
           }}
-        > 
+        >
           <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
           >
@@ -162,8 +152,8 @@ export const Experiment: React.FC = () => {
                 onClick={handleCreateReplication}
                 disabled={!replicationName.trim()}
                 className={`px-4 py-2 rounded-md ${
-                  replicationName.trim() 
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                  replicationName.trim()
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
                     : 'bg-blue-300 text-white cursor-not-allowed'
                 }`}
               >

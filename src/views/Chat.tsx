@@ -1,10 +1,35 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { UserCircleIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
+import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
+import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
+import { LukeAudioWidget } from "../components/LukeAudioWidget";
+import { SessionTimer } from "../components/SessionTimer";
+import {
+  VoiceModeWithWidgets,
+  findCatalogEntry,
+  useWidgetsContext,
+  type WidgetDefinition,
+} from "../widgets";
+import type { FrontendTool } from "@leia-org/luke-client";
+
+// Bridge component: registered inside a WidgetsProvider, syncs the live
+// tools registry to a ref owned by the parent so non-hook code (form
+// submit handlers, tool round-trip loops) can read it on demand without
+// having to be re-rendered when the set changes.
+const ToolsBridge: React.FC<{
+  onTools: (tools: Record<string, FrontendTool>) => void;
+}> = ({ onTools }) => {
+  const { tools } = useWidgetsContext();
+  useEffect(() => {
+    onTools(tools as Record<string, FrontendTool>);
+  }, [tools, onTools]);
+  return null;
+};
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
@@ -64,6 +89,42 @@ interface Session {
   score: number | null | undefined;
 }
 
+type WidgetConfig = {
+  widgetType: string;
+  slot?: "left" | "right" | "main";
+  params?: Record<string, unknown>;
+  tools?: Array<unknown>;
+};
+
+type ChatLukeConfig = {
+  provider: string;
+  voice: string;
+  widgets?: WidgetConfig[];
+};
+
+type LeiaSessionPayload = {
+  lukeConfig?: Partial<ChatLukeConfig> | null;
+  leia?: {
+    spec?: {
+      problem?: {
+        spec?: {
+          widgets?: WidgetConfig[];
+        };
+      };
+    };
+  };
+};
+
+const DEFAULT_LUKE_CONFIG = {
+  provider: "gemini",
+  voice: "Puck",
+} satisfies Pick<ChatLukeConfig, "provider" | "voice">;
+
+function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[] {
+  const widgets = leia?.leia?.spec?.problem?.spec?.widgets;
+  return Array.isArray(widgets) ? widgets : [];
+}
+
 export const Chat = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
@@ -87,49 +148,103 @@ export const Chat = () => {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
-  const [audioMode, setAudioMode] = useState<"text" | "audio">("text");
+  const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
+  const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
+  const [leiaName, setLeiaName] = useState<string | null>(null);
+  const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
+  // Live mirror of the widget-registered tools. handleSubmit reads it on
+  // each turn without re-binding, and the tool round-trip loop uses it to
+  // execute calls coming back from the model.
+  const toolsRef = useRef<Record<string, FrontendTool>>({});
+  const handleToolsSync = useCallback((t: Record<string, FrontendTool>) => {
+    toolsRef.current = t;
+  }, []);
+
+  // Resolve the configured widgets against the local catalog once per
+  // lukeConfig change. Same shape used in luke mode and text mode.
+  const widgetDefs = useMemo<WidgetDefinition[]>(() => {
+    const list = lukeConfig?.widgets ?? [];
+    return list
+      .map((w) => {
+        const entry = findCatalogEntry(w.widgetType);
+        if (!entry) return null;
+        const slot = w.slot === "left" ? "left" : "right";
+        return {
+          id: `${w.widgetType}-${slot}`,
+          slot,
+          Component: entry.Component,
+          props: w.params ? { params: w.params } : undefined,
+        } as WidgetDefinition;
+      })
+      .filter((w): w is WidgetDefinition => w !== null);
+  }, [lukeConfig]);
+
+  // Text mode renders an extra side panel that hosts the same widgets
+  // luke mode mounts. The panel is what registers the tool functions in
+  // the WidgetsProvider, so without it the tools payload would be empty.
+  const hasTextWidgets =
+    audioMode !== "luke" &&
+    audioMode !== "audio" &&
+    configuration?.mode !== "transcription" &&
+    widgetDefs.length > 0;
+  // Which sides we need to make room for. The chat column carves out the
+  // same half (left or right) that the panel occupies, otherwise the
+  // panel sits on top of the messages.
+  const hasLeftSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "left");
+  const hasRightSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "right");
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
+  const [sessionTime, setSessionTime] = useState<number | null>(null);
+
+  const handleTranscriptComplete = useCallback(
+    (
+      transcript: string,
+      isLeia: boolean,
+      timestamp: Date,
+      sequence: number,
+    ) => {
+      const newMessage: Message = {
+        text: transcript,
+        timestamp: timestamp,
+        isLeia,
+        id: generateMessageId(),
+        sequence: sequence,
+      };
+      setMessages((prev) => {
+        const updated = [...prev, newMessage];
+
+        return updated.sort((a, b) => {
+          if (a.sequence !== undefined && b.sequence !== undefined) {
+            return a.sequence - b.sequence;
+          }
+          return (
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+        });
+      });
+    },
+    [],
+  );
+
+  const handleAudioError = useCallback((error: Error) => {
+    console.error("Audio error:", error);
+    setLoadError(error.message);
+  }, []);
 
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
     enabled: audioMode === "audio",
     forceMute: showInstructions,
-    onTranscriptComplete: useCallback(
-      (
-        transcript: string,
-        isLeia: boolean,
-        timestamp: Date,
-        sequence: number,
-      ) => {
-        const newMessage: Message = {
-          text: transcript,
-          timestamp: timestamp,
-          isLeia,
-          id: generateMessageId(),
-          sequence: sequence,
-        };
-        setMessages((prev) => {
-          const updated = [...prev, newMessage];
+    onTranscriptComplete: handleTranscriptComplete,
+    onError: handleAudioError,
+  });
 
-          return updated.sort((a, b) => {
-            if (a.sequence !== undefined && b.sequence !== undefined) {
-              return a.sequence - b.sequence;
-            }
-            return (
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-            );
-          });
-        });
-      },
-      [],
-    ),
-    onError: useCallback((error: Error) => {
-      console.error("Realtime audio error:", error);
-      setLoadError(error.message);
-    }, []),
+  const lukeToken = useLukeToken({
+    sessionId: sessionId || "",
+    enabled: audioMode === "luke",
+    onError: handleAudioError,
   });
 
   // Función mejorada para scroll automático usando utilidades
@@ -172,23 +287,14 @@ export const Chat = () => {
     setFailedMessage(null);
 
     try {
-      const response = await axios.post(
-        `${
-          import.meta.env.VITE_APP_BACKEND
-        }/api/v1/interactions/${sessionId}/messages`,
-        {
-          message: failedMessage,
-        },
-      );
-
-      if (response.status === 200) {
+      const leiaText = await runMessageTurn(failedMessage);
+      if (leiaText) {
         const leiaMessage: Message = {
-          text: response.data.message,
+          text: leiaText,
           timestamp: new Date(),
           isLeia: true,
           id: generateMessageId(),
         };
-
         setMessages((prev) => [...prev, leiaMessage]);
       }
     } catch (error) {
@@ -239,6 +345,11 @@ export const Chat = () => {
       if (response.status === 200) {
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
+        const durationSeconds = response.data.replication?.duration;
+        if (typeof durationSeconds === "number" && durationSeconds > 0) {
+          setSessionTime(durationSeconds / 60);
+        }
+        setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
@@ -263,6 +374,31 @@ export const Chat = () => {
         if (response.data.leia?.audioMode === "realtime") {
           console.log("Audio mode detected, switching to audio interface");
           setAudioMode("audio");
+        } else if (response.data.leia?.audioMode === "luke") {
+          console.log("Luke audio mode detected");
+          setAudioMode("luke");
+        }
+        // Widgets authored in Designer live on problem.spec.widgets. Older
+        // replications may still carry them under lukeConfig.widgets, so use
+        // the problem definition first and keep the runner config as fallback.
+        const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
+        const problemWidgets = getProblemWidgets(responseLeia);
+        const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
+        const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
+          ? runnerLukeConfig.widgets
+          : [];
+        const widgets = problemWidgets.length > 0 ? problemWidgets : runnerWidgets;
+        if (runnerLukeConfig || widgets.length > 0) {
+          setLukeConfig({
+            provider: runnerLukeConfig?.provider ?? DEFAULT_LUKE_CONFIG.provider,
+            voice: runnerLukeConfig?.voice ?? DEFAULT_LUKE_CONFIG.voice,
+            widgets,
+          });
+        } else {
+          setLukeConfig(null);
+        }
+        if (response.data.leia?.hideAudioTranscription !== undefined) {
+          setHideAudioTranscription(Boolean(response.data.leia.hideAudioTranscription));
         }
         let messages = response.data.messages;
 
@@ -386,6 +522,87 @@ export const Chat = () => {
     }
   }, [messages]);
 
+  // Computes the wire-format tool list from the live registry. Strips
+  // `execute` (frontend-only) and keeps only what the runner needs to
+  // declare them to OpenAI Responses.
+  const buildToolsPayload = useCallback(() => {
+    const entries = Object.entries(toolsRef.current);
+    return entries.map(([name, tool]) => ({
+      name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+  }, []);
+
+  // A short coaching message the background supervisor may push to the
+  // student (delivered piggybacked on a turn's response). Instructor-only
+  // flags never reach here — only an explicit nudge does.
+  const [nudge, setNudge] = useState<string | null>(null);
+
+  // Runs a single user turn against the backend, looping while the model
+  // returns tool calls. Each call is executed via the local tools
+  // registry and its output shipped back as a function_call_output.
+  // Resolves with the model's final text response.
+  const runMessageTurn = useCallback(
+    async (initialMessage: string | null): Promise<string> => {
+      const toolsPayload = buildToolsPayload();
+      const baseUrl = `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`;
+
+      const initialBody: Record<string, unknown> = {};
+      if (initialMessage !== null) initialBody.message = initialMessage;
+      if (toolsPayload.length > 0) initialBody.tools = toolsPayload;
+
+      // The supervisor may piggyback a nudge on any response in the round-trip
+      // (including an intermediate toolCalls response), so capture it whenever
+      // it appears, not just on the final turn.
+      const captureNudge = (resp: { data?: { nudge?: unknown } }) => {
+        if (typeof resp.data?.nudge === "string" && resp.data.nudge.trim()) {
+          setNudge(resp.data.nudge.trim());
+        }
+      };
+
+      let response = await axios.post(baseUrl, initialBody);
+      captureNudge(response);
+      // Cap the round-trip depth so a misbehaving tool loop cannot brick
+      // the UI. Matches the practical ceiling we see in tool-using flows.
+      for (let i = 0; i < 8; i++) {
+        const calls = response.data?.toolCalls;
+        if (!Array.isArray(calls) || calls.length === 0) break;
+
+        const results = await Promise.all(
+          calls.map(async (call: { callId: string; name: string; arguments: string }) => {
+            const tool = toolsRef.current[call.name];
+            let output: unknown;
+            if (!tool) {
+              output = { error: `tool '${call.name}' is not registered on this client` };
+            } else {
+              let args: Record<string, unknown> = {};
+              try {
+                args = call.arguments ? JSON.parse(call.arguments) : {};
+              } catch {
+                args = {};
+              }
+              try {
+                output = await tool.execute(args);
+              } catch (err) {
+                output = { error: (err as Error).message ?? "tool execution failed" };
+              }
+            }
+            return { callId: call.callId, output };
+          })
+        );
+
+        const continuationBody: Record<string, unknown> = { toolResults: results };
+        if (toolsPayload.length > 0) continuationBody.tools = toolsPayload;
+        response = await axios.post(baseUrl, continuationBody);
+        captureNudge(response);
+      }
+
+      return typeof response.data?.message === "string" ? response.data.message : "";
+    },
+    [buildToolsPayload, sessionId]
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (configuration?.mode === "transcription") return;
@@ -414,23 +631,14 @@ export const Chat = () => {
     // scrollToBottom();
 
     try {
-      const response = await axios.post(
-        `${
-          import.meta.env.VITE_APP_BACKEND
-        }/api/v1/interactions/${sessionId}/messages`,
-        {
-          message: messageText,
-        },
-      );
-
-      if (response.status === 200) {
+      const leiaText = await runMessageTurn(messageText);
+      if (leiaText) {
         const leiaMessage: Message = {
-          text: response.data.message,
+          text: leiaText,
           timestamp: new Date(),
           isLeia: true,
           id: generateMessageId(),
         };
-
         setMessages((prev) => [...prev, leiaMessage]);
       }
     } catch (error) {
@@ -450,7 +658,13 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
-    if (!messages.length && configuration?.mode !== "transcription") return;
+    if (
+      !messages.length &&
+      configuration?.mode !== "transcription" &&
+      audioMode !== "luke" &&
+      audioMode !== "audio"
+    )
+      return;
     setConcluding(true);
     if (configuration?.askSolution) {
       navigate("/edit");
@@ -476,6 +690,23 @@ export const Chat = () => {
       }
     }
   };
+
+  const handleTimerExpire = useCallback(async () => {
+    setConcluding(true);
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+      );
+      if (response.status === 200) {
+        setSession(response.data);
+        setShowSuccessModal(true);
+      }
+    } catch (error: any) {
+      setLoadError(error.response?.data?.error || "An unexpected error occurred");
+    } finally {
+      setConcluding(false);
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     if (session?.finishedAt && !showSuccessModal) {
@@ -563,7 +794,7 @@ export const Chat = () => {
               <p className="text-gray-600">{exercise?.description}</p>
               <p className="text-gray-600 mt-4">
                 When you're ready, click the button below to start the task.
-                {audioMode === "audio"
+                {(audioMode === "audio" || audioMode === "luke")
                   ? "Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need."
                   : ""}
               </p>
@@ -590,6 +821,13 @@ export const Chat = () => {
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
         <div className="flex gap-2">
+        {sessionTime && session?.startedAt && (
+          <SessionTimer
+            durationMinutes={sessionTime}
+            sessionStartedAt={session.startedAt}
+            onExpire={handleTimerExpire}
+          />
+        )}
           <button
             onClick={() => setShowInstructions(true)}
             className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
@@ -612,35 +850,118 @@ export const Chat = () => {
             onClick={handleFinishConversation}
             disabled={
               concluding ||
-              (!messages.length && configuration?.mode != "transcription")
+              (!messages.length &&
+                configuration?.mode !== "transcription" &&
+                audioMode !== "luke" &&
+                audioMode !== "audio")
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {concluding ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span className="hidden sm:inline">Processing...</span>
-              </>
-            ) : (
-              <>
-                <span className="hidden sm:inline">
-                  {configuration?.askSolution
-                    ? "Go to Editor"
-                    : "Finish Session"}
-                </span>
-                <span className="sm:hidden">
-                  {configuration?.askSolution
-                    ? "Go to Editor"
-                    : "Finish Session"}
-                </span>
-              </>
-            )}
+            {(() => {
+              const hasCodeEditorWidget =
+                audioMode !== "audio" &&
+                !!lukeConfig?.widgets?.some((w) => w.widgetType === "codeEditor");
+              const askSolutionLabel = hasCodeEditorWidget
+                ? "Send Solution"
+                : "Go to Editor";
+              return concluding ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span className="hidden sm:inline">Processing...</span>
+                </>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">
+                    {configuration?.askSolution
+                      ? askSolutionLabel
+                      : "Finish Session"}
+                  </span>
+                  <span className="sm:hidden">
+                    {configuration?.askSolution
+                      ? askSolutionLabel
+                      : "Finish Session"}
+                  </span>
+                </>
+              );
+            })()}
           </button>
         </div>
       </header>
 
+      {/* Widget side panel — text mode only. Luke mode renders its own
+          slots inside LukeAudioWidget; here we mount the same widgets in
+          a fixed right pane and bridge their tools out to the round-trip
+          loop owned by handleSubmit. */}
+      {hasTextWidgets && (
+        <VoiceModeWithWidgets widgets={widgetDefs}>
+          {({ rightSlot, leftSlot }) => (
+            <>
+              <ToolsBridge onTools={handleToolsSync} />
+              {rightSlot && (
+                <div className="fixed top-14 right-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-l border-neutral-800">
+                  {rightSlot}
+                </div>
+              )}
+              {leftSlot && (
+                <div className="fixed top-14 left-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-r border-neutral-800">
+                  {leftSlot}
+                </div>
+              )}
+            </>
+          )}
+        </VoiceModeWithWidgets>
+      )}
+
       {/* Contenido principal - Condicional según el modo */}
-      {configuration?.mode === "transcription" &&
+      {audioMode === "luke" ? (
+        /* Vista Luke - Componente nativo en el centro */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {lukeToken.isReady && lukeConfig ? (
+            (() => {
+              const base = (
+                <LukeAudioWidget
+                  wsUrl={lukeToken.wsUrl!}
+                  token={lukeToken.token!}
+                  lukeConfig={lukeConfig}
+                  leiaName={leiaName || undefined}
+                  forceMute={showInstructions}
+                  showTranscription={!hideAudioTranscription}
+                  mode="inline"
+                  onTranscriptComplete={handleTranscriptComplete}
+                />
+              );
+
+              if (widgetDefs.length === 0) return base;
+              return (
+                <VoiceModeWithWidgets widgets={widgetDefs}>
+                  {({ tools, leftSlot, rightSlot }) => (
+                    <LukeAudioWidget
+                      wsUrl={lukeToken.wsUrl!}
+                      token={lukeToken.token!}
+                      lukeConfig={lukeConfig}
+                      leiaName={leiaName || undefined}
+                      forceMute={showInstructions}
+                      showTranscription={!hideAudioTranscription}
+                      mode="inline"
+                      tools={tools as Record<string, import("@leia-org/luke-client").FrontendTool>}
+                      leftSlot={leftSlot}
+                      rightSlot={rightSlot}
+                      onTranscriptComplete={handleTranscriptComplete}
+                    />
+                  )}
+                </VoiceModeWithWidgets>
+              );
+            })()
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-gray-500 text-sm">Connecting to voice...</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : configuration?.mode === "transcription" &&
       !configuration?.data?.messages &&
       configuration?.data?.link ? (
         /* Vista de transcripción externa */
@@ -708,18 +1029,23 @@ export const Chat = () => {
             minHeight: "400px",
             maxHeight: mobileUtils.isMobile() ? "calc(100vh - 140px)" : "none",
             background: "#f9fafb",
+            // Carve out the half that the widget panel occupies so the
+            // messages don't slide under it.
+            paddingLeft: hasLeftSidePanel ? "50%" : undefined,
+            paddingRight: hasRightSidePanel ? "50%" : undefined,
           }}
         >
           <div
             ref={chatMessagesRef}
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
-            {messages.map((msg, index) => (
+            {hideAudioTranscription && (<LiveTranscriptionNotice/>)}
+            {!hideAudioTranscription && messages.map((msg, index, visibleMessages) => (
               <div
                 key={msg.id || index}
                 id={`message-${msg.id || index}`}
                 ref={
-                  msg.isLeia && index === messages.length - 1
+                  msg.isLeia && index === visibleMessages.length - 1
                     ? lastLeiaMessageRef
                     : null
                 }
@@ -757,7 +1083,7 @@ export const Chat = () => {
                   </p>
                   {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
                   {msg.isLeia &&
-                    index === messages.length - 1 &&
+                    index === visibleMessages.length - 1 &&
                     failedMessage &&
                     msg.text.includes(
                       "This message is taking longer than usual.",
@@ -807,17 +1133,39 @@ export const Chat = () => {
                 </div>
               </div>
             )}
+            {nudge && (
+              <div className="flex justify-center my-2">
+                <div className="max-w-xl w-full bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 shadow-sm flex items-start gap-3">
+                  <SparklesIcon className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-900 flex-1">{nudge}</p>
+                  <button
+                    type="button"
+                    onClick={() => setNudge(null)}
+                    className="text-amber-400 hover:text-amber-600 flex-shrink-0"
+                    aria-label="Dismiss"
+                  >
+                    <XMarkIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Input de chat - Ocultar solo en transcripción externa */}
-      {!(
+      {/* Input de chat - Ocultar en transcripción externa y en modo luke */}
+      {audioMode !== "luke" && !(
         configuration?.mode === "transcription" &&
         !configuration?.data?.messages &&
         configuration?.data?.link
       ) && (
-        <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-gray-50 z-10 chat-input">
+        <div
+          className="fixed bottom-0 px-4 pb-6 bg-gray-50 z-10 chat-input"
+          style={{
+            left: hasLeftSidePanel ? "50%" : 0,
+            right: hasRightSidePanel ? "50%" : 0,
+          }}
+        >
           <div className="max-w-3xl mx-auto relative">
             {/* Tooltip de mensaje de ejemplo */}
             {showTooltip && messages.length === 0 && (
@@ -1106,7 +1454,7 @@ export const Chat = () => {
         </div>
       )}
 
-      {/* Audio Controls Floating Popup - Only shown in audio mode */}
+      {/* Audio Controls Floating Popup - Legacy realtime mode */}
       {audioMode === "audio" && (
         <AudioControls
           isConnected={realtimeAudio.isConnected}
@@ -1120,6 +1468,7 @@ export const Chat = () => {
           onEndSession={handleFinishConversation}
         />
       )}
+
     </div>
   );
 };
