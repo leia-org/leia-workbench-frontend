@@ -111,6 +111,8 @@ interface LeiasSectionProps {
     idx: number
   ) => void;
   startingSessionLeiaId: string | null;
+  // Campos inválidos por Leia (clave: leiaId) devueltos por el backend.
+  invalidLeiaFields: Record<string, string[]>;
 }
 
 const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -183,6 +185,8 @@ interface LeiaEditorProps {
   ) => void;
   replicationId: string;
   startingSessionLeiaId: string | null;
+  // Campos que el backend marcó como inválidos para esta Leia.
+  invalidFields: string[];
 }
 
 const LeiaEditor: React.FC<LeiaEditorProps> = ({
@@ -201,6 +205,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onStartTestSession,
   replicationId,
   startingSessionLeiaId,
+  invalidFields,
 }) => {
   const [showAllVoices, setShowAllVoices] = useState(false);
   const [contentOpen, setContentOpen] = useState(false);
@@ -231,6 +236,12 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
     currentModelName === DEFAULT_PROVIDER ||
     isModelAvailable(currentModelName) ||
     validModelsForLeia.includes(currentModelName);
+
+  // Marcas de error devueltas por el backend en el último intento de guardar/activar.
+  const isModelMissing = invalidFields.includes("modelName");
+  const isApiKeyMissing =
+    invalidFields.includes("apiKeyId") ||
+    invalidFields.includes("apiKeyRequesterId");
 
   const showDashboardLink = Boolean(
     currentApiKeyObj &&
@@ -330,7 +341,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             }
             sx={{
               fontSize: 13,
-              ...(isCurrentModelValid
+              ...(isCurrentModelValid && !isModelMissing
                 ? {}
                 : {
                     color: "error.main",
@@ -399,7 +410,15 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                 const key = apiKeys.find((k) => k.id === selected);
                 return key?.description || "Select Key";
               }}
-              sx={{ fontSize: 13 }}
+              sx={{
+                fontSize: 13,
+                ...(isApiKeyMissing
+                  ? {
+                      color: "error.main",
+                      "& fieldset": { borderColor: "error.main" },
+                    }
+                  : {}),
+              }}
             >
               <MenuItem value="" sx={{ fontSize: 13, fontStyle: "italic" }}>
                 -- Clear Selection --
@@ -737,6 +756,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   onToggleEvaluateSolution,
   onStartTestSession,
   startingSessionLeiaId,
+  invalidLeiaFields,
 }) => {
   const leias = localReplication.experiment.leias;
 
@@ -778,6 +798,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
         startingSessionLeiaId={startingSessionLeiaId}
+        invalidFields={invalidLeiaFields[item.id] ?? []}
       />
     </Box>
   );
