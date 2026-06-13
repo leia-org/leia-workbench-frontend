@@ -20,6 +20,9 @@ export interface ReplicationLeia {
     apiKeyId?: string | null;
     audioMode?: "realtime" | "luke" | null;
     hideAudioTranscription?: boolean | null;
+    infographic?: {
+      showToStudent?: boolean;
+    };
     realtimeConfig?: {
       model?: string;
       voice?: string;

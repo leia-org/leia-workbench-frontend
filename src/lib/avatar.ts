@@ -1,4 +1,5 @@
 export type AvatarEntityPathSegment = "leias" | "personas" | "problems";
+export type LeiaInfographicVariant = "infographic" | "infographicSolution";
 
 const avatarPublicBaseUrl = (import.meta.env.VITE_AVATAR_PUBLIC_URL || "").replace(
   /\/+$/g,
@@ -15,6 +16,35 @@ export const buildOriginalAvatarPath = (
   }
 
   return `/images/${entity}/${trimmedId}/avatar/original.webp`;
+};
+
+export const buildLeiaInfographicPath = (
+  id?: string | null,
+  variant: LeiaInfographicVariant = "infographic",
+): string => {
+  const trimmedId = id?.trim();
+  if (!trimmedId) {
+    return "";
+  }
+
+  const fileName = variant === "infographicSolution" ? "solution" : "original";
+  return `/images/leias/${trimmedId}/infographic/${fileName}.png`;
+};
+
+export const buildLeiaInfographicPaths = (
+  id?: string | null,
+  variant: LeiaInfographicVariant = "infographic",
+): string[] => {
+  const trimmedId = id?.trim();
+  if (!trimmedId) {
+    return [];
+  }
+
+  const fileName = variant === "infographicSolution" ? "solution" : "original";
+  return ["png", "jpg"].map(
+    (extension) =>
+      `/images/leias/${trimmedId}/infographic/${fileName}.${extension}`,
+  );
 };
 
 export const resolveAvatarSrc = (value?: string | null): string => {
@@ -37,6 +67,8 @@ export const resolveAvatarSrc = (value?: string | null): string => {
   return `${avatarPublicBaseUrl}/${normalizedValue}`;
 };
 
+export const resolveStoredImageSrc = resolveAvatarSrc;
+
 export const buildAvatarCandidateSources = (
   primarySrc?: string | null,
   fallbackSrc?: string | null,
@@ -51,6 +83,21 @@ export const buildAvatarCandidateSources = (
   const resolvedFallback = resolveAvatarSrc(fallbackSrc);
   if (resolvedFallback && !candidates.includes(resolvedFallback)) {
     candidates.push(resolvedFallback);
+  }
+
+  return candidates;
+};
+
+export const buildStoredImageCandidateSources = (
+  ...sources: Array<string | null | undefined>
+): string[] => {
+  const candidates: string[] = [];
+
+  for (const source of sources) {
+    const resolved = resolveStoredImageSrc(source);
+    if (resolved && !candidates.includes(resolved)) {
+      candidates.push(resolved);
+    }
   }
 
   return candidates;

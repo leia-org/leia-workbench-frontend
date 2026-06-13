@@ -1,16 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { PhotoIcon } from "@heroicons/react/24/outline";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
+import InfographicViewer, {
+  type InfographicViewerHandle,
+} from "../components/InfographicViewer";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
 import { PersonaAvatar } from "../components/PersonaAvatar";
 import { SessionTimer } from "../components/SessionTimer";
-import { buildOriginalAvatarPath } from "../lib/avatar";
+import { buildLeiaInfographicPaths, buildOriginalAvatarPath } from "../lib/avatar";
 import {
   VoiceModeWithWidgets,
   findCatalogEntry,
@@ -153,8 +157,15 @@ type ChatLukeConfig = {
   widgets?: WidgetConfig[];
 };
 
+type StudentInfographic = {
+  src: string;
+  fallbackSrc?: string | null;
+  fallbackSources?: string[];
+};
+
 type LeiaSessionPayload = {
   lukeConfig?: Partial<ChatLukeConfig> | null;
+  infographic?: StudentInfographic | null;
   leia?: {
     spec?: {
       problem?: {
@@ -201,6 +212,8 @@ export const Chat = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
+  const [studentInfographic, setStudentInfographic] =
+    useState<StudentInfographic | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
   const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<
@@ -209,6 +222,8 @@ export const Chat = () => {
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const studentInfographicViewerRef =
+    useRef<InfographicViewerHandle | null>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
   // Live mirror of the widget-registered tools. handleSubmit reads it on
   // each turn without re-binding, and the tool round-trip loop uses it to
@@ -245,11 +260,14 @@ export const Chat = () => {
     audioMode !== "audio" &&
     configuration?.mode !== "transcription" &&
     widgetDefs.length > 0;
+  const hasStudentInfographic = Boolean(studentInfographic?.src);
+  const widgetHasLeftSlot = widgetDefs.some((w) => w.slot === "left");
+  const widgetHasRightSlot = widgetDefs.some((w) => w.slot === "right");
   // Which sides we need to make room for. The chat column carves out the
   // same half (left or right) that the panel occupies, otherwise the
   // panel sits on top of the messages.
-  const hasLeftSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "left");
-  const hasRightSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "right");
+  const hasLeftSidePanel = hasTextWidgets && widgetHasLeftSlot;
+  const hasRightSidePanel = hasTextWidgets && widgetHasRightSlot;
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
 
@@ -449,6 +467,21 @@ export const Chat = () => {
         // replications may still carry them under lukeConfig.widgets, so use
         // the problem definition first and keep the runner config as fallback.
         const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
+        const infographic = responseLeia?.infographic;
+        setStudentInfographic(
+          infographic?.src
+            ? {
+                src: infographic.src,
+                fallbackSrc:
+                  infographic.fallbackSrc ||
+                  buildLeiaInfographicPaths(resourceIds.leiaId, "infographic")[0],
+                fallbackSources: [
+                  ...(infographic.fallbackSources || []),
+                  ...buildLeiaInfographicPaths(resourceIds.leiaId, "infographic"),
+                ],
+              }
+            : null,
+        );
         const problemWidgets = getProblemWidgets(responseLeia);
         const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
         const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
@@ -793,6 +826,21 @@ export const Chat = () => {
     }
   }, [session, showSuccessModal, navigate]);
 
+  const renderStudentInfographic = () =>
+    studentInfographic ? (
+      <InfographicViewer
+        ref={studentInfographicViewerRef}
+        src={studentInfographic.src}
+        candidateSources={[
+          studentInfographic.src,
+          studentInfographic.fallbackSrc,
+          ...(studentInfographic.fallbackSources || []),
+        ]}
+        title="Exercise infographic"
+        hidden
+      />
+    ) : null;
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -895,6 +943,17 @@ export const Chat = () => {
             onExpire={handleTimerExpire}
           />
         )}
+          {hasStudentInfographic && (
+            <button
+              onClick={() => studentInfographicViewerRef.current?.open()}
+              className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+              title="Open exercise infographic"
+              aria-label="Open exercise infographic"
+            >
+              <PhotoIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Infographic</span>
+            </button>
+          )}
           <button
             onClick={() => setShowInstructions(true)}
             className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
@@ -959,23 +1018,27 @@ export const Chat = () => {
           slots inside LukeAudioWidget; here we mount the same widgets in
           a fixed right pane and bridge their tools out to the round-trip
           loop owned by handleSubmit. */}
+      {hasStudentInfographic && renderStudentInfographic()}
+
       {hasTextWidgets && (
         <VoiceModeWithWidgets widgets={widgetDefs}>
-          {({ rightSlot, leftSlot }) => (
-            <>
-              <ToolsBridge onTools={handleToolsSync} />
-              {rightSlot && (
-                <div className="fixed top-14 right-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-l border-neutral-800">
-                  {rightSlot}
-                </div>
-              )}
-              {leftSlot && (
-                <div className="fixed top-14 left-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-r border-neutral-800">
-                  {leftSlot}
-                </div>
-              )}
-            </>
-          )}
+          {({ rightSlot, leftSlot }) => {
+            return (
+              <>
+                <ToolsBridge onTools={handleToolsSync} />
+                {rightSlot && (
+                  <div className="fixed top-14 right-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-l bg-neutral-900 text-white border-neutral-800">
+                    {rightSlot}
+                  </div>
+                )}
+                {leftSlot && (
+                  <div className="fixed top-14 left-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-r bg-neutral-900 text-white border-neutral-800">
+                    {leftSlot}
+                  </div>
+                )}
+              </>
+            );
+          }}
         </VoiceModeWithWidgets>
       )}
 
@@ -1003,23 +1066,30 @@ export const Chat = () => {
               if (widgetDefs.length === 0) return base;
               return (
                 <VoiceModeWithWidgets widgets={widgetDefs}>
-                  {({ tools, leftSlot, rightSlot }) => (
-                    <LukeAudioWidget
-                      wsUrl={lukeToken.wsUrl!}
-                      token={lukeToken.token!}
-                      lukeConfig={lukeConfig}
-                      leiaName={leiaName || undefined}
-                      avatarSrc={personaAvatar || undefined}
-                      avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
-                      forceMute={showInstructions}
-                      showTranscription={!hideAudioTranscription}
-                      mode="inline"
-                      tools={tools as Record<string, import("@leia-org/luke-client").FrontendTool>}
-                      leftSlot={leftSlot}
-                      rightSlot={rightSlot}
-                      onTranscriptComplete={handleTranscriptComplete}
-                    />
-                  )}
+                  {({ tools, leftSlot, rightSlot }) => {
+                    return (
+                      <LukeAudioWidget
+                        wsUrl={lukeToken.wsUrl!}
+                        token={lukeToken.token!}
+                        lukeConfig={lukeConfig}
+                        leiaName={leiaName || undefined}
+                        avatarSrc={personaAvatar || undefined}
+                        avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
+                        forceMute={showInstructions}
+                        showTranscription={!hideAudioTranscription}
+                        mode="inline"
+                        tools={
+                          tools as Record<
+                            string,
+                            import("@leia-org/luke-client").FrontendTool
+                          >
+                        }
+                        leftSlot={leftSlot}
+                        rightSlot={rightSlot}
+                        onTranscriptComplete={handleTranscriptComplete}
+                      />
+                    );
+                  }}
                 </VoiceModeWithWidgets>
               );
             })()
