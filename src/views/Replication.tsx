@@ -658,6 +658,11 @@ export const Replication: React.FC = () => {
       ...localLeiaRunnerConfiguration,
       modelName,
     };
+    if (payload.infographic) {
+      payload.infographic = {
+        showToStudent: Boolean(payload.infographic.showToStudent),
+      };
+    }
     if ("provider" in payload) {
       delete (payload as Partial<typeof payload> & { provider?: string })
         .provider;

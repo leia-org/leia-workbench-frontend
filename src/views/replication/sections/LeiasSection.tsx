@@ -481,7 +481,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
       )}
       <FieldRow
         label="Show during exercise"
-        helper="Student sees the infographic in a side panel."
+        helper="Student can open the infographic during the exercise."
       >
         <Switch
           size="small"
