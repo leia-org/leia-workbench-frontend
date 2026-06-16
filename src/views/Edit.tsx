@@ -319,7 +319,7 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
                   <label className="relative cursor-pointer">
           <input
             type="file"
-            accept=".txt,.puml,.mmd,.xml,.xmi,.drawio,.docx,.md"
+            accept=".txt,.puml,.mmd,.xml,.xmi,.drawio,.docx,.md,.json"
             onChange={onFileUpload}
             className="sr-only"
           />
