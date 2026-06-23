@@ -73,8 +73,15 @@ const ensureMermaid = () => {
     startOnLoad: false,
     theme: "default",
     securityLevel: "loose",
+    suppressErrorRendering: true,
   });
   mermaidInitialised = true;
+};
+
+const cleanupMermaidRenderArtifacts = (id: string) => {
+  document.getElementById(id)?.remove();
+  document.getElementById(`d${id}`)?.remove();
+  document.getElementById(`i${id}`)?.remove();
 };
 
 // Heuristic detection for content that looks like mermaid even when the
@@ -1217,6 +1224,7 @@ const MermaidPreview: React.FC<{ code: string; sessionId: string }> = ({
     ensureMermaid();
     const render = async () => {
       try {
+        cleanupMermaidRenderArtifacts(idRef.current);
         const { svg: rendered } = await mermaid.render(idRef.current, code);
         if (!cancelled) {
           setSvg(rendered);
@@ -1232,6 +1240,7 @@ const MermaidPreview: React.FC<{ code: string; sessionId: string }> = ({
     render();
     return () => {
       cancelled = true;
+      cleanupMermaidRenderArtifacts(idRef.current);
     };
   }, [code, sessionId]);
 
