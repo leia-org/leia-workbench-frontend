@@ -77,9 +77,13 @@ interface Replication {
   isRepeatable: boolean;
   code: string;
   form: string;
+  dataUsageConsentRequired?: boolean;
+  dataUsageConsentMessage?: string;
+  conversationAutomatedRemoval?: boolean;
 }
 
 interface Session {
+  id?: string;
   isTest: boolean;
   startedAt: string;
   finishedAt: string | null | undefined;
@@ -87,6 +91,9 @@ interface Session {
   result: string | null | undefined;
   evaluation: string | null | undefined;
   score: number | null | undefined;
+  dataUsageConsentStatus?: "accepted" | "declined" | "not_required";
+  dataUsageConsentAccepted?: boolean | null;
+  dataUsageConsentDecidedAt?: string | null;
 }
 
 type WidgetConfig = {
@@ -120,6 +127,11 @@ const DEFAULT_LUKE_CONFIG = {
   voice: "Puck",
 } satisfies Pick<ChatLukeConfig, "provider" | "voice">;
 
+const getRequestErrorMessage = (error: unknown) =>
+  axios.isAxiosError(error)
+    ? error.response?.data?.error || "An unexpected error occurred"
+    : "An unexpected error occurred";
+
 function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[] {
   const widgets = leia?.leia?.spec?.problem?.spec?.widgets;
   return Array.isArray(widgets) ? widgets : [];
@@ -152,6 +164,10 @@ export const Chat = () => {
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
+  const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
+    useState(false);
+  const [dataUsageConsentDeclinedMessage, setDataUsageConsentDeclinedMessage] =
+    useState<string | null>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -197,6 +213,13 @@ export const Chat = () => {
   const hasRightSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "right");
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
+  const dataUsageConsentBlocking =
+    Boolean(replication?.dataUsageConsentRequired) &&
+    !session?.isRunnerInitialized &&
+    session?.dataUsageConsentStatus !== "accepted" &&
+    session?.dataUsageConsentStatus !== "not_required" &&
+    !session?.finishedAt &&
+    !session?.isTest;
 
   const handleTranscriptComplete = useCallback(
     (
@@ -235,15 +258,15 @@ export const Chat = () => {
 
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
-    enabled: audioMode === "audio",
-    forceMute: showInstructions,
+    enabled: audioMode === "audio" && !dataUsageConsentBlocking,
+    forceMute: showInstructions || dataUsageConsentBlocking,
     onTranscriptComplete: handleTranscriptComplete,
     onError: handleAudioError,
   });
 
   const lukeToken = useLukeToken({
     sessionId: sessionId || "",
-    enabled: audioMode === "luke",
+    enabled: audioMode === "luke" && !dataUsageConsentBlocking,
     onError: handleAudioError,
   });
 
@@ -297,7 +320,7 @@ export const Chat = () => {
         };
         setMessages((prev) => [...prev, leiaMessage]);
       }
-    } catch (error) {
+    } catch {
       // Si falla de nuevo, guardar el mensaje fallido y mostrar error
       setFailedMessage(failedMessage);
       setMessages((prev) => [
@@ -332,7 +355,7 @@ export const Chat = () => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as any);
+      handleSubmit(e as unknown as React.FormEvent);
     }
   };
 
@@ -420,15 +443,13 @@ export const Chat = () => {
           }));
         setMessages(sortedMessages);
       }
-    } catch (error: any) {
-      setLoadError(
-        error.response?.data?.error || "An unexpected error occurred",
-      );
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
     }
     setTimeout(() => {
       setLoading(false);
     }, 1000);
-  }, [sessionId, navigate]);
+  }, [sessionId]);
 
   useEffect(() => {
     loadData();
@@ -605,6 +626,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dataUsageConsentBlocking || dataUsageConsentDeclinedMessage) return;
     if (configuration?.mode === "transcription") return;
 
     const messageText = newMessageText.trim();
@@ -641,7 +663,7 @@ export const Chat = () => {
         };
         setMessages((prev) => [...prev, leiaMessage]);
       }
-    } catch (error) {
+    } catch {
       setFailedMessage(messageText);
       setMessages((prev) => [
         ...prev,
@@ -658,6 +680,7 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
+    if (dataUsageConsentBlocking || dataUsageConsentDeclinedMessage) return;
     if (
       !messages.length &&
       configuration?.mode !== "transcription" &&
@@ -681,10 +704,8 @@ export const Chat = () => {
           setSession(updatedSession);
           setShowSuccessModal(true);
         }
-      } catch (error: any) {
-        setLoadError(
-          error.response?.data?.error || "An unexpected error occurred",
-        );
+      } catch (error: unknown) {
+        setLoadError(getRequestErrorMessage(error));
       } finally {
         setConcluding(false);
       }
@@ -692,6 +713,7 @@ export const Chat = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
+    if (dataUsageConsentBlocking || dataUsageConsentDeclinedMessage) return;
     setConcluding(true);
     try {
       const response = await axios.post(
@@ -701,15 +723,48 @@ export const Chat = () => {
         setSession(response.data);
         setShowSuccessModal(true);
       }
-    } catch (error: any) {
-      setLoadError(error.response?.data?.error || "An unexpected error occurred");
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
     } finally {
       setConcluding(false);
     }
-  }, [sessionId]);
+  }, [sessionId, dataUsageConsentBlocking, dataUsageConsentDeclinedMessage]);
+
+  const handleDataUsageConsentDecision = async (accepted: boolean) => {
+    if (dataUsageConsentSubmitting) return;
+    setDataUsageConsentSubmitting(true);
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/data-usage-consent`,
+        { accepted },
+      );
+
+      if (accepted) {
+        setSession(response.data.session);
+        await loadData();
+        return;
+      }
+
+      localStorage.removeItem("sessionId");
+      if (response.data?.removed) {
+        setDataUsageConsentDeclinedMessage(
+          "You did not consent. This conversation has been removed automatically, and the activity cannot continue.",
+        );
+      } else {
+        setSession(response.data.session);
+        setDataUsageConsentDeclinedMessage(
+          "You did not consent. This conversation has been marked as declined, and the activity cannot continue.",
+        );
+      }
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
+    } finally {
+      setDataUsageConsentSubmitting(false);
+    }
+  };
 
   useEffect(() => {
-    if (session?.finishedAt && !showSuccessModal) {
+    if (session?.finishedAt && !showSuccessModal && !dataUsageConsentDeclinedMessage) {
       // Start countdown and redirect
       const timer = setInterval(() => {
         setRedirectingIn((prev) => {
@@ -724,7 +779,7 @@ export const Chat = () => {
 
       return () => clearInterval(timer);
     }
-  }, [session, showSuccessModal, navigate]);
+  }, [session, showSuccessModal, navigate, dataUsageConsentDeclinedMessage]);
 
   if (loading) {
     return (
@@ -764,7 +819,66 @@ export const Chat = () => {
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
       />
 
-      {showInstructions && (
+      {dataUsageConsentBlocking && !dataUsageConsentDeclinedMessage && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Data Usage Consent Acceptance
+              </h2>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-gray-600 whitespace-pre-wrap">
+                {replication?.dataUsageConsentMessage}
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t flex flex-col sm:flex-row justify-end gap-2">
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                No, I do not consent
+              </button>
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Yes, I consent
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dataUsageConsentDeclinedMessage && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
+            <div className="px-6 py-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Consent declined
+              </h2>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-gray-600">{dataUsageConsentDeclinedMessage}</p>
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end">
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Home
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInstructions && !dataUsageConsentBlocking && !dataUsageConsentDeclinedMessage && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center px-6 py-4 border-b">
@@ -821,7 +935,7 @@ export const Chat = () => {
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
         <div className="flex gap-2">
-        {sessionTime && session?.startedAt && (
+        {!dataUsageConsentBlocking && sessionTime && session?.startedAt && (
           <SessionTimer
             durationMinutes={sessionTime}
             sessionStartedAt={session.startedAt}
@@ -850,6 +964,8 @@ export const Chat = () => {
             onClick={handleFinishConversation}
             disabled={
               concluding ||
+              dataUsageConsentBlocking ||
+              Boolean(dataUsageConsentDeclinedMessage) ||
               (!messages.length &&
                 configuration?.mode !== "transcription" &&
                 audioMode !== "luke" &&
@@ -1292,6 +1408,8 @@ export const Chat = () => {
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
                 disabled={
+                  dataUsageConsentBlocking ||
+                  Boolean(dataUsageConsentDeclinedMessage) ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio"
                 }

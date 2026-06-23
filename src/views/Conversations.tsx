@@ -57,6 +57,9 @@ interface Session {
   messages: Message[];
   user: { email: string } | null;
   supervisorFlags?: SupervisorFlag[] | null;
+  dataUsageConsentStatus?: "accepted" | "declined" | "not_required";
+  dataUsageConsentDecidedAt?: string | null;
+  dataUsageAutomatedRemovalApplied?: boolean;
 }
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
@@ -86,6 +89,14 @@ const looksLikeMermaid = (text: string): boolean => {
   if (!first) return false;
   return /^(graph |flowchart |sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|requirementDiagram|gitGraph|mindmap|timeline|quadrantChart|sankey)/i
     .test(first);
+};
+
+const formatDataUsageConsent = (
+  status?: "accepted" | "declined" | "not_required"
+) => {
+  if (status === "accepted") return "Consent accepted";
+  if (status === "declined") return "Consent declined";
+  return "Consent not required";
 };
 
 const readStoredReplicationTokens = (): Record<string, string> => {
@@ -470,6 +481,8 @@ const SessionRow: React.FC<{
         {item.finishedAt ? "Completed" : "In progress"}
         {" · "}
         {item.messages.length} msg
+        {" · "}
+        {formatDataUsageConsent(item.dataUsageConsentStatus)}
         {item.score != null ? ` · Score ${item.score}` : ""}
       </Typography>
     </Box>
@@ -617,6 +630,22 @@ const SessionDetail: React.FC<{
             }}
           />
         )}
+        <Chip
+          size="small"
+          label={formatDataUsageConsent(session.dataUsageConsentStatus)}
+          sx={{
+            height: 22,
+            fontSize: 11,
+            bgcolor:
+              session.dataUsageConsentStatus === "declined"
+                ? "rgba(220, 38, 38, 0.06)"
+                : "surfaces.subtle",
+            color:
+              session.dataUsageConsentStatus === "declined"
+                ? "error.main"
+                : "text.secondary",
+          }}
+        />
       </Stack>
 
       <Typography

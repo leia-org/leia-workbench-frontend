@@ -59,6 +59,9 @@ export interface ReplicationData {
   createdAt: string;
   updatedAt: string;
   form: string | undefined | null;
+  dataUsageConsentRequired: boolean;
+  dataUsageConsentMessage: string;
+  conversationAutomatedRemoval: boolean;
   experiment: {
     name: string;
     leias: ReplicationLeia[];

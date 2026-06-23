@@ -15,6 +15,7 @@ import { ReplicationSubSidebar, type SectionId } from "./replication/Replication
 import { GeneralSection } from "./replication/sections/GeneralSection";
 import { LeiasSection } from "./replication/sections/LeiasSection";
 import { SettingsSection } from "./replication/sections/SettingsSection";
+import { DataUsageSection } from "./replication/sections/DataUsageSection";
 import { ConversationsPlaceholder } from "./replication/sections/ConversationsPlaceholder";
 import { LivePlaceholder } from "./replication/sections/LivePlaceholder";
 import type { ReplicationData } from "./replication/types";
@@ -376,6 +377,33 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
       console.error("Delete error:", err);
+    }
+  };
+
+  const handleUpdateDataUsage = async (dataUsage: {
+    dataUsageConsentRequired: boolean;
+    dataUsageConsentMessage: string;
+    conversationAutomatedRemoval: boolean;
+  }) => {
+    if (!replication) return;
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/data-usage`,
+        dataUsage,
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      toast.success("Data usage settings updated successfully", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Error updating data usage settings"), {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      console.error("Data usage update error:", err);
     }
   };
 
@@ -802,6 +830,13 @@ export const Replication: React.FC = () => {
             replication={replication}
             onChangeForm={handleChangeForm}
             onDeleteForm={handleDeleteForm}
+          />
+        );
+      case "dataUsage":
+        return (
+          <DataUsageSection
+            replication={replication}
+            onUpdateDataUsage={handleUpdateDataUsage}
           />
         );
       case "conversations":
