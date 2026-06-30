@@ -947,11 +947,11 @@ export const Chat = () => {
             <button
               onClick={() => studentInfographicViewerRef.current?.open()}
               className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
-              title="Open exercise infographic"
-              aria-label="Open exercise infographic"
+              title="Open exercise guidance"
+              aria-label="Open exercise guidance"
             >
               <PhotoIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Infographic</span>
+              <span className="hidden sm:inline">Guidance</span>
             </button>
           )}
           <button
