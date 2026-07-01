@@ -79,7 +79,21 @@ interface Replication {
   form: string;
 }
 
+interface DataUsageConfig {
+  dataUsageConsentRequired: boolean;
+  dataUsageConsentMessage: string;
+  conversationAutomatedRemoval: boolean;
+}
+
+interface SessionDataUsage {
+  config: DataUsageConfig;
+  consentStatus: "pending" | "accepted" | "declined" | "not_required";
+  decidedAt: string | null;
+  automatedRemovalApplied: boolean;
+}
+
 interface Session {
+  id?: string;
   isTest: boolean;
   startedAt: string;
   finishedAt: string | null | undefined;
@@ -87,6 +101,7 @@ interface Session {
   result: string | null | undefined;
   evaluation: string | null | undefined;
   score: number | null | undefined;
+  dataUsage?: SessionDataUsage | null;
 }
 
 type WidgetConfig = {
@@ -120,6 +135,11 @@ const DEFAULT_LUKE_CONFIG = {
   voice: "Puck",
 } satisfies Pick<ChatLukeConfig, "provider" | "voice">;
 
+const getRequestErrorMessage = (error: unknown) =>
+  axios.isAxiosError(error)
+    ? error.response?.data?.error || error.response?.data?.message || "An unexpected error occurred"
+    : "An unexpected error occurred";
+
 function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[] {
   const widgets = leia?.leia?.spec?.problem?.spec?.widgets;
   return Array.isArray(widgets) ? widgets : [];
@@ -152,6 +172,8 @@ export const Chat = () => {
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
+  const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
+    useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
@@ -197,6 +219,13 @@ export const Chat = () => {
   const hasRightSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "right");
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
+  const dataUsageConsentPending =
+    Boolean(session?.dataUsage?.config.dataUsageConsentRequired) &&
+    session?.dataUsage?.consentStatus !== "accepted" &&
+    session?.dataUsage?.consentStatus !== "declined" &&
+    session?.dataUsage?.consentStatus !== "not_required" &&
+    !session?.finishedAt &&
+    !session?.isTest;
 
   const handleTranscriptComplete = useCallback(
     (
@@ -235,15 +264,15 @@ export const Chat = () => {
 
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
-    enabled: audioMode === "audio",
-    forceMute: showInstructions,
+    enabled: audioMode === "audio" && !dataUsageConsentPending,
+    forceMute: showInstructions || dataUsageConsentPending,
     onTranscriptComplete: handleTranscriptComplete,
     onError: handleAudioError,
   });
 
   const lukeToken = useLukeToken({
     sessionId: sessionId || "",
-    enabled: audioMode === "luke",
+    enabled: audioMode === "luke" && !dataUsageConsentPending,
     onError: handleAudioError,
   });
 
@@ -605,6 +634,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dataUsageConsentPending) return;
     if (configuration?.mode === "transcription") return;
 
     const messageText = newMessageText.trim();
@@ -658,6 +688,7 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
+    if (dataUsageConsentPending) return;
     if (
       !messages.length &&
       configuration?.mode !== "transcription" &&
@@ -692,6 +723,7 @@ export const Chat = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
+    if (dataUsageConsentPending) return;
     setConcluding(true);
     try {
       const response = await axios.post(
@@ -701,12 +733,29 @@ export const Chat = () => {
         setSession(response.data);
         setShowSuccessModal(true);
       }
-    } catch (error: any) {
-      setLoadError(error.response?.data?.error || "An unexpected error occurred");
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
     } finally {
       setConcluding(false);
     }
-  }, [sessionId]);
+  }, [sessionId, dataUsageConsentPending]);
+
+  const handleDataUsageConsentDecision = async (accepted: boolean) => {
+    if (dataUsageConsentSubmitting) return;
+    setDataUsageConsentSubmitting(true);
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/data-usage-consent`,
+        { accepted },
+      );
+      setSession(response.data.session);
+      localStorage.setItem("session", JSON.stringify(response.data.session));
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
+    } finally {
+      setDataUsageConsentSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (session?.finishedAt && !showSuccessModal) {
@@ -764,7 +813,42 @@ export const Chat = () => {
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
       />
 
-      {showInstructions && (
+      {dataUsageConsentPending && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Data Usage Consent Acceptance
+              </h2>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-gray-600 whitespace-pre-wrap">
+                {session?.dataUsage?.config.dataUsageConsentMessage}
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t flex flex-col sm:flex-row justify-end gap-2">
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                No, I do not consent
+              </button>
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(true)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Yes, I consent
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInstructions && !dataUsageConsentPending && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center px-6 py-4 border-b">
@@ -821,7 +905,7 @@ export const Chat = () => {
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
         <div className="flex gap-2">
-        {sessionTime && session?.startedAt && (
+        {!dataUsageConsentPending && sessionTime && session?.startedAt && (
           <SessionTimer
             durationMinutes={sessionTime}
             sessionStartedAt={session.startedAt}
@@ -850,6 +934,7 @@ export const Chat = () => {
             onClick={handleFinishConversation}
             disabled={
               concluding ||
+              dataUsageConsentPending ||
               (!messages.length &&
                 configuration?.mode !== "transcription" &&
                 audioMode !== "luke" &&
@@ -924,7 +1009,7 @@ export const Chat = () => {
                   token={lukeToken.token!}
                   lukeConfig={lukeConfig}
                   leiaName={leiaName || undefined}
-                  forceMute={showInstructions}
+                  forceMute={showInstructions || dataUsageConsentPending}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
                   onTranscriptComplete={handleTranscriptComplete}
@@ -940,7 +1025,7 @@ export const Chat = () => {
                       token={lukeToken.token!}
                       lukeConfig={lukeConfig}
                       leiaName={leiaName || undefined}
-                      forceMute={showInstructions}
+                      forceMute={showInstructions || dataUsageConsentPending}
                       showTranscription={!hideAudioTranscription}
                       mode="inline"
                       tools={tools as Record<string, import("@leia-org/luke-client").FrontendTool>}
@@ -1292,6 +1377,7 @@ export const Chat = () => {
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
                 disabled={
+                  dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio"
                 }
@@ -1300,6 +1386,7 @@ export const Chat = () => {
               <button
                 type="submit"
                 disabled={
+                  dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio" ||
                   !newMessageText.trim() ||

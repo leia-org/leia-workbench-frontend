@@ -21,6 +21,7 @@ import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import PrivacyTipOutlinedIcon from "@mui/icons-material/PrivacyTipOutlined";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import AdminLayout from "../components/admin/AdminLayout";
@@ -59,6 +60,16 @@ interface Session {
   user: { email: string } | null;
   supervisorFlags?: SupervisorFlag[] | null;
   replicationConfig?: unknown | null;
+  dataUsage?: {
+    config: {
+      dataUsageConsentRequired: boolean;
+      dataUsageConsentMessage: string;
+      conversationAutomatedRemoval: boolean;
+    };
+    consentStatus: "pending" | "accepted" | "declined" | "not_required";
+    decidedAt: string | null;
+    automatedRemovalApplied: boolean;
+  } | null;
 }
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
@@ -96,6 +107,23 @@ const looksLikeMermaid = (text: string): boolean => {
   return /^(graph |flowchart |sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|requirementDiagram|gitGraph|mindmap|timeline|quadrantChart|sankey)/i
     .test(first);
 };
+
+const formatDataUsageConsent = (
+  status?: "pending" | "accepted" | "declined" | "not_required"
+) => {
+  if (status === "accepted") return "Consent accepted";
+  if (status === "declined") return "Consent declined";
+  if (status === "pending") return "Pending";
+  return "Consent not required";
+};
+
+const hasConversationAutomatedRemoval = (session: Session): boolean =>
+  Boolean(
+    session.dataUsage?.automatedRemovalApplied &&
+      session.dataUsage?.consentStatus === "declined" &&
+      session.dataUsage?.config.dataUsageConsentRequired &&
+      session.dataUsage?.config.conversationAutomatedRemoval
+  );
 
 const readStoredReplicationTokens = (): Record<string, string> => {
   try {
@@ -539,10 +567,11 @@ const SessionDetail: React.FC<{
   onCancelEditScore,
   formatDate,
 }) => {
-  const [detailView, setDetailView] = useState<"conversation" | "configuration">("conversation");
+  const [detailView, setDetailView] = useState<"conversation" | "configuration" | "dataUsage">("conversation");
   const resultIsMermaid =
     Boolean(session.result) &&
     (solutionFormat === "mermaid" || looksLikeMermaid(session.result ?? ""));
+  const conversationWasRemoved = hasConversationAutomatedRemoval(session);
 
   useEffect(() => {
     setDetailView("conversation");
@@ -590,6 +619,14 @@ const SessionDetail: React.FC<{
           onClick={() => setDetailView("configuration")}
         >
           Configuration
+        </Button>
+        <Button
+          size="small"
+          variant={detailView === "dataUsage" ? "contained" : "outlined"}
+          startIcon={<PrivacyTipOutlinedIcon sx={{ fontSize: 16 }} />}
+          onClick={() => setDetailView("dataUsage")}
+        >
+          Data Usage
         </Button>
         <Chip
           size="small"
@@ -652,6 +689,10 @@ const SessionDetail: React.FC<{
 
       {detailView === "configuration" ? (
         <ReplicationConfigPanel config={session.replicationConfig} />
+      ) : detailView === "dataUsage" ? (
+        <DataUsagePanel
+          dataUsage={session.dataUsage}
+        />
       ) : (
         <>
       <Typography
@@ -674,7 +715,9 @@ const SessionDetail: React.FC<{
             variant="body2"
             sx={{ color: "text.disabled", fontStyle: "italic" }}
           >
-            No messages yet.
+            {conversationWasRemoved
+              ? "No conversation is available because the participant did not consent to data usage and automated conversation removal was enabled."
+              : "No messages yet."}
           </Typography>
         ) : (
           <Stack gap={1.25}>
@@ -953,7 +996,9 @@ const SessionDetail: React.FC<{
   );
 };
 
-const ReplicationConfigPanel: React.FC<{ config?: unknown | null }> = ({ config }) => {
+const ReplicationConfigPanel: React.FC<{
+  config?: unknown | null;
+}> = ({ config }) => {
   const sections = useMemo(() => getReplicationConfigSections(config), [config]);
 
   if (!config) {
@@ -979,6 +1024,59 @@ const ReplicationConfigPanel: React.FC<{ config?: unknown | null }> = ({ config 
         />
       ))}
     </Stack>
+  );
+};
+
+const DataUsagePanel: React.FC<{
+  dataUsage?: Session["dataUsage"];
+}> = ({ dataUsage }) => {
+  if (!dataUsage) {
+    return (
+      <Paper
+        variant="outlined"
+        sx={{ p: 3, borderRadius: 2, bgcolor: "background.paper" }}
+      >
+        <Typography sx={{ fontSize: 14, color: "text.secondary" }}>
+          No data usage configuration was stored for this conversation.
+        </Typography>
+      </Paper>
+    );
+  }
+
+  const { config } = dataUsage;
+
+  return (
+    <ConfigSectionCard
+      title="Data Usage"
+      items={[
+        {
+          label: "Consent acceptance",
+          value: config.dataUsageConsentRequired ? "Enabled" : "Disabled",
+        },
+        {
+          label: "Consent status",
+          value: formatDataUsageConsent(dataUsage.consentStatus),
+        },
+        {
+          label: "Consent decided at",
+          value: dataUsage.decidedAt
+            ? new Date(dataUsage.decidedAt).toLocaleString()
+            : "—",
+        },
+        {
+          label: "Automated removal",
+          value: config.conversationAutomatedRemoval ? "Enabled" : "Disabled",
+        },
+        {
+          label: "Removal applied",
+          value: dataUsage.automatedRemovalApplied ? "Yes" : "No",
+        },
+        {
+          label: "Message",
+          value: asDisplayValue(config.dataUsageConsentMessage),
+        },
+      ]}
+    />
   );
 };
 
@@ -1075,7 +1173,7 @@ const getReplicationConfigSections = (config: unknown): ConfigSection[] => {
   const leiaId = asDisplayValue(selectedLeia?.id || data.leiaId);
   const modeData = selectedConfiguration.data;
 
-  const sections: ConfigSection[] = [
+  const sections: ConfigSection[] = config ? [
     {
       title: "Snapshot",
       items: [
@@ -1110,7 +1208,7 @@ const getReplicationConfigSections = (config: unknown): ConfigSection[] => {
         { label: "Hide transcription", value: runnerConfiguration.hideAudioTranscription ? "Yes" : "No" },
       ],
     },
-  ];
+  ] : [];
 
   if (modeData && typeof modeData === "object") {
     sections.push({
