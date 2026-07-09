@@ -1231,12 +1231,13 @@ const getReplicationConfigSections = (config: unknown): ConfigSection[] => {
     });
   }
 
-  if (Array.isArray(activity.widgets) && activity.widgets.length > 0) {
-    sections.push({
-      title: "Activity tools",
-      items: [{ label: "Widgets", value: formatComplexValue(activity.widgets) }],
-    });
-  }
+  // Widgets 
+  // if (Array.isArray(activity.widgets) && activity.widgets.length > 0) {
+  //   sections.push({
+  //     title: "Activity tools",
+  //     items: [{ label: "Widgets", value: formatComplexValue(activity.widgets) }],
+  //   });
+  // }
 
   return sections;
 };
