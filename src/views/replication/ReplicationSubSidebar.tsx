@@ -12,11 +12,13 @@ import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
+import PrivacyTipOutlinedIcon from "@mui/icons-material/PrivacyTipOutlined";
 
 export type SectionId =
   | "general"
   | "leias"
   | "settings"
+  | "dataUsage"
   | "conversations"
   | "live";
 
@@ -156,6 +158,19 @@ export const ReplicationSubSidebar: React.FC<ReplicationSubSidebarProps> = ({
               <SettingsOutlinedIcon sx={{ fontSize: 18 }} />
             </ListItemIcon>
             <ListItemText primary="Settings" />
+          </ListItemButton>
+        </ListItem>
+
+        <ListItem disablePadding sx={{ display: "block" }}>
+          <ListItemButton
+            onClick={() => onSectionChange("dataUsage")}
+            aria-current={activeSection === "dataUsage" ? "page" : undefined}
+            sx={itemSx(activeSection === "dataUsage")}
+          >
+            <ListItemIcon>
+              <PrivacyTipOutlinedIcon sx={{ fontSize: 18 }} />
+            </ListItemIcon>
+            <ListItemText primary="Data Usage" />
           </ListItemButton>
         </ListItem>
 
