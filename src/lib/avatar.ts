@@ -1,10 +1,9 @@
 export type AvatarEntityPathSegment = "leias" | "personas" | "problems";
 export type LeiaInfographicVariant = "infographic" | "infographicSolution";
 
-const avatarPublicBaseUrl = (import.meta.env.VITE_AVATAR_PUBLIC_URL || "").replace(
-  /\/+$/g,
-  "",
-);
+const imagePublicBaseUrl = (
+  import.meta.env.VITE_IMAGE_PUBLIC_URL || ""
+).replace(/\/+$/g, "");
 
 export const buildOriginalAvatarPath = (
   entity: AvatarEntityPathSegment,
@@ -41,7 +40,7 @@ export const buildLeiaInfographicPaths = (
   }
 
   const fileName = variant === "infographicSolution" ? "solution" : "original";
-  return ["png", "jpg"].map(
+  return ["png", "jpg", "webp"].map(
     (extension) =>
       `/images/leias/${trimmedId}/infographic/${fileName}.${extension}`,
   );
@@ -60,11 +59,11 @@ export const resolveAvatarSrc = (value?: string | null): string => {
     return "";
   }
 
-  if (!avatarPublicBaseUrl) {
+  if (!imagePublicBaseUrl) {
     return `/${normalizedValue}`;
   }
 
-  return `${avatarPublicBaseUrl}/${normalizedValue}`;
+  return `${imagePublicBaseUrl}/${normalizedValue}`;
 };
 
 export const resolveStoredImageSrc = resolveAvatarSrc;
