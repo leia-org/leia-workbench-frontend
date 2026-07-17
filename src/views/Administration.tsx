@@ -9,6 +9,7 @@ import {
   Stack,
   Typography,
   Skeleton,
+  Chip,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -39,8 +40,19 @@ interface Replication {
   code: string;
   createdAt: string;
   updatedAt: string;
-  experiment: { name: string };
+  experiment: {
+    name: string;
+    user: {
+      email: string;
+    };
+  };
 }
+
+const getReplicationUserLabel = (replication: Replication) => {
+  const owner =
+    replication.experiment.user;
+  return owner.email ?? "";
+};
 
 const formatDuration = (seconds: number | null) => {
   if (!seconds) return "Untimed";
@@ -57,6 +69,7 @@ interface RowProps {
   onClick: () => void;
   onCopyCode: () => void;
   copied: boolean;
+  showUser: boolean;
 }
 
 const ReplicationRow: React.FC<RowProps> = ({
@@ -65,7 +78,9 @@ const ReplicationRow: React.FC<RowProps> = ({
   onClick,
   onCopyCode,
   copied,
+  showUser,
 }) => {
+  const userLabel = getReplicationUserLabel(item);
   return (
     <ButtonBase
       onClick={onClick}
@@ -113,6 +128,26 @@ const ReplicationRow: React.FC<RowProps> = ({
           >
             {item.name}
           </Typography>
+          {showUser && userLabel && (
+            <Chip
+              size="small"
+              label={userLabel}
+              sx={{
+                height: 20,
+                maxWidth: 160,
+                flexShrink: 1,
+                bgcolor: "surfaces.subtle",
+                color: "text.secondary",
+                borderRadius: 1,
+                "& .MuiChip-label": {
+                  px: 0.75,
+                  fontSize: 11,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+              }}
+            />
+          )}
         </Box>
         <Typography
           variant="caption"
@@ -197,7 +232,17 @@ const ReplicationDetail: React.FC<{
   onConversations: () => void;
   onCopyCode: () => void;
   copied: boolean;
-}> = ({ item, onOpen, onLive, onConversations, onCopyCode, copied }) => {
+  showUser: boolean;
+}> = ({
+  item,
+  onOpen,
+  onLive,
+  onConversations,
+  onCopyCode,
+  copied,
+  showUser,
+}) => {
+  const userLabel = getReplicationUserLabel(item);
   return (
     <Box sx={{ p: 4, maxWidth: 880 }}>
       <Typography
@@ -248,6 +293,7 @@ const ReplicationDetail: React.FC<{
             )}
           </Stack>
         </DetailRow>
+        {showUser && userLabel && <DetailRow label="User">{userLabel}</DetailRow>}
         <DetailRow label="Experiment">{item.experiment?.name ?? "—"}</DetailRow>
         <DetailRow label="Duration">{formatDuration(item.duration)}</DetailRow>
         <DetailRow label="Repeatable">
@@ -296,7 +342,8 @@ export const Administration: React.FC = () => {
   const navigate = useNavigate();
   const [replications, setReplications] = useState<Replication[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const { token, isLoading } = useAuth();
+  const { token, isLoading, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>({});
@@ -391,11 +438,15 @@ export const Administration: React.FC = () => {
     const repeatFilter = filters.repeatable ?? [];
     const durationFilter = filters.duration ?? [];
     const matched = replications.filter((r) => {
+      const replicationUser = isAdmin
+        ? getReplicationUserLabel(r).toLowerCase()
+        : "";
       if (
         q &&
         !(
           r.name.toLowerCase().includes(q) ||
-          r.code.toLowerCase().includes(q)
+          r.code.toLowerCase().includes(q) ||
+          replicationUser.includes(q)
         )
       ) {
         return false;
@@ -446,7 +497,7 @@ export const Administration: React.FC = () => {
       }
     });
     return sorted;
-  }, [replications, search, filters, sort]);
+  }, [replications, search, filters, sort, isAdmin]);
 
   const selected = useMemo(
     () => filtered.find((r) => r.id === selectedId) ?? null,
@@ -483,7 +534,11 @@ export const Administration: React.FC = () => {
   );
 
   return (
-    <AdminLayout title="Replications" actions={headerActions} flush>
+    <AdminLayout
+      title={isAdmin ? "All the replications" : "My replications"}
+      actions={headerActions}
+      flush
+    >
       <MasterDetailLayout
         storageKey="adminMD:replications.width"
         searchPlaceholder="Search replications..."
@@ -519,6 +574,7 @@ export const Administration: React.FC = () => {
                   onClick={() => setSelectedId(rep.id)}
                   onCopyCode={() => handleCopyCode(rep)}
                   copied={copiedCodeId === rep.id}
+                  showUser={isAdmin}
                 />
               ))
         }
@@ -535,6 +591,7 @@ export const Administration: React.FC = () => {
               }
               onCopyCode={() => handleCopyCode(selected)}
               copied={copiedCodeId === selected.id}
+              showUser={isAdmin}
             />
           ) : (
             <MasterDetailEmptyState

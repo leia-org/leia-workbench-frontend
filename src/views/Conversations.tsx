@@ -306,8 +306,8 @@ export const Conversations: React.FC = () => {
   return (
     <AdminLayout
       breadcrumbs={[
-        { label: "Replications", to: "/administration" },
-        {
+          { label: user?.role === "admin" ? "All the replications" : "My replications"},
+          {
           label: replicationName || "Replication",
           to: `/replications/${id}`,
         },
