@@ -17,9 +17,17 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import LeiaPreviewDrawer, {
   type ParsedLeia,
 } from "../../../components/admin/LeiaPreview";
+import InfographicViewer, {
+  type InfographicViewerHandle,
+} from "../../../components/InfographicViewer";
+import {
+  buildLeiaInfographicPaths,
+  buildStoredImageCandidateSources,
+} from "../../../lib/avatar";
 import type { ReplicationData, ReplicationLeia } from "../types";
 import type { ApiKey } from "../../../models/ApiKeys";
 
@@ -165,6 +173,45 @@ const FieldRow: React.FC<{
   </Box>
 );
 
+const ImageAvailabilityProbe: React.FC<{
+  sources: string[];
+  onAvailableChange: (available: boolean | null) => void;
+}> = ({ sources, onAvailableChange }) => {
+  const [idx, setIdx] = React.useState(0);
+  const src = sources[idx] || "";
+
+  React.useEffect(() => {
+    setIdx(0);
+    onAvailableChange(sources.length > 0 ? null : false);
+  }, [onAvailableChange, sources]);
+
+  if (!src) return null;
+
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        width: 1,
+        height: 1,
+        opacity: 0,
+        pointerEvents: "none",
+      }}
+      onLoad={() => onAvailableChange(true)}
+      onError={() => {
+        const nextIdx = idx + 1;
+        if (nextIdx < sources.length) {
+          setIdx(nextIdx);
+        } else {
+          onAvailableChange(false);
+        }
+      }}
+    />
+  );
+};
+
 interface LeiaEditorProps {
   idx: number;
   item: ReplicationLeia;
@@ -209,6 +256,11 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 }) => {
   const [showAllVoices, setShowAllVoices] = useState(false);
   const [contentOpen, setContentOpen] = useState(false);
+  const [studentInfographicAvailable, setStudentInfographicAvailable] =
+    useState<boolean | null>(null);
+  const [solutionInfographicAvailable, setSolutionInfographicAvailable] =
+    useState<boolean | null>(null);
+  const solutionViewerRef = React.useRef<InfographicViewerHandle | null>(null);
 
   const isModelAvailable = (model: string) =>
     model === DEFAULT_PROVIDER || availableModels.includes(model);
@@ -251,12 +303,62 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   const isStartingAny = Boolean(startingSessionLeiaId);
   const isStartingThis = startingSessionLeiaId === item.id;
+  const leiaResourceId = String(item.leia.id || item.id || "");
+  const infographicSrc =
+    typeof item.leia.spec?.infographic === "string" &&
+    item.leia.spec.infographic.trim()
+      ? item.leia.spec.infographic
+      : "";
+  const infographicFallbackSources = React.useMemo(
+    () => buildLeiaInfographicPaths(leiaResourceId, "infographic"),
+    [leiaResourceId]
+  );
+  const infographicCandidates = React.useMemo(
+    () =>
+      buildStoredImageCandidateSources(
+        infographicSrc,
+        ...infographicFallbackSources
+      ),
+    [infographicFallbackSources, infographicSrc]
+  );
+  const solutionInfographicSrc =
+    typeof item.leia.spec?.infographicSolution === "string" &&
+    item.leia.spec.infographicSolution.trim()
+      ? item.leia.spec.infographicSolution
+      : "";
+  const solutionInfographicFallbackSources = React.useMemo(
+    () => buildLeiaInfographicPaths(leiaResourceId, "infographicSolution"),
+    [leiaResourceId]
+  );
+  const solutionInfographicCandidates = React.useMemo(
+    () =>
+      buildStoredImageCandidateSources(
+        solutionInfographicSrc,
+        ...solutionInfographicFallbackSources
+      ),
+    [solutionInfographicFallbackSources, solutionInfographicSrc]
+  );
+  const hasAnyInfographic =
+    studentInfographicAvailable === true ||
+    solutionInfographicAvailable === true;
+  const infographicConfig = item.runnerConfiguration.infographic || {};
+  const showInfographicToStudent = Boolean(
+    studentInfographicAvailable === true && infographicConfig.showToStudent
+  );
 
   const isDirty =
     JSON.stringify(item) !== JSON.stringify(serverItem);
 
   return (
     <Box>
+      <ImageAvailabilityProbe
+        sources={infographicCandidates}
+        onAvailableChange={setStudentInfographicAvailable}
+      />
+      <ImageAvailabilityProbe
+        sources={solutionInfographicCandidates}
+        onAvailableChange={setSolutionInfographicAvailable}
+      />
       <Stack
         direction="row"
         alignItems="center"
@@ -321,6 +423,101 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           checked={item.configuration.evaluateSolution}
           onChange={() => onToggleEvaluateSolution(idx)}
         />
+      </FieldRow>
+
+      <SectionLabel>Infographics</SectionLabel>
+      {studentInfographicAvailable === null ||
+      solutionInfographicAvailable === null ? (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            bgcolor: "surfaces.subtle",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            px: 2,
+            py: 1.5,
+            mb: 1,
+          }}
+        >
+          Checking generated infographic assets...
+        </Typography>
+      ) : !hasAnyInfographic ? (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            bgcolor: "surfaces.subtle",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            px: 2,
+            py: 1.5,
+            mb: 1,
+          }}
+        >
+          No infographic is available for this LEIA. Open it in Designer and
+          generate the infographic assets before configuring them here.
+        </Typography>
+      ) : null}
+      {studentInfographicAvailable === false && hasAnyInfographic && (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            bgcolor: "surfaces.subtle",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            px: 2,
+            py: 1.5,
+            mb: 1,
+          }}
+        >
+          The student infographic is not available. Open this LEIA in Designer
+          and generate it before enabling student access.
+        </Typography>
+      )}
+      <FieldRow
+        label="Show during exercise"
+        helper="Student can open the infographic during the exercise."
+      >
+        <Switch
+          size="small"
+          checked={showInfographicToStudent}
+          disabled={studentInfographicAvailable !== true}
+          onChange={(_, checked) => {
+            onLocalLeiaChange(
+              idx,
+              "runnerConfiguration.infographic.showToStudent",
+              checked
+            );
+          }}
+        />
+      </FieldRow>
+      <FieldRow
+        label="Instructor solution"
+        helper="Only visible here in the workbench."
+      >
+        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+          <Button
+            size="small"
+            variant="outlined"
+            color="inherit"
+            disabled={solutionInfographicAvailable !== true}
+            startIcon={<ImageOutlinedIcon sx={{ fontSize: 16 }} />}
+            onClick={() => solutionViewerRef.current?.open()}
+            sx={{ borderColor: "divider", color: "text.primary" }}
+          >
+            View solution
+          </Button>
+          {solutionInfographicAvailable === false && (
+            <Typography variant="caption" sx={{ color: "text.disabled" }}>
+              Generate the solution infographic in Designer first.
+            </Typography>
+          )}
+        </Stack>
       </FieldRow>
 
       <SectionLabel>Runner</SectionLabel>
@@ -736,6 +933,14 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         leia={contentOpen ? (item.leia as ParsedLeia) : null}
         onClose={() => setContentOpen(false)}
       />
+      {solutionInfographicAvailable === true && (
+        <InfographicViewer
+          ref={solutionViewerRef}
+          candidateSources={solutionInfographicCandidates}
+          title="Solution infographic"
+          hidden
+        />
+      )}
     </Box>
   );
 };
