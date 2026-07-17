@@ -47,7 +47,7 @@ interface Experiment {
 
 const getExperimentUserLabel = (experiment: Experiment) => {
   const owner = experiment.user ;
-  return owner?.email ?? owner ?? "";
+  return owner?.email ??  "";
 };
 
 interface RowProps {
