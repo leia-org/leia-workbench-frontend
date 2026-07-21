@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { jwtDecode } from "jwt-decode";
 import { toast } from "react-toastify";
@@ -29,6 +29,7 @@ import "@fontsource-variable/jetbrains-mono/index.css";
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login, token } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -45,12 +46,22 @@ export const AdminLogin: React.FC = () => {
     setTurnstileToken(value);
   }, []);
 
+  const rawRedirect = searchParams.get("redirect");
+  const redirectTo =
+    rawRedirect && rawRedirect.startsWith("/") && !rawRedirect.startsWith("//")
+      ? rawRedirect
+      : "/administration";
+      
   useEffect(() => {
     if (token && !isManualLogin) {
-      navigate("/administration");
-      toast.info("You are already logged in, redirecting to admin panel...");
+      navigate(redirectTo);
+      toast.info(
+        redirectTo === "/administration"
+          ? "You are already logged in, redirecting to admin panel..."
+          : "You are already logged in, redirecting to the requested page..."
+      );
     }
-  }, [token, navigate, isManualLogin]);
+  }, [token, navigate, isManualLogin, redirectTo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,7 +108,7 @@ export const AdminLogin: React.FC = () => {
         setIsManualLogin(true);
         login(newToken);
 
-        setTimeout(() => navigate("/administration"), 1000);
+        setTimeout(() => navigate(redirectTo), 1000);
       } else {
         setSuccess(false);
         setMessage("Something went wrong, please try again later.");
