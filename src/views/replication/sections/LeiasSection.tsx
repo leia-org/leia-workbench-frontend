@@ -30,6 +30,15 @@ import {
 } from "../../../lib/avatar";
 import type { ReplicationData, ReplicationLeia } from "../types";
 import type { ApiKey } from "../../../models/ApiKeys";
+import openAiIcon from "../../../assets/providers/openai.svg";
+import geminiIcon from "../../../assets/providers/gemini.svg";
+import ollamaIcon from "../../../assets/providers/ollama.svg";
+
+const providerIcons: Record<string, string> = {
+  openai: openAiIcon,
+  gemini: geminiIcon,
+  ollama: ollamaIcon,
+};
 
 const VOICE_OPTIONS: Array<{ value: string; label: string; gender: string }> = [
   { value: "alloy", label: "Alloy - Female", gender: "female" },
@@ -63,24 +72,6 @@ const getFilteredVoiceOptions = (
 };
 
 const DEFAULT_PROVIDER = "default";
-
-// Models the currently selected API key can serve. When no key is selected we
-// fall back to every model across all providers.
-const getValidModels = (
-  apiKeyId: string | null | undefined,
-  apiKeys: ApiKey[],
-  apiKeyProvidersMapped: Record<string, string[]>
-): string[] => {
-  const allModels = apiKeyProvidersMapped
-    ? Object.values(apiKeyProvidersMapped).flat()
-    : [];
-  if (!apiKeyId) return allModels;
-
-  const apiKey = apiKeys.find((k) => k.id === apiKeyId);
-  if (!apiKey || !apiKey.provider) return allModels;
-
-  return apiKeyProvidersMapped[apiKey.provider] || [];
-};
 
 // API keys whose provider can serve the currently selected model. When no
 // model is selected, every key is valid.
@@ -271,17 +262,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
 
-  // Filter models/keys so the two selects stay mutually consistent.
-  const validModelsForLeia = getValidModels(
-    currentApiKeyId,
-    apiKeys,
-    apiKeyProvidersMapped
-  );
-  const validApiKeysForLeia = getValidApiKeys(
-    currentModelName,
-    apiKeys,
-    apiKeyProvidersMapped
-  );
+  const validModelsForLeia = Object.values(apiKeyProvidersMapped).flat();
 
   const isCurrentModelValid =
     currentModelName === "" ||
@@ -291,10 +272,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   // Marcas de error devueltas por el backend en el último intento de guardar/activar.
   const isModelMissing = invalidFields.includes("modelName");
-  const isApiKeyMissing =
-    invalidFields.includes("apiKeyId") ||
-    invalidFields.includes("apiKeyRequesterId");
-
   const showDashboardLink = Boolean(
     currentApiKeyObj &&
       (!currentApiKeyObj.isSystemApiKey || userRole === "admin") &&
@@ -529,13 +506,34 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           <Select
             displayEmpty
             value={currentModelName}
-            onChange={(e) =>
+            onChange={(e) => {
+              const modelName = e.target.value;
               onLocalLeiaChange(
                 idx,
                 "runnerConfiguration.modelName",
-                e.target.value
-              )
-            }
+                modelName
+              );
+              const matchingKeys = getValidApiKeys(modelName, apiKeys, apiKeyProvidersMapped);
+              const currentKeyStillMatches = matchingKeys.some((key) => key.id === currentApiKeyId);
+              if (!currentKeyStillMatches) {
+                const nextKey = matchingKeys.find((key) => key.isDefault) || matchingKeys[0];
+                onLocalLeiaChange(idx, "runnerConfiguration.apiKeyId", nextKey?.id ?? null);
+              }
+            }}
+            renderValue={(selected) => {
+              if (!selected) return <em>-- Select Model --</em>;
+              const provider = Object.entries(apiKeyProvidersMapped).find(([, models]) =>
+                models.includes(selected as string)
+              )?.[0];
+              return (
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  {provider && providerIcons[provider] && (
+                    <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                  )}
+                  <span>{selected as string}</span>
+                </Stack>
+              );
+            }}
             sx={{
               fontSize: 13,
               ...(isCurrentModelValid && !isModelMissing
@@ -554,80 +552,20 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                 {`${currentModelName} (no disponible)`}
               </MenuItem>
             )}
-            {validModelsForLeia.map((model) => (
-              <MenuItem key={model} value={model} sx={{ fontSize: 13 }}>
+            {validModelsForLeia.map((model) => {
+              const provider = Object.entries(apiKeyProvidersMapped).find(([, models]) => models.includes(model))?.[0];
+              return (
+              <MenuItem key={model} value={model} sx={{ fontSize: 13, gap: 1 }}>
+                {provider && providerIcons[provider] && (
+                  <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                )}
                 {model}
               </MenuItem>
-            ))}
+              );
+            })}
           </Select>
         </FormControl>
-      </FieldRow>
-
-      <FieldRow
-        label="API key"
-        helper="Key whose provider serves the selected model."
-      >
-        <Stack
-          direction="row"
-          alignItems="center"
-          gap={1.5}
-          flexWrap="wrap"
-        >
-          <FormControl size="small" sx={{ minWidth: 220 }}>
-            <Select
-              displayEmpty
-              value={currentApiKeyId ?? ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                const newKeyId = value === "" ? null : value;
-                onLocalLeiaChange(
-                  idx,
-                  "runnerConfiguration.apiKeyId",
-                  newKeyId
-                );
-                // Preselect the key's default model when the current one no
-                // longer fits the new key's provider.
-                const key = apiKeys.find((k) => k.id === newKeyId);
-                const validModels = getValidModels(newKeyId, apiKeys, apiKeyProvidersMapped);
-                if (key?.model && validModels.includes(key.model) && !validModels.includes(currentModelName)) {
-                  onLocalLeiaChange(idx, "runnerConfiguration.modelName", key.model);
-                }
-              }}
-              renderValue={(selected) => {
-                if (!selected) {
-                  return (
-                    <Typography
-                      component="span"
-                      sx={{ fontSize: 13, color: "text.disabled" }}
-                    >
-                      Select Key
-                    </Typography>
-                  );
-                }
-                const key = apiKeys.find((k) => k.id === selected);
-                return key?.description || "Select Key";
-              }}
-              sx={{
-                fontSize: 13,
-                ...(isApiKeyMissing
-                  ? {
-                      color: "error.main",
-                      "& fieldset": { borderColor: "error.main" },
-                    }
-                  : {}),
-              }}
-            >
-              <MenuItem value="" sx={{ fontSize: 13, fontStyle: "italic" }}>
-                -- Clear Selection --
-              </MenuItem>
-              {validApiKeysForLeia.map((key) => (
-                <MenuItem key={key.id} value={key.id} sx={{ fontSize: 13 }}>
-                  {key.description}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
+        <Stack direction="row" alignItems="center" gap={1.5}>
           {showDashboardLink && (
             <MuiLink
               href={currentApiKeyObj?.managementUrl}
