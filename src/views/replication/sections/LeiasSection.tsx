@@ -785,12 +785,22 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                     defaultVoice
                   );
                 }}
+                renderValue={(selected) => (
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    {providerIcons[selected as string] && (
+                      <Box component="img" src={providerIcons[selected as string]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                    )}
+                    <span>{selected === "openai" ? "OpenAI" : "Gemini"}</span>
+                  </Stack>
+                )}
                 sx={{ fontSize: 13 }}
               >
-                <MenuItem value="openai" sx={{ fontSize: 13 }}>
+                <MenuItem value="openai" sx={{ fontSize: 13, gap: 1 }}>
+                  <Box component="img" src={providerIcons.openai} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
                   OpenAI
                 </MenuItem>
-                <MenuItem value="gemini" sx={{ fontSize: 13 }}>
+                <MenuItem value="gemini" sx={{ fontSize: 13, gap: 1 }}>
+                  <Box component="img" src={providerIcons.gemini} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
                   Gemini
                 </MenuItem>
               </Select>

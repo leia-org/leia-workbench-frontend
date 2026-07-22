@@ -21,6 +21,15 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import { ApiKey } from "../../models/ApiKeys";
 import { useProviders } from "../../hooks/useProviders";
+import openAiIcon from "../../assets/providers/openai.svg";
+import geminiIcon from "../../assets/providers/gemini.svg";
+import ollamaIcon from "../../assets/providers/ollama.svg";
+
+const providerIcons: Record<string, string> = {
+  openai: openAiIcon,
+  gemini: geminiIcon,
+  ollama: ollamaIcon,
+};
 
 export interface ApiKeyFormModalProps {
   isOpen: boolean;
@@ -165,18 +174,30 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
                   value={formData.provider || ""}
                   onChange={handleChange}
                   displayEmpty
-                  renderValue={(selected) =>
-                    selected
-                      ? (selected as string)
-                      : (
+                  renderValue={(selected) => {
+                    if (selected) {
+                      const provider = selected as string;
+                      return (
+                        <Stack direction="row" alignItems="center" spacing={1} sx={{ textTransform: "capitalize" }}>
+                          {providerIcons[provider] && (
+                            <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                          )}
+                          <span>{provider}</span>
+                        </Stack>
+                      );
+                    }
+                    return (
                         <Typography component="span" sx={{ color: "text.disabled" }}>
                           {isLoadingProviders ? "Loading providers..." : "Select a provider"}
                         </Typography>
-                      )
-                  }
+                    );
+                  }}
                 >
                   {apiKeysProviderSet.map((provider) => (
-                    <MenuItem key={provider} value={provider}>
+                    <MenuItem key={provider} value={provider} sx={{ gap: 1, textTransform: "capitalize" }}>
+                      {providerIcons[provider] && (
+                        <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                      )}
                       {provider}
                     </MenuItem>
                   ))}
