@@ -224,16 +224,16 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
             </Stack>
             <FormControl
               fullWidth
-              required={mode === "create"}
+              required
               error={!!errors.model}
               disabled={!formData.provider || isLoadingProviders || providerModels.length === 0}
             >
               <InputLabel id="api-key-model-label" shrink>
-                {mode === "create" ? "Default Model" : "Default Model (Optional)"}
+                Default Model
               </InputLabel>
               <Select
                 labelId="api-key-model-label"
-                label={mode === "create" ? "Default Model" : "Default Model (Optional)"}
+                label="Default Model"
                 name="model"
                 value={formData.model || ""}
                 onChange={handleChange}
@@ -247,12 +247,11 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
                           ? "Select a provider first"
                           : providerModels.length === 0
                             ? "No models for this provider"
-                            : mode === "create" ? "Select a model" : "-- none --"}
+                            : "Select a model"}
                       </Typography>
                     )
                 }
               >
-                {mode === "edit" && <MenuItem value=""><em>-- none --</em></MenuItem>}
                 {providerModels.map((m) => (
                   <MenuItem key={m} value={m}>{m}</MenuItem>
                 ))}
