@@ -26,6 +26,7 @@ export interface ApiKeyFormModalProps {
   isOpen: boolean;
   mode: "create" | "edit";
   selectedKey: ApiKey | null;
+  canSelectDefault?: boolean;
   userRole?: string;
   onClose: () => void;
 
@@ -33,7 +34,7 @@ export interface ApiKeyFormModalProps {
   errors?: Record<string, string>;
 }
 
-export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, userRole, onClose, onSave, errors = {} }) => {
+export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, canSelectDefault = false, userRole, onClose, onSave, errors = {} }) => {
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
   const [, setInitialFormData] = useState<Partial<ApiKey> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -261,7 +262,7 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
               fullWidth
               InputProps={{ sx: { color: "primary.main" } }}
             />
-            {mode === "create" && (
+            {mode === "create" && canSelectDefault && (
               <Box sx={{ pt: 1, borderTop: "1px solid", borderColor: "divider" }}>
                 <FormControlLabel
                   control={
