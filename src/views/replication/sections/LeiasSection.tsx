@@ -71,8 +71,6 @@ const getFilteredVoiceOptions = (
   );
 };
 
-const DEFAULT_PROVIDER = "default";
-
 // API keys whose provider can serve the currently selected model. When no
 // model is selected, every key is valid.
 const getValidApiKeys = (
@@ -80,13 +78,14 @@ const getValidApiKeys = (
   apiKeys: ApiKey[],
   apiKeyProvidersMapped: Record<string, string[]>
 ): ApiKey[] => {
-  if (!modelName) return apiKeys;
+  const activeApiKeys = apiKeys.filter((key) => key.isActive !== false);
+  if (!modelName) return activeApiKeys;
 
   const validProviders = Object.entries(apiKeyProvidersMapped)
     .filter(([, models]) => models.includes(modelName))
     .map(([provider]) => provider);
 
-  return apiKeys.filter((key) => validProviders.includes(key.provider));
+  return activeApiKeys.filter((key) => validProviders.includes(key.provider));
 };
 
 interface LeiasSectionProps {
@@ -207,7 +206,6 @@ interface LeiaEditorProps {
   idx: number;
   item: ReplicationLeia;
   serverItem: ReplicationLeia;
-  availableModels: string[];
   apiKeys: ApiKey[];
   apiKeyProvidersMapped: Record<string, string[]>;
   userRole?: string;
@@ -231,7 +229,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   idx,
   item,
   serverItem,
-  availableModels,
   apiKeys,
   apiKeyProvidersMapped,
   userRole,
@@ -253,21 +250,27 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
     useState<boolean | null>(null);
   const solutionViewerRef = React.useRef<InfographicViewerHandle | null>(null);
 
-  const isModelAvailable = (model: string) =>
-    model === DEFAULT_PROVIDER || availableModels.includes(model);
-
   // BYOK: model + API key for this LEIA.
   const currentApiKeyId = item.runnerConfiguration.apiKeyId;
   const currentModelName = item.runnerConfiguration.modelName ?? "";
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
 
-  const validModelsForLeia = Object.values(apiKeyProvidersMapped).flat();
+  const providersWithApiKeys = new Set(
+    apiKeys
+      .filter((key) => key.isActive !== false)
+      .map((key) => key.provider)
+  );
+  const validModelsForLeia = Array.from(
+    new Set(
+      Object.entries(apiKeyProvidersMapped)
+        .filter(([provider]) => providersWithApiKeys.has(provider))
+        .flatMap(([, models]) => models)
+    )
+  );
 
   const isCurrentModelValid =
     currentModelName === "" ||
-    currentModelName === DEFAULT_PROVIDER ||
-    isModelAvailable(currentModelName) ||
     validModelsForLeia.includes(currentModelName);
 
   // Marcas de error devueltas por el backend en el último intento de guardar/activar.
@@ -547,11 +550,19 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             <MenuItem value="" sx={{ fontSize: 13 }}>
               <em>-- Select Model --</em>
             </MenuItem>
-            {!isCurrentModelValid && currentModelName !== "" && (
-              <MenuItem value={currentModelName} sx={{ fontSize: 13 }}>
-                {`${currentModelName} (no disponible)`}
-              </MenuItem>
-            )}
+            {!isCurrentModelValid && currentModelName !== "" && (() => {
+              const provider = Object.entries(apiKeyProvidersMapped).find(([, models]) =>
+                models.includes(currentModelName)
+              )?.[0];
+              return (
+                <MenuItem value={currentModelName} disabled sx={{ fontSize: 13, gap: 1 }}>
+                  {provider && providerIcons[provider] && (
+                    <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                  )}
+                  {`${currentModelName} (no disponible)`}
+                </MenuItem>
+              );
+            })()}
             {validModelsForLeia.map((model) => {
               const provider = Object.entries(apiKeyProvidersMapped).find(([, models]) => models.includes(model))?.[0];
               return (
@@ -888,7 +899,6 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   localReplication,
   activeLeiaId,
   onLeiaSelect,
-  availableModels,
   apiKeys,
   apiKeyProvidersMapped,
   userRole,
@@ -929,7 +939,6 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         idx={effectiveIdx}
         item={item}
         serverItem={serverItem}
-        availableModels={availableModels}
         apiKeys={apiKeys}
         apiKeyProvidersMapped={apiKeyProvidersMapped}
         userRole={userRole}
