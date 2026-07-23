@@ -1,14 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { PhotoIcon } from "@heroicons/react/24/outline";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
+import InfographicViewer, {
+  type InfographicViewerHandle,
+} from "../components/InfographicViewer";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
+import { PersonaAvatar } from "../components/PersonaAvatar";
 import { SessionTimer } from "../components/SessionTimer";
+import { buildLeiaInfographicPaths, buildOriginalAvatarPath } from "../lib/avatar";
 import {
   VoiceModeWithWidgets,
   findCatalogEntry,
@@ -48,6 +54,55 @@ const TypingAnimation = () => (
   </div>
 );
 
+const getString = (value: unknown): string => {
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const extractPersonaSpec = (value: unknown): Record<string, unknown> => {
+  const leia = value as
+    | {
+        leia?: {
+          spec?: {
+            persona?: {
+              spec?: Record<string, unknown>;
+            };
+          };
+        };
+      }
+    | null
+    | undefined;
+
+  return leia?.leia?.spec?.persona?.spec || {};
+};
+
+const extractLeiaResourceIds = (
+  value: unknown,
+): { leiaId: string; personaId: string; problemId: string } => {
+  const leiaEntry = value as
+    | {
+        id?: unknown;
+        leia?: {
+          id?: unknown;
+          spec?: {
+            persona?: {
+              id?: unknown;
+            };
+            problem?: {
+              id?: unknown;
+            };
+          };
+        };
+      }
+    | null
+    | undefined;
+
+  return {
+    leiaId: getString(leiaEntry?.leia?.id ?? leiaEntry?.id),
+    personaId: getString(leiaEntry?.leia?.spec?.persona?.id),
+    problemId: getString(leiaEntry?.leia?.spec?.problem?.id),
+  };
+};
+
 interface Message {
   text: string;
   timestamp: Date;
@@ -79,7 +134,21 @@ interface Replication {
   form: string;
 }
 
+interface DataUsageConfig {
+  dataUsageConsentRequired: boolean;
+  dataUsageConsentMessage: string;
+  conversationAutomatedRemoval: boolean;
+}
+
+interface SessionDataUsage {
+  config: DataUsageConfig;
+  consentStatus: "pending" | "accepted" | "declined" | "not_required";
+  decidedAt: string | null;
+  automatedRemovalApplied: boolean;
+}
+
 interface Session {
+  id?: string;
   isTest: boolean;
   startedAt: string;
   finishedAt: string | null | undefined;
@@ -87,6 +156,7 @@ interface Session {
   result: string | null | undefined;
   evaluation: string | null | undefined;
   score: number | null | undefined;
+  dataUsage?: SessionDataUsage | null;
 }
 
 type WidgetConfig = {
@@ -102,8 +172,15 @@ type ChatLukeConfig = {
   widgets?: WidgetConfig[];
 };
 
+type StudentInfographic = {
+  src: string;
+  fallbackSrc?: string | null;
+  fallbackSources?: string[];
+};
+
 type LeiaSessionPayload = {
   lukeConfig?: Partial<ChatLukeConfig> | null;
+  infographic?: StudentInfographic | null;
   leia?: {
     spec?: {
       problem?: {
@@ -119,6 +196,11 @@ const DEFAULT_LUKE_CONFIG = {
   provider: "gemini",
   voice: "Puck",
 } satisfies Pick<ChatLukeConfig, "provider" | "voice">;
+
+const getRequestErrorMessage = (error: unknown) =>
+  axios.isAxiosError(error)
+    ? error.response?.data?.error || error.response?.data?.message || "An unexpected error occurred"
+    : "An unexpected error occurred";
 
 function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[] {
   const widgets = leia?.leia?.spec?.problem?.spec?.widgets;
@@ -150,10 +232,20 @@ export const Chat = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
+  const [studentInfographic, setStudentInfographic] =
+    useState<StudentInfographic | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
+  const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
+  const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<
+    string | null
+  >(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
+  const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
+    useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const studentInfographicViewerRef =
+    useRef<InfographicViewerHandle | null>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
   // Live mirror of the widget-registered tools. handleSubmit reads it on
   // each turn without re-binding, and the tool round-trip loop uses it to
@@ -190,13 +282,23 @@ export const Chat = () => {
     audioMode !== "audio" &&
     configuration?.mode !== "transcription" &&
     widgetDefs.length > 0;
+  const hasStudentInfographic = Boolean(studentInfographic?.src);
+  const widgetHasLeftSlot = widgetDefs.some((w) => w.slot === "left");
+  const widgetHasRightSlot = widgetDefs.some((w) => w.slot === "right");
   // Which sides we need to make room for. The chat column carves out the
   // same half (left or right) that the panel occupies, otherwise the
   // panel sits on top of the messages.
-  const hasLeftSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "left");
-  const hasRightSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "right");
+  const hasLeftSidePanel = hasTextWidgets && widgetHasLeftSlot;
+  const hasRightSidePanel = hasTextWidgets && widgetHasRightSlot;
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
+  const dataUsageConsentPending =
+    Boolean(session?.dataUsage?.config.dataUsageConsentRequired) &&
+    session?.dataUsage?.consentStatus !== "accepted" &&
+    session?.dataUsage?.consentStatus !== "declined" &&
+    session?.dataUsage?.consentStatus !== "not_required" &&
+    !session?.finishedAt &&
+    !session?.isTest;
 
   const handleTranscriptComplete = useCallback(
     (
@@ -235,15 +337,15 @@ export const Chat = () => {
 
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
-    enabled: audioMode === "audio",
-    forceMute: showInstructions,
+    enabled: audioMode === "audio" && !dataUsageConsentPending,
+    forceMute: showInstructions || dataUsageConsentPending,
     onTranscriptComplete: handleTranscriptComplete,
     onError: handleAudioError,
   });
 
   const lukeToken = useLukeToken({
     sessionId: sessionId || "",
-    enabled: audioMode === "luke",
+    enabled: audioMode === "luke" && !dataUsageConsentPending,
     onError: handleAudioError,
   });
 
@@ -343,13 +445,25 @@ export const Chat = () => {
       );
 
       if (response.status === 200) {
+        const personaSpec = extractPersonaSpec(response.data.leia);
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
         const durationSeconds = response.data.replication?.duration;
         if (typeof durationSeconds === "number" && durationSeconds > 0) {
           setSessionTime(durationSeconds / 60);
         }
-        setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
+        setLeiaName(
+          getString(personaSpec.firstName) ||
+            getString(personaSpec.fullName) ||
+            null,
+        );
+        setPersonaAvatar(getString(personaSpec.avatar) || null);
+        const resourceIds = extractLeiaResourceIds(response.data.leia);
+        setPersonaAvatarFallbackSrc(
+          buildOriginalAvatarPath("personas", resourceIds.personaId) ||
+            buildOriginalAvatarPath("leias", resourceIds.leiaId) ||
+            null,
+        );
         setReplication(response.data.replication);
         setSession(response.data.session);
         setTooltipMessage(
@@ -382,6 +496,21 @@ export const Chat = () => {
         // replications may still carry them under lukeConfig.widgets, so use
         // the problem definition first and keep the runner config as fallback.
         const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
+        const infographic = responseLeia?.infographic;
+        setStudentInfographic(
+          infographic?.src
+            ? {
+                src: infographic.src,
+                fallbackSrc:
+                  infographic.fallbackSrc ||
+                  buildLeiaInfographicPaths(resourceIds.leiaId, "infographic")[0],
+                fallbackSources: [
+                  ...(infographic.fallbackSources || []),
+                  ...buildLeiaInfographicPaths(resourceIds.leiaId, "infographic"),
+                ],
+              }
+            : null,
+        );
         const problemWidgets = getProblemWidgets(responseLeia);
         const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
         const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
@@ -605,6 +734,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dataUsageConsentPending) return;
     if (configuration?.mode === "transcription") return;
 
     const messageText = newMessageText.trim();
@@ -658,6 +788,7 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
+    if (dataUsageConsentPending) return;
     if (
       !messages.length &&
       configuration?.mode !== "transcription" &&
@@ -692,6 +823,7 @@ export const Chat = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
+    if (dataUsageConsentPending) return;
     setConcluding(true);
     try {
       const response = await axios.post(
@@ -701,12 +833,29 @@ export const Chat = () => {
         setSession(response.data);
         setShowSuccessModal(true);
       }
-    } catch (error: any) {
-      setLoadError(error.response?.data?.error || "An unexpected error occurred");
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
     } finally {
       setConcluding(false);
     }
-  }, [sessionId]);
+  }, [sessionId, dataUsageConsentPending]);
+
+  const handleDataUsageConsentDecision = async (accepted: boolean) => {
+    if (dataUsageConsentSubmitting) return;
+    setDataUsageConsentSubmitting(true);
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/data-usage-consent`,
+        { accepted },
+      );
+      setSession(response.data.session);
+      localStorage.setItem("session", JSON.stringify(response.data.session));
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
+    } finally {
+      setDataUsageConsentSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (session?.finishedAt && !showSuccessModal) {
@@ -725,6 +874,21 @@ export const Chat = () => {
       return () => clearInterval(timer);
     }
   }, [session, showSuccessModal, navigate]);
+
+  const renderStudentInfographic = () =>
+    studentInfographic ? (
+      <InfographicViewer
+        ref={studentInfographicViewerRef}
+        src={studentInfographic.src}
+        candidateSources={[
+          studentInfographic.src,
+          studentInfographic.fallbackSrc,
+          ...(studentInfographic.fallbackSources || []),
+        ]}
+        title="Exercise infographic"
+        hidden
+      />
+    ) : null;
 
   if (loading) {
     return (
@@ -764,7 +928,42 @@ export const Chat = () => {
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
       />
 
-      {showInstructions && (
+      {dataUsageConsentPending && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Data Usage Consent Acceptance
+              </h2>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-gray-600 whitespace-pre-wrap">
+                {session?.dataUsage?.config.dataUsageConsentMessage}
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t flex flex-col sm:flex-row justify-end gap-2">
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                No, I do not consent
+              </button>
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(true)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Yes, I consent
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInstructions && !dataUsageConsentPending && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center px-6 py-4 border-b">
@@ -821,13 +1020,24 @@ export const Chat = () => {
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
         <div className="flex gap-2">
-        {sessionTime && session?.startedAt && (
+        {!dataUsageConsentPending && sessionTime && session?.startedAt && (
           <SessionTimer
             durationMinutes={sessionTime}
             sessionStartedAt={session.startedAt}
             onExpire={handleTimerExpire}
           />
         )}
+          {hasStudentInfographic && (
+            <button
+              onClick={() => studentInfographicViewerRef.current?.open()}
+              className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+              title="Open exercise guidance"
+              aria-label="Open exercise guidance"
+            >
+              <PhotoIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Guidance</span>
+            </button>
+          )}
           <button
             onClick={() => setShowInstructions(true)}
             className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
@@ -850,6 +1060,7 @@ export const Chat = () => {
             onClick={handleFinishConversation}
             disabled={
               concluding ||
+              dataUsageConsentPending ||
               (!messages.length &&
                 configuration?.mode !== "transcription" &&
                 audioMode !== "luke" &&
@@ -892,23 +1103,27 @@ export const Chat = () => {
           slots inside LukeAudioWidget; here we mount the same widgets in
           a fixed right pane and bridge their tools out to the round-trip
           loop owned by handleSubmit. */}
+      {hasStudentInfographic && renderStudentInfographic()}
+
       {hasTextWidgets && (
         <VoiceModeWithWidgets widgets={widgetDefs}>
-          {({ rightSlot, leftSlot }) => (
-            <>
-              <ToolsBridge onTools={handleToolsSync} />
-              {rightSlot && (
-                <div className="fixed top-14 right-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-l border-neutral-800">
-                  {rightSlot}
-                </div>
-              )}
-              {leftSlot && (
-                <div className="fixed top-14 left-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-r border-neutral-800">
-                  {leftSlot}
-                </div>
-              )}
-            </>
-          )}
+          {({ rightSlot, leftSlot }) => {
+            return (
+              <>
+                <ToolsBridge onTools={handleToolsSync} />
+                {rightSlot && (
+                  <div className="fixed top-14 right-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-l bg-neutral-900 text-white border-neutral-800">
+                    {rightSlot}
+                  </div>
+                )}
+                {leftSlot && (
+                  <div className="fixed top-14 left-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-r bg-neutral-900 text-white border-neutral-800">
+                    {leftSlot}
+                  </div>
+                )}
+              </>
+            );
+          }}
         </VoiceModeWithWidgets>
       )}
 
@@ -924,7 +1139,9 @@ export const Chat = () => {
                   token={lukeToken.token!}
                   lukeConfig={lukeConfig}
                   leiaName={leiaName || undefined}
-                  forceMute={showInstructions}
+                  avatarSrc={personaAvatar || undefined}
+                  avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
+                  forceMute={showInstructions || dataUsageConsentPending}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
                   onTranscriptComplete={handleTranscriptComplete}
@@ -934,21 +1151,30 @@ export const Chat = () => {
               if (widgetDefs.length === 0) return base;
               return (
                 <VoiceModeWithWidgets widgets={widgetDefs}>
-                  {({ tools, leftSlot, rightSlot }) => (
-                    <LukeAudioWidget
-                      wsUrl={lukeToken.wsUrl!}
-                      token={lukeToken.token!}
-                      lukeConfig={lukeConfig}
-                      leiaName={leiaName || undefined}
-                      forceMute={showInstructions}
-                      showTranscription={!hideAudioTranscription}
-                      mode="inline"
-                      tools={tools as Record<string, import("@leia-org/luke-client").FrontendTool>}
-                      leftSlot={leftSlot}
-                      rightSlot={rightSlot}
-                      onTranscriptComplete={handleTranscriptComplete}
-                    />
-                  )}
+                  {({ tools, leftSlot, rightSlot }) => {
+                    return (
+                      <LukeAudioWidget
+                        wsUrl={lukeToken.wsUrl!}
+                        token={lukeToken.token!}
+                        lukeConfig={lukeConfig}
+                        leiaName={leiaName || undefined}
+                        avatarSrc={personaAvatar || undefined}
+                        avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
+                        forceMute={showInstructions || dataUsageConsentPending}
+                        showTranscription={!hideAudioTranscription}
+                        mode="inline"
+                        tools={
+                          tools as Record<
+                            string,
+                            import("@leia-org/luke-client").FrontendTool
+                          >
+                        }
+                        leftSlot={leftSlot}
+                        rightSlot={rightSlot}
+                        onTranscriptComplete={handleTranscriptComplete}
+                      />
+                    );
+                  }}
                 </VoiceModeWithWidgets>
               );
             })()
@@ -1054,18 +1280,28 @@ export const Chat = () => {
                 }`}
               >
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${
                     msg.isLeia ? "bg-blue-50" : "bg-blue-600"
                   }`}
                 >
                   {msg.isLeia ? (
-                    <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                    personaAvatar || personaAvatarFallbackSrc ? (
+                      <PersonaAvatar
+                        src={personaAvatar}
+                        fallbackSrc={personaAvatarFallbackSrc}
+                        alt={`${leiaName || "LEIA"} avatar`}
+                        label={leiaName || "LEIA"}
+                        size="md"
+                      />
+                    ) : (
+                      <UserCircleIcon className="w-6 h-6 text-blue-700" />
+                    )
                   ) : (
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 20 20"
                       fill="currentColor"
-                      className="w-5 h-5 text-white"
+                      className="w-6 h-6 text-white"
                     >
                       <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
                     </svg>
@@ -1125,9 +1361,21 @@ export const Chat = () => {
             ))}
             {sendingMessage && (
               <div className="flex items-end gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <UserCircleIcon className="w-5 h-5 text-blue-700" />
-                </div>
+                {personaAvatar || personaAvatarFallbackSrc ? (
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-blue-50">
+                    <PersonaAvatar
+                      src={personaAvatar}
+                      fallbackSrc={personaAvatarFallbackSrc}
+                      alt={`${leiaName || "LEIA"} avatar`}
+                      label={leiaName || "LEIA"}
+                      size="md"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <UserCircleIcon className="w-6 h-6 text-blue-700" />
+                  </div>
+                )}
                 <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
                   <TypingAnimation />
                 </div>
@@ -1292,6 +1540,7 @@ export const Chat = () => {
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
                 disabled={
+                  dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio"
                 }
@@ -1300,6 +1549,7 @@ export const Chat = () => {
               <button
                 type="submit"
                 disabled={
+                  dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio" ||
                   !newMessageText.trim() ||
