@@ -97,6 +97,7 @@ interface LeiasSectionProps {
   hasFetchedAvailableModels: boolean;
   apiKeys: ApiKey[];
   apiKeyProvidersMapped: Record<string, string[]>;
+  providerProviderModuleMap: Record<string, string>;
   userRole?: string;
   onLocalLeiaChange: (idx: number, key: string, value: unknown) => void;
   onLocalLeiaReset: (idx: number) => void;
@@ -208,6 +209,7 @@ interface LeiaEditorProps {
   serverItem: ReplicationLeia;
   apiKeys: ApiKey[];
   apiKeyProvidersMapped: Record<string, string[]>;
+  providerProviderModuleMap: Record<string, string>;
   userRole?: string;
   onLocalLeiaChange: (idx: number, key: string, value: unknown) => void;
   onLocalLeiaReset: (idx: number) => void;
@@ -231,6 +233,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   serverItem,
   apiKeys,
   apiKeyProvidersMapped,
+  providerProviderModuleMap,
   userRole,
   onLocalLeiaChange,
   onLocalLeiaReset,
@@ -253,16 +256,38 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   // BYOK: model + API key for this LEIA.
   const currentApiKeyId = item.runnerConfiguration.apiKeyId;
   const currentModelName = item.runnerConfiguration.modelName ?? "";
+  const problemWidgets = item.leia.spec?.problem?.spec?.widgets;
+  const requiresTools =
+    Array.isArray(problemWidgets) && problemWidgets.length > 0;
+  const toolCapableProviders = React.useMemo(
+    () =>
+      new Set(
+        Object.entries(providerProviderModuleMap)
+          .filter(([, moduleName]) => moduleName === "openai-responses")
+          .map(([provider]) => provider)
+      ),
+    [providerProviderModuleMap]
+  );
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
   const compatibleApiKeys = React.useMemo(
-    () =>
-      getValidApiKeys(
+    () => {
+      const matchingKeys = getValidApiKeys(
         currentModelName,
         apiKeys,
         apiKeyProvidersMapped
-      ),
-    [apiKeyProvidersMapped, apiKeys, currentModelName]
+      );
+      return requiresTools
+        ? matchingKeys.filter((key) => toolCapableProviders.has(key.provider))
+        : matchingKeys;
+    },
+    [
+      apiKeyProvidersMapped,
+      apiKeys,
+      currentModelName,
+      requiresTools,
+      toolCapableProviders,
+    ]
   );
 
   React.useEffect(() => {
@@ -299,7 +324,11 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   const validModelsForLeia = Array.from(
     new Set(
       Object.entries(apiKeyProvidersMapped)
-        .filter(([provider]) => providersWithApiKeys.has(provider))
+        .filter(
+          ([provider]) =>
+            providersWithApiKeys.has(provider) &&
+            (!requiresTools || toolCapableProviders.has(provider))
+        )
         .flatMap(([, models]) => models)
     )
   );
@@ -536,6 +565,24 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
       </FieldRow>
 
       <SectionLabel>Runner</SectionLabel>
+      {requiresTools && (
+        <Box
+          sx={{
+            mb: 2,
+            border: "1px solid",
+            borderColor: "warning.light",
+            bgcolor: "warning.50",
+            borderRadius: 1,
+            px: 1.5,
+            py: 1,
+          }}
+        >
+          <Typography variant="caption" sx={{ color: "warning.dark" }}>
+            This activity uses widgets, so its tool functions require a
+            tool-capable provider. Currently, only OpenAI models are available.
+          </Typography>
+        </Box>
+      )}
       <FieldRow
         label="Model"
         helper="Model used by this LEIA's runner."
@@ -551,7 +598,14 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                 "runnerConfiguration.modelName",
                 modelName
               );
-              const matchingKeys = getValidApiKeys(modelName, apiKeys, apiKeyProvidersMapped);
+              const matchingKeys = getValidApiKeys(
+                modelName,
+                apiKeys,
+                apiKeyProvidersMapped
+              ).filter(
+                (key) =>
+                  !requiresTools || toolCapableProviders.has(key.provider)
+              );
               const currentKeyStillMatches = matchingKeys.some((key) => key.id === currentApiKeyId);
               if (!currentKeyStillMatches) {
                 const nextKey = matchingKeys.find((key) => key.isDefault) || matchingKeys[0];
@@ -986,6 +1040,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   onLeiaSelect,
   apiKeys,
   apiKeyProvidersMapped,
+  providerProviderModuleMap,
   userRole,
   onLocalLeiaChange,
   onLocalLeiaReset,
@@ -1026,6 +1081,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         serverItem={serverItem}
         apiKeys={apiKeys}
         apiKeyProvidersMapped={apiKeyProvidersMapped}
+        providerProviderModuleMap={providerProviderModuleMap}
         userRole={userRole}
         onLocalLeiaChange={onLocalLeiaChange}
         onLocalLeiaReset={onLocalLeiaReset}

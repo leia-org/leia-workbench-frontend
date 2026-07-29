@@ -82,8 +82,11 @@ export const Replication: React.FC = () => {
 
   // BYOK: API keys + provider/model catalogue.
   const { apiKeys, getDefaultKey } = useApiKeys();
-  const { apiKeyProvidersMapped, isLoading: isProvidersLoading } =
-    useProviders();
+  const {
+    apiKeyProvidersMapped,
+    providerProviderModuleMap,
+    isLoading: isProvidersLoading,
+  } = useProviders();
   const defaultKey = getDefaultKey();
 
   // Flattened list of every model the available API keys can serve.
@@ -821,6 +824,7 @@ export const Replication: React.FC = () => {
             hasFetchedAvailableModels={hasProviderData}
             apiKeys={apiKeys}
             apiKeyProvidersMapped={apiKeyProvidersMapped}
+            providerProviderModuleMap={providerProviderModuleMap}
             userRole={user?.role}
             onLocalLeiaChange={handleLocalLeiaChange}
             onLocalLeiaReset={handleLocalLeiaReset}
