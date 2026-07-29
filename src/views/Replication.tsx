@@ -665,13 +665,18 @@ export const Replication: React.FC = () => {
     const localLeiaRunnerConfiguration =
       localReplication.experiment.leias[idx].runnerConfiguration;
     const modelName = localLeiaRunnerConfiguration.modelName;
+    const apiKeyId = localLeiaRunnerConfiguration.apiKeyId;
 
-    if (!modelName) {
+    if (!modelName || !apiKeyId) {
+      const invalidFields = [
+        ...(!modelName ? ["modelName"] : []),
+        ...(!apiKeyId ? ["apiKeyId"] : []),
+      ];
       setInvalidLeiaFields((prev) => ({
         ...prev,
-        [localLeiaId]: ["modelName"],
+        [localLeiaId]: invalidFields,
       }));
-      toast.error("Please select a valid model.", {
+      toast.error("Please select a valid model and API key.", {
         position: "bottom-right",
         autoClose: 5000,
       });

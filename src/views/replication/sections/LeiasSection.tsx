@@ -255,6 +255,41 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   const currentModelName = item.runnerConfiguration.modelName ?? "";
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
+  const compatibleApiKeys = React.useMemo(
+    () =>
+      getValidApiKeys(
+        currentModelName,
+        apiKeys,
+        apiKeyProvidersMapped
+      ),
+    [apiKeyProvidersMapped, apiKeys, currentModelName]
+  );
+
+  React.useEffect(() => {
+    if (!currentModelName) return;
+
+    const currentKeyStillMatches = compatibleApiKeys.some(
+      (key) => key.id === currentApiKeyId
+    );
+    if (currentKeyStillMatches) return;
+
+    const nextKey =
+      compatibleApiKeys.find((key) => key.isDefault) || compatibleApiKeys[0];
+    const nextApiKeyId = nextKey?.id ?? null;
+    if ((currentApiKeyId ?? null) === nextApiKeyId) return;
+
+    onLocalLeiaChange(
+      idx,
+      "runnerConfiguration.apiKeyId",
+      nextApiKeyId
+    );
+  }, [
+    compatibleApiKeys,
+    currentApiKeyId,
+    currentModelName,
+    idx,
+    onLocalLeiaChange,
+  ]);
 
   const providersWithApiKeys = new Set(
     apiKeys
@@ -614,6 +649,46 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           </MuiLink>
         </Stack>
       </FieldRow>
+
+      {compatibleApiKeys.length > 1 && (
+        <FieldRow
+          label="API key"
+          helper="API key used by this LEIA's runner."
+        >
+          <FormControl size="small" sx={{ minWidth: 240 }}>
+            <Select
+              value={
+                compatibleApiKeys.some((key) => key.id === currentApiKeyId)
+                  ? currentApiKeyId
+                  : ""
+              }
+              displayEmpty
+              onChange={(e) =>
+                onLocalLeiaChange(
+                  idx,
+                  "runnerConfiguration.apiKeyId",
+                  e.target.value
+                )
+              }
+              sx={{ fontSize: 13 }}
+            >
+              <MenuItem value="" disabled sx={{ fontSize: 13 }}>
+                <em>-- Select API key --</em>
+              </MenuItem>
+              {compatibleApiKeys.map((apiKey) => (
+                <MenuItem
+                  key={apiKey.id}
+                  value={apiKey.id}
+                  sx={{ fontSize: 13 }}
+                >
+                  {apiKey.description || apiKey.provider}
+                  {apiKey.isDefault ? " (Default)" : ""}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </FieldRow>
+      )}
 
       <FieldRow label="Audio mode">
         <FormControl size="small" sx={{ minWidth: 220 }}>
