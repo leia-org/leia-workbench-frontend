@@ -6,7 +6,10 @@ import ReactMarkdown from "react-markdown";
 import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
 import { SessionTimer } from "../components/SessionTimer";
-
+import {
+  PaperClipIcon,
+} from "@heroicons/react/24/outline";
+import mammoth from "mammoth";
 mermaid.initialize({
   startOnLoad: true,
   theme: "default",
@@ -291,9 +294,10 @@ interface HeaderProps {
   sessionTime?: number | null;
   sessionStartedAt?: string | null;
   onTimerExpire?: () => void;
+  onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onFileUpload  }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -312,6 +316,18 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
             onExpire={onTimerExpire}
           />
         )}
+                  <label className="relative cursor-pointer">
+          <input
+            type="file"
+            accept=".txt,.puml,.mmd,.xml,.xmi,.drawio,.docx,.md,.json"
+            onChange={onFileUpload}
+            className="sr-only"
+          />
+          <span className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5 transition-colors">
+            <PaperClipIcon className="w-4 h-4" />
+            Import file
+          </span>
+        </label>
         <button
           onClick={onAlert}
           disabled={loadingEvaluation}
@@ -375,10 +391,16 @@ export const Edit = () => {
   const [formUrl, setFormUrl] = useState<string | null>(null);
   const [solutionFormat, setSolutionFormat] = useState<string>("text");
   const [code, setCode] = useState(() => {
+    const savedSessionId = localStorage.getItem("sessionId");
     const savedCode = localStorage.getItem("mermaid_code");
-    if (savedCode) {
-      return savedCode;
+  
+    if (savedCode && savedSessionId) {
+      const parsed = JSON.parse(savedCode);
+      if (parsed.sessionId === savedSessionId) {
+        return parsed.code;
+      }
     }
+  
     return getDefaultCode();
   });
   const [mermaidSvg, setMermaidSvg] = useState<string>("");
@@ -406,7 +428,20 @@ export const Edit = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
+  
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
+    if (file.name.endsWith(".docx")) {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      setCode(result.value);
+    } else {
+        const text = await file.text();
+        setCode(text);
+      }
+  };
   // Load initial data from localStorage
   useEffect(() => {
     const savedConfiguration = localStorage.getItem("configuration");
@@ -445,8 +480,10 @@ export const Edit = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("mermaid_code", code);
-  }, [code]);
+    if (sessionId) {
+      localStorage.setItem("mermaid_code", JSON.stringify({ code, sessionId }));
+    }
+  }, [code, sessionId]);
 
   useEffect(() => {
     localStorage.setItem("editor_width", String(editorWidth));
@@ -662,6 +699,7 @@ export const Edit = () => {
         sessionTime={sessionTime}
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
+        onFileUpload={handleFileUpload}
       />
 
       {showAlert && (
