@@ -82,8 +82,11 @@ export const Replication: React.FC = () => {
 
   // BYOK: API keys + provider/model catalogue.
   const { apiKeys, getDefaultKey } = useApiKeys();
-  const { apiKeyProvidersMapped, isLoading: isProvidersLoading } =
-    useProviders();
+  const {
+    apiKeyProvidersMapped,
+    providerProviderModuleMap,
+    isLoading: isProvidersLoading,
+  } = useProviders();
   const defaultKey = getDefaultKey();
 
   // Flattened list of every model the available API keys can serve.
@@ -665,13 +668,18 @@ export const Replication: React.FC = () => {
     const localLeiaRunnerConfiguration =
       localReplication.experiment.leias[idx].runnerConfiguration;
     const modelName = localLeiaRunnerConfiguration.modelName;
+    const apiKeyId = localLeiaRunnerConfiguration.apiKeyId;
 
-    if (!modelName) {
+    if (!modelName || !apiKeyId) {
+      const invalidFields = [
+        ...(!modelName ? ["modelName"] : []),
+        ...(!apiKeyId ? ["apiKeyId"] : []),
+      ];
       setInvalidLeiaFields((prev) => ({
         ...prev,
-        [localLeiaId]: ["modelName"],
+        [localLeiaId]: invalidFields,
       }));
-      toast.error("Please select a valid model.", {
+      toast.error("Please select a valid model and API key.", {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -816,6 +824,7 @@ export const Replication: React.FC = () => {
             hasFetchedAvailableModels={hasProviderData}
             apiKeys={apiKeys}
             apiKeyProvidersMapped={apiKeyProvidersMapped}
+            providerProviderModuleMap={providerProviderModuleMap}
             userRole={user?.role}
             onLocalLeiaChange={handleLocalLeiaChange}
             onLocalLeiaReset={handleLocalLeiaReset}
