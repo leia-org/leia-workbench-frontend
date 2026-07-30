@@ -12,12 +12,14 @@ import {
   Stack,
   Switch,
   Typography,
+  IconButton,
 } from "@mui/material";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import PlayCircleFilledWhiteOutlinedIcon from '@mui/icons-material/PlayCircleFilledWhiteOutlined';
 import LeiaPreviewDrawer, {
   type ParsedLeia,
 } from "../../../components/admin/LeiaPreview";
@@ -966,6 +968,13 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                   ].map((v) => (
                     <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
                       {v}
+                      <IconButton aria-label="preview" onClick={(e) => {
+                        e.stopPropagation();
+                        new Audio(`/audio/previews/${v}-example.mp3`).play();
+                              }}
+                      size="small">
+                        <PlayCircleFilledWhiteOutlinedIcon />
+                      </IconButton>
                     </MenuItem>
                   ))
                 ) : (
