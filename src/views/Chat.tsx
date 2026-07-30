@@ -994,7 +994,7 @@ export const Chat = () => {
               <p className="text-gray-600 mt-4">
                 When you're ready, click the button below to start the task.
                 {(audioMode === "audio" || audioMode === "luke")
-                  ? "Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need."
+                  ? " Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need."
                   : ""}
               </p>
             </div>
