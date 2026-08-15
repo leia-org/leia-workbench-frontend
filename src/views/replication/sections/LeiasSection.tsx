@@ -20,6 +20,7 @@ import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import PlayCircleFilledWhiteOutlinedIcon from '@mui/icons-material/PlayCircleFilledWhiteOutlined';
+import PauseCircleOutlineOutlinedIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
 import LeiaPreviewDrawer, {
   type ParsedLeia,
 } from "../../../components/admin/LeiaPreview";
@@ -249,6 +250,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 }) => {
   const [showAllVoices, setShowAllVoices] = useState(false);
   const [contentOpen, setContentOpen] = useState(false);
+  const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
   const [studentInfographicAvailable, setStudentInfographicAvailable] =
     useState<boolean | null>(null);
   const [solutionInfographicAvailable, setSolutionInfographicAvailable] =
@@ -258,6 +260,11 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   // BYOK: model + API key for this LEIA.
   const currentApiKeyId = item.runnerConfiguration.apiKeyId;
   const currentModelName = item.runnerConfiguration.modelName ?? "";
+  const selectedLukeProvider =
+    item.runnerConfiguration.lukeConfig?.provider || "gemini";
+  const selectedLukeVoice =
+    item.runnerConfiguration.lukeConfig?.voice ||
+    (selectedLukeProvider === "openai" ? "alloy" : "Puck");
   const problemWidgets = item.leia.spec?.problem?.spec?.widgets;
   const requiresTools =
     Array.isArray(problemWidgets) && problemWidgets.length > 0;
@@ -272,6 +279,21 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   );
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
+  const handlePreviewLukeVoice = () => {
+    if (selectedLukeProvider !== "openai" || audioPreviewPlaying) return;
+    const audio = new Audio(`/audio/previews/${selectedLukeVoice}-example.mp3`);
+
+    audio.onplay = () => {
+      setAudioPreviewPlaying(true);
+    };
+
+    audio.onended = () => {
+      setAudioPreviewPlaying(false);
+    };
+
+    audio.play();
+  };
+
   const compatibleApiKeys = React.useMemo(
     () => {
       const matchingKeys = getValidApiKeys(
@@ -938,54 +960,54 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             </FormControl>
           </FieldRow>
           <FieldRow label="Luke voice">
-            <FormControl size="small" sx={{ minWidth: 220 }}>
-              <Select
-                value={
-                  item.runnerConfiguration.lukeConfig?.voice ||
-                  (item.runnerConfiguration.lukeConfig?.provider === "openai"
-                    ? "alloy"
-                    : "Puck")
-                }
-                onChange={(e) =>
-                  onLocalLeiaChange(
-                    idx,
-                    "runnerConfiguration.lukeConfig.voice",
-                    e.target.value
-                  )
-                }
-                sx={{ fontSize: 13 }}
-              >
-                {item.runnerConfiguration.lukeConfig?.provider === "openai" ? (
-                  [
-                    "alloy",
-                    "ash",
-                    "ballad",
-                    "coral",
-                    "echo",
-                    "sage",
-                    "shimmer",
-                    "verse",
-                  ].map((v) => (
-                    <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
-                      {v}
-                      <IconButton aria-label="preview" onClick={(e) => {
-                        e.stopPropagation();
-                        new Audio(`/audio/previews/${v}-example.mp3`).play();
-                              }}
-                      size="small">
-                        <PlayCircleFilledWhiteOutlinedIcon />
-                      </IconButton>
-                    </MenuItem>
-                  ))
-                ) : (
-                  ["Puck", "Charon", "Kore", "Fenrir", "Aoede"].map((v) => (
-                    <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
-                      {v}
-                    </MenuItem>
-                  ))
-                )}
-              </Select>
-            </FormControl>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <Select
+                  value={selectedLukeVoice}
+                  onChange={(e) =>
+                    onLocalLeiaChange(
+                      idx,
+                      "runnerConfiguration.lukeConfig.voice",
+                      e.target.value
+                    )
+                  }
+                  sx={{ fontSize: 13 }}
+                >
+                  {selectedLukeProvider === "openai" ? (
+                    [
+                      "alloy",
+                      "ash",
+                      "ballad",
+                      "coral",
+                      "echo",
+                      "sage",
+                      "shimmer",
+                      "verse",
+                    ].map((v) => (
+                      <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
+                        {v}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    ["Puck", "Charon", "Kore", "Fenrir", "Aoede"].map((v) => (
+                      <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
+                        {v}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+              </FormControl>
+              {selectedLukeProvider === "openai" && (
+                <IconButton
+                  aria-label="preview voice"
+                  onClick={handlePreviewLukeVoice}
+                  size="small"
+                  sx={{ flex: "0 0 auto" }}
+                >
+                  {!audioPreviewPlaying ? <PlayCircleFilledWhiteOutlinedIcon /> : <PauseCircleOutlineOutlinedIcon />}
+                </IconButton>
+              )}
+            </Stack>
           </FieldRow>
         </>
       )}
