@@ -88,7 +88,8 @@ export const AdminLogin: React.FC = () => {
           ...(isTurnstileEnabled && {
             "cf-turnstile-response": turnstileToken,
           }),
-        }
+        },
+        { withCredentials: true },
       );
       const newToken = response.data.token;
 
