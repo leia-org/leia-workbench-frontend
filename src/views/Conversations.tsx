@@ -22,6 +22,9 @@ import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import PrivacyTipOutlinedIcon from "@mui/icons-material/PrivacyTipOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import AdminLayout from "../components/admin/AdminLayout";
@@ -567,7 +570,7 @@ const SessionDetail: React.FC<{
   onCancelEditScore,
   formatDate,
 }) => {
-  const [detailView, setDetailView] = useState<"conversation" | "configuration" | "dataUsage">("conversation");
+  const [detailView, setDetailView] = useState<"conversation" | "configuration" | "dataUsage" | "evaluation">("conversation");
   const resultIsMermaid =
     Boolean(session.result) &&
     (solutionFormat === "mermaid" || looksLikeMermaid(session.result ?? ""));
@@ -627,6 +630,14 @@ const SessionDetail: React.FC<{
           onClick={() => setDetailView("dataUsage")}
         >
           Data Usage
+        </Button>
+        <Button
+          size="small"
+          variant={detailView === "evaluation" ? "contained" : "outlined"}
+          startIcon={<FactCheckOutlinedIcon sx={{ fontSize: 16 }} />}
+          onClick={() => setDetailView("evaluation")}
+        >
+          Evaluation
         </Button>
         <Chip
           size="small"
@@ -693,6 +704,8 @@ const SessionDetail: React.FC<{
         <DataUsagePanel
           dataUsage={session.dataUsage}
         />
+      ) : detailView === "evaluation" ? (
+        <ConversationEvaluationPanel />
       ) : (
         <>
       <Typography
@@ -993,6 +1006,141 @@ const SessionDetail: React.FC<{
         </>
       )}
     </Box>
+  );
+};
+
+const ConversationEvaluationPanel: React.FC = () => {
+  const evaluationMessages = [
+    {
+      role: "Evaluator LEIA",
+      text: "You chose inheritance to share behavior between both classes. What made it a better fit than composition in this solution?",
+      isLeia: true,
+    },
+    {
+      role: "Student",
+      text: "Both classes are specialized versions of the same base concept, so inheritance avoids repeating the common validation and state.",
+      isLeia: false,
+    },
+    {
+      role: "Evaluator LEIA",
+      text: "How would your design change if a third class needed the validation behavior but did not share the same base concept?",
+      isLeia: true,
+    },
+    {
+      role: "Student",
+      text: "In that case I would extract the validation into a separate component and inject it, because the inheritance relationship would no longer represent an is-a relationship.",
+      isLeia: false,
+    },
+  ];
+
+  return (
+    <Stack spacing={3}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Box>
+          <Typography variant="overline" sx={{ color: "text.disabled" }}>
+            Evaluation
+          </Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 650 }}>
+            Evaluator LEIA conversation
+          </Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 12.5, color: "text.secondary" }}>
+            Mock evaluation generated after the student's activity.
+          </Typography>
+        </Box>
+      </Stack>
+
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+        <Stack spacing={1.5}>
+          {evaluationMessages.map((message, index) => (
+            <Box
+              key={index}
+              sx={{ display: "flex", justifyContent: message.isLeia ? "flex-start" : "flex-end" }}
+            >
+              <Box sx={{ maxWidth: "82%" }}>
+                <Typography
+                  sx={{
+                    mb: 0.5,
+                    px: 0.5,
+                    fontSize: 10.5,
+                    fontWeight: 650,
+                    color: "text.secondary",
+                    textAlign: message.isLeia ? "left" : "right",
+                  }}
+                >
+                  {message.role}
+                </Typography>
+                <Box
+                  sx={{
+                    px: 1.5,
+                    py: 1.25,
+                    borderRadius: 2,
+                    bgcolor: message.isLeia ? "surfaces.subtle" : "primary.main",
+                    color: message.isLeia ? "text.primary" : "primary.contrastText",
+                  }}
+                >
+                  <Typography sx={{ fontSize: 13, lineHeight: 1.55 }}>{message.text}</Typography>
+                </Box>
+              </Box>
+            </Box>
+          ))}
+        </Stack>
+      </Paper>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 2 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+            <InsightsOutlinedIcon color="primary" sx={{ fontSize: 20 }} />
+            <Typography sx={{ fontWeight: 650 }}>Conversation insights</Typography>
+          </Stack>
+          <Stack spacing={1.5}>
+            <Box sx={{ p: 1.5, bgcolor: "rgba(22,163,74,0.06)", borderRadius: 1.5 }}>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 650, color: "success.dark" }}>
+                Clear conceptual understanding
+              </Typography>
+              <Typography sx={{ mt: 0.5, fontSize: 12, color: "text.secondary", lineHeight: 1.5 }}>
+                Correctly distinguishes an is-a relationship from reusable behavior.
+              </Typography>
+            </Box>
+            <Box sx={{ p: 1.5, bgcolor: "rgba(37,99,235,0.06)", borderRadius: 1.5 }}>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 650, color: "primary.dark" }}>
+                Transfers knowledge
+              </Typography>
+              <Typography sx={{ mt: 0.5, fontSize: 12, color: "text.secondary", lineHeight: 1.5 }}>
+                Proposes dependency injection when the original constraint changes.
+              </Typography>
+            </Box>
+          </Stack>
+          <Divider sx={{ my: 2 }} />
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Overall mastery</Typography>
+            <Chip label="High · 86%" size="small" color="success" variant="outlined" />
+          </Stack>
+        </Paper>
+
+        <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 2, overflow: "hidden" }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+            <AccountTreeOutlinedIcon color="primary" sx={{ fontSize: 20 }} />
+            <Typography sx={{ fontWeight: 650 }}>Associated trajectory</Typography>
+          </Stack>
+          <Stack alignItems="center">
+            {[
+              ["Explains the solution", "Initial answer", "primary.main"],
+              ["Justifies inheritance", "Concept understood", "success.main"],
+              ["Handles a variation", "Follow-up question", "info.main"],
+              ["Proposes composition", "Knowledge transferred", "success.main"],
+            ].map(([title, detail, color], index, items) => (
+              <React.Fragment key={title}>
+                <Box sx={{ width: "100%", p: 1.25, border: "1px solid", borderColor: "divider", borderLeft: "3px solid", borderLeftColor: color, borderRadius: 1.5 }}>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 650 }}>{title}</Typography>
+                  <Typography sx={{ fontSize: 11, color: "text.secondary", mt: 0.25 }}>{detail}</Typography>
+                </Box>
+                {index < items.length - 1 && <Box sx={{ width: 2, height: 14, bgcolor: "divider" }} />}
+              </React.Fragment>
+            ))}
+          </Stack>
+        </Paper>
+      </Box>
+    </Stack>
   );
 };
 
