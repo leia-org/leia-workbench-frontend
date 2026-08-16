@@ -7,10 +7,8 @@ interface NoteEntry {
 }
 
 const Notes = () => {
-  // 1. Capturamos el sessionId al montar el componente para que no sea alterado por otras pestañas
   const [sessionId] = useState(() => localStorage.getItem("sessionId"));
 
-  // 2. Modificamos el estado inicial para usar el sessionId que acabamos de capturar
   const [text, setText] = useState(() => {
     if (!sessionId) return "";
     const raw = localStorage.getItem("notes");
@@ -41,7 +39,6 @@ const Notes = () => {
     const timeout = setTimeout(() => {
       const notes = getAllNotes();
       
-      // Usamos el sessionId del estado, NO el de localStorage directamente
       const index = notes.findIndex((note) => note.sessionId === sessionId);
 
       if (index !== -1) {
