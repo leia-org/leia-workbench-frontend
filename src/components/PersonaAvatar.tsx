@@ -1,4 +1,5 @@
 import React from "react";
+import { Avatar as MuiAvatar } from "@mui/material";
 import { buildAvatarCandidateSources } from "../lib/avatar";
 
 interface PersonaAvatarProps {
@@ -11,18 +12,11 @@ interface PersonaAvatarProps {
   fallbackClassName?: string;
 }
 
-const sizeClasses = {
-  sm: "w-8 h-8",
-  md: "w-12 h-12",
-  lg: "w-16 h-16",
-  xl: "w-44 h-44",
-};
-
-const textSizeClasses = {
-  sm: "text-xs",
-  md: "text-sm",
-  lg: "text-lg",
-  xl: "text-7xl",
+const sizeStyles = {
+  sm: { dimension: 32, fontSize: 12 },
+  md: { dimension: 48, fontSize: 14 },
+  lg: { dimension: 64, fontSize: 18 },
+  xl: { dimension: 176, fontSize: 72 },
 };
 
 export const getInitials = (value?: string | null): string => {
@@ -59,40 +53,38 @@ export const PersonaAvatar: React.FC<PersonaAvatarProps> = ({
   const [currentSourceIndex, setCurrentSourceIndex] = React.useState(0);
   const resolvedSrc = candidateSources[currentSourceIndex] || "";
   const initials = getInitials(label || alt);
+  const { dimension, fontSize } = sizeStyles[size];
 
   React.useEffect(() => {
     setCurrentSourceIndex(0);
   }, [candidateSources]);
 
+  const handleImageError = () => {
+    setCurrentSourceIndex((previousIndex) => {
+      const nextIndex = previousIndex + 1;
+      return nextIndex < candidateSources.length
+        ? nextIndex
+        : candidateSources.length;
+    });
+  };
+
   return (
-    <div
-      className={`${sizeClasses[size]} ${className} ${fallbackClassName} rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden`}
+    <MuiAvatar
+      className={`${className} ${fallbackClassName}`.trim()}
+      src={resolvedSrc || undefined}
+      alt={alt}
       title={label || alt}
       aria-label={alt}
+      imgProps={{ loading: "lazy", onError: handleImageError }}
+      sx={{
+        width: dimension,
+        height: dimension,
+        flexShrink: 0,
+        fontSize,
+        fontWeight: 600,
+      }}
     >
-      {resolvedSrc ? (
-        <img
-          src={resolvedSrc}
-          alt={alt}
-          className="h-full w-full object-cover"
-          loading="lazy"
-          onError={() => {
-            setCurrentSourceIndex((previousIndex) => {
-              const nextIndex = previousIndex + 1;
-              return nextIndex < candidateSources.length
-                ? nextIndex
-                : candidateSources.length;
-            });
-          }}
-        />
-      ) : (
-        <span
-          className={`${textSizeClasses[size]} font-semibold leading-none`}
-          aria-hidden="true"
-        >
-          {initials}
-        </span>
-      )}
-    </div>
+      {initials}
+    </MuiAvatar>
   );
 };
