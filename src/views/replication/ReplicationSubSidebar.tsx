@@ -13,12 +13,14 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import PrivacyTipOutlinedIcon from "@mui/icons-material/PrivacyTipOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 
 export type SectionId =
   | "general"
   | "leias"
   | "settings"
   | "dataUsage"
+  | "evaluation"
   | "conversations"
   | "live";
 
@@ -199,6 +201,19 @@ export const ReplicationSubSidebar: React.FC<ReplicationSubSidebarProps> = ({
               <MonitorHeartOutlinedIcon sx={{ fontSize: 18 }} />
             </ListItemIcon>
             <ListItemText primary="Live" />
+          </ListItemButton>
+        </ListItem>
+
+        <ListItem disablePadding sx={{ display: "block" }}>
+          <ListItemButton
+            onClick={() => onSectionChange("evaluation")}
+            aria-current={activeSection === "evaluation" ? "page" : undefined}
+            sx={itemSx(activeSection === "evaluation")}
+          >
+            <ListItemIcon>
+              <FactCheckOutlinedIcon sx={{ fontSize: 18 }} />
+            </ListItemIcon>
+            <ListItemText primary="Evaluation" />
           </ListItemButton>
         </ListItem>
       </List>

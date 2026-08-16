@@ -18,6 +18,7 @@ import { SettingsSection } from "./replication/sections/SettingsSection";
 import { DataUsageSection } from "./replication/sections/DataUsageSection";
 import { ConversationsPlaceholder } from "./replication/sections/ConversationsPlaceholder";
 import { LivePlaceholder } from "./replication/sections/LivePlaceholder";
+import { EvaluationSection } from "./replication/sections/EvaluationSection";
 import type { ReplicationData } from "./replication/types";
 import { writeReplicationName } from "../lib/replicationNames";
 
@@ -851,6 +852,8 @@ export const Replication: React.FC = () => {
             onUpdateDataUsage={handleUpdateDataUsage}
           />
         );
+      case "evaluation":
+        return <EvaluationSection />;
       case "conversations":
         return <ConversationsPlaceholder replicationId={replication.id} />;
       case "live":
