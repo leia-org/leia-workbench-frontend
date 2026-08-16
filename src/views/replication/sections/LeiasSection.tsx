@@ -56,6 +56,22 @@ const VOICE_OPTIONS: Array<{ value: string; label: string; gender: string }> = [
   { value: "verse", label: "Verse - Male", gender: "male" },
 ];
 
+const LUKE_VOICE_PREVIEW_PATHS: Record<string, string> = {
+  alloy: "/audio/previews/alloy-example.mp3",
+  ash: "/audio/previews/ash-example.mp3",
+  ballad: "/audio/previews/ballad-example.mp3",
+  coral: "/audio/previews/coral-example.mp3",
+  echo: "/audio/previews/echo-example.mp3",
+  sage: "/audio/previews/sage-example.mp3",
+  shimmer: "/audio/previews/shimmer-example.mp3",
+  verse: "/audio/previews/verse-example.mp3",
+  Puck: "/audio/previews/puck-example.wav",
+  Charon: "/audio/previews/charon-example.wav",
+  Kore: "/audio/previews/kore-example.wav",
+  Fenrir: "/audio/previews/fenrir-example.wav",
+  Aoede: "/audio/previews/aoede-example.wav",
+};
+
 const getFilteredVoiceOptions = (
   pronoun: string | undefined,
   all: boolean,
@@ -226,6 +242,7 @@ interface LeiaEditorProps {
   ) => void;
   replicationId: string;
   startingSessionLeiaId: string | null;
+  pronouns: string | undefined;
   // Campos que el backend marcó como inválidos para esta Leia.
   invalidFields: string[];
 }
@@ -246,6 +263,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onStartTestSession,
   replicationId,
   startingSessionLeiaId,
+  pronouns,
   invalidFields,
 }) => {
   const [showAllVoices, setShowAllVoices] = useState(false);
@@ -280,8 +298,11 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
   const handlePreviewLukeVoice = () => {
-    if (selectedLukeProvider !== "openai" || audioPreviewPlaying) return;
-    const audio = new Audio(`/audio/previews/${selectedLukeVoice}-example.mp3`);
+    if (audioPreviewPlaying) return;
+    const previewPath =
+      LUKE_VOICE_PREVIEW_PATHS[selectedLukeVoice] ||
+      `/audio/previews/${selectedLukeVoice.toLowerCase()}-example.mp3`;
+    const audio = new Audio(previewPath);
 
     audio.onplay = () => {
       setAudioPreviewPlaying(true);
@@ -291,7 +312,13 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
       setAudioPreviewPlaying(false);
     };
 
-    audio.play();
+    audio.onerror = () => {
+      setAudioPreviewPlaying(false);
+    };
+
+    audio.play().catch(() => {
+      setAudioPreviewPlaying(false);
+    });
   };
 
   const compatibleApiKeys = React.useMemo(
@@ -959,7 +986,9 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
               </Select>
             </FormControl>
           </FieldRow>
-          <FieldRow label="Luke voice">
+          <FieldRow label="Luke voice"
+                    helper={`Leia's pronouns are: ${pronouns}`}
+>
             <Stack direction="row" alignItems="center" spacing={1}>
               <FormControl size="small" sx={{ minWidth: 220 }}>
                 <Select
@@ -997,7 +1026,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                   )}
                 </Select>
               </FormControl>
-              {selectedLukeProvider === "openai" && (
                 <IconButton
                   aria-label="preview voice"
                   onClick={handlePreviewLukeVoice}
@@ -1006,7 +1034,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                 >
                   {!audioPreviewPlaying ? <PlayCircleFilledWhiteOutlinedIcon /> : <PauseCircleOutlineOutlinedIcon />}
                 </IconButton>
-              )}
             </Stack>
           </FieldRow>
         </>
@@ -1103,7 +1130,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const effectiveIdx = idx === -1 ? 0 : idx;
   const item = leias[effectiveIdx];
   const serverItem = replication.experiment.leias[effectiveIdx];
-
+  const pronouns = item.leia.spec?.persona?.spec?.subjectPronoum && item.leia.spec?.persona?.spec?.objectPronoum ? item.leia.spec?.persona?.spec?.subjectPronoum + "/" + item.leia.spec?.persona?.spec?.objectPronoum : undefined;
   return (
     <Box sx={{ maxWidth: 880 }}>
       <LeiaEditor
@@ -1121,6 +1148,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onToggleEvaluateSolution={onToggleEvaluateSolution}
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
+        pronouns= {pronouns}
         startingSessionLeiaId={startingSessionLeiaId}
         invalidFields={invalidLeiaFields[item.id] ?? []}
       />
