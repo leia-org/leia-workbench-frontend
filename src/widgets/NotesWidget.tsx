@@ -6,79 +6,80 @@ interface NoteEntry {
   sessionId: string;
 }
 
-
 const Notes = () => {
-  const [text, setText] = useState(getNoteForSession() || "");
+  // 1. Capturamos el sessionId al montar el componente para que no sea alterado por otras pestañas
+  const [sessionId] = useState(() => localStorage.getItem("sessionId"));
 
-    function getAllNotes(): NoteEntry[] {
+  // 2. Modificamos el estado inicial para usar el sessionId que acabamos de capturar
+  const [text, setText] = useState(() => {
+    if (!sessionId) return "";
     const raw = localStorage.getItem("notes");
-    console.log("Notes toggled:")
+    if (!raw) return "";
+    try {
+      const parsed = JSON.parse(raw);
+      const found = parsed.find((note: NoteEntry) => note.sessionId === sessionId);
+      return found ? found.text : "";
+    } catch {
+      return "";
+    }
+  });
+
+  function getAllNotes(): NoteEntry[] {
+    const raw = localStorage.getItem("notes");
     if (!raw) return [];
     try {
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-        return [];
+      return [];
     }
-    }
-    function getNoteForSession(): string | null {
-    const notes = getAllNotes();
-    return notes.find(note => note.sessionId === localStorage.getItem("sessionId"))?.text || null;
-    }
-    useEffect(() => {
+  }
+
+  useEffect(() => {
+    if (!sessionId) return;
+
     const timeout = setTimeout(() => {
-    const notes = getAllNotes();
-    const sessionId = localStorage.getItem("sessionId");
+      const notes = getAllNotes();
+      
+      // Usamos el sessionId del estado, NO el de localStorage directamente
+      const index = notes.findIndex((note) => note.sessionId === sessionId);
 
-            if (!sessionId) return;
+      if (index !== -1) {
+        notes[index].text = text;
+      } else {
+        notes.push({
+          text,
+          sessionId,
+        });
+      }
 
-            const index = notes.findIndex(
-            note => note.sessionId === sessionId
-            );
+      localStorage.setItem("notes", JSON.stringify(notes));
+    }, 4000);
 
-            if (index !== -1) {
-            notes[index].text = text;
-            } else {
-            notes.push({
-                text,
-                sessionId
-            });
-            }
-
-            localStorage.setItem(
-            "notes",
-            JSON.stringify(notes)
-            );
-
-        }, 4000);
-
-        // funcion de limpieza para q se resetee la funcion cada vez q escribe
-        return () => {
-            clearTimeout(timeout);
-        };
-        }, [text]);
-    
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [text, sessionId]); 
 
   return (
     <Rnd
       default={{
-        x: 150,
-        y: 150,
+        x: 16,
+        y: 64,
         width: 320,
         height: 200,
       }}
       minWidth={200}
       minHeight={100}
       dragHandleClassName="notes-drag-handle"
-      className="rounded-lg border border-gray-300 bg-white shadow-lg overflow-hidden z-49"
+      style={{ zIndex: 60 }}
+      className="rounded-lg border border-gray-300 bg-white shadow-lg overflow-hidden"
     >
-
       <div className="flex flex-col h-full w-full">
-        
         <div className="notes-drag-handle cursor-move bg-gray-100 border-b border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 select-none flex-shrink-0">
           Notes
         </div>
-        
+
         <textarea
           value={text}
           onChange={(e) => {
