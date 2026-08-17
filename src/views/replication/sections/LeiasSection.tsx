@@ -1108,7 +1108,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
               <Box>
                 <Typography fontWeight={600}>MultiLEIA activity</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Starts with {openingLeia?.leia.metadata.name || "the first LEIA"}. Shared problem: {problemLeia?.leia.spec?.problem?.metadata?.name || problemLeia?.leia.metadata.name || "activity problem"}. Up to {orchestration?.maxInternalTurns || 2} LEIA turns before the participant replies.
+                  Preferred first speaker: {openingLeia?.leia.metadata.name || "the first LEIA"}. Shared problem: {problemLeia?.leia.spec?.problem?.metadata?.name || problemLeia?.leia.metadata.name || "activity problem"}. The orchestrator can route one or more LEIAs, up to {orchestration?.maxInternalTurns || 2} messages, before returning to the participant.
                 </Typography>
               </Box>
             </Stack>

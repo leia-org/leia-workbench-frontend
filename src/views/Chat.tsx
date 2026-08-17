@@ -54,6 +54,60 @@ const TypingAnimation = () => (
   </div>
 );
 
+type SseEventHandler = (event: string, data: unknown) => void | Promise<void>;
+
+const consumeSseResponse = async (
+  response: Response,
+  onEvent: SseEventHandler,
+) => {
+  if (!response.body) throw new Error("The conversation stream is unavailable");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const consumeBlock = async (block: string) => {
+    if (!block || block.startsWith(":")) return;
+    let event = "message";
+    const dataLines: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    if (dataLines.length === 0) return;
+
+    const rawData = dataLines.join("\n");
+    let data: unknown = rawData;
+    try {
+      data = JSON.parse(rawData);
+    } catch {
+      // Plain-text SSE payloads remain valid and are passed through unchanged.
+    }
+    await onEvent(event, data);
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        await consumeBlock(block);
+        boundary = buffer.indexOf("\n\n");
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) await consumeBlock(buffer.trim());
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+};
+
 const getString = (value: unknown): string => {
   return typeof value === "string" ? value.trim() : "";
 };
@@ -725,6 +779,90 @@ export const Chat = () => {
       const toolsPayload = buildToolsPayload();
       const baseUrl = `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`;
 
+      if (multiLeia && initialMessage !== null) {
+        const response = await fetch(`${baseUrl}/stream`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            Accept: "text/event-stream",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ message: initialMessage }),
+        });
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(errorBody || `Conversation stream failed (${response.status})`);
+        }
+
+        let completed = false;
+        await consumeSseResponse(response, async (event, rawData) => {
+          const data = rawData as {
+            message?: Message;
+            state?: MultiLeiaPayload["state"];
+            nudge?: string;
+            error?: string;
+            nextActorId?: string;
+          };
+
+          if (event === "route" && data.nextActorId) {
+            setMultiLeia((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    state: { ...previous.state, nextActorId: data.nextActorId },
+                  }
+                : previous,
+            );
+            return;
+          }
+
+          if (event === "message" && data.message) {
+            const incoming: Message = {
+              ...data.message,
+              timestamp: data.message.timestamp || new Date(),
+              isLeia: true,
+              id: data.message.id || generateMessageId(),
+            };
+            setMessages((previous) => {
+              const duplicated = previous.some(
+                (candidate) =>
+                  (incoming.id && candidate.id === incoming.id) ||
+                  (incoming.turnId &&
+                    incoming.sequence !== undefined &&
+                    candidate.turnId === incoming.turnId &&
+                    candidate.sequence === incoming.sequence),
+              );
+              return duplicated ? previous : [...previous, incoming];
+            });
+
+            window.requestAnimationFrame(() => scrollToBottom(true));
+            return;
+          }
+
+          if (event === "complete") {
+            completed = true;
+            if (data.state) {
+              setMultiLeia((previous) =>
+                previous ? { ...previous, state: data.state } : previous,
+              );
+            }
+            if (typeof data.nudge === "string" && data.nudge.trim()) {
+              setNudge(data.nudge.trim());
+            }
+            return;
+          }
+
+          if (event === "error") {
+            throw new Error(data.error || "The MultiLEIA conversation stream failed");
+          }
+        });
+
+        if (!completed) {
+          throw new Error("The conversation stream closed before the round completed");
+        }
+        return [];
+      }
+
       const initialBody: Record<string, unknown> = {};
       if (initialMessage !== null) initialBody.message = initialMessage;
       if (toolsPayload.length > 0) initialBody.tools = toolsPayload;
@@ -800,13 +938,14 @@ export const Chat = () => {
           ]
         : [];
     },
-    [buildToolsPayload, sessionId]
+    [buildToolsPayload, multiLeia, scrollToBottom, sessionId]
   );
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (dataUsageConsentPending) return;
     if (configuration?.mode === "transcription") return;
+    if (sendingMessage || retryingMessage) return;
 
     const messageText = newMessageText.trim();
     if (!messageText) return;
