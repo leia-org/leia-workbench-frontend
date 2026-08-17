@@ -992,10 +992,11 @@ export const Chat = () => {
             <div className="px-6 py-4">
               <p className="text-gray-600">{exercise?.description}</p>
               <p className="text-gray-600 mt-4">
-                When you're ready, click the button below to start the task.
+                
                 {(audioMode === "audio" || audioMode === "luke")
-                  ? "Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need."
+                  ? " Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need. "
                   : ""}
+                  When you're ready, click the button below to start the task.
               </p>
             </div>
             <div className="px-6 py-4 border-t flex justify-end">
