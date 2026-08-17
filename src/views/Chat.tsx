@@ -1597,11 +1597,6 @@ export const Chat = () => {
                   </div>
                 )}
                 <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
-                  {multiLeia && (
-                    <p className="mb-2 text-xs font-medium text-gray-500">
-                      LEIAs are discussing
-                    </p>
-                  )}
                   <TypingAnimation />
                 </div>
               </div>
