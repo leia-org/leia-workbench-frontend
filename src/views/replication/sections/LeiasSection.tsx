@@ -18,6 +18,7 @@ import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import LeiaPreviewDrawer, {
   type ParsedLeia,
 } from "../../../components/admin/LeiaPreview";
@@ -105,9 +106,10 @@ interface LeiasSectionProps {
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
-    leiaId: string,
+    leiaId: string | null,
     replicationId: string,
-    idx: number
+    idx: number,
+    multiLeia?: boolean,
   ) => void;
   startingSessionLeiaId: string | null;
   // Campos inválidos por Leia (clave: leiaId) devueltos por el backend.
@@ -217,9 +219,10 @@ interface LeiaEditorProps {
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
-    leiaId: string,
+    leiaId: string | null,
     replicationId: string,
-    idx: number
+    idx: number,
+    multiLeia?: boolean,
   ) => void;
   replicationId: string;
   startingSessionLeiaId: string | null;
@@ -1072,9 +1075,59 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const effectiveIdx = idx === -1 ? 0 : idx;
   const item = leias[effectiveIdx];
   const serverItem = replication.experiment.leias[effectiveIdx];
+  const orchestration = localReplication.experiment.orchestration;
+  const isMultiLeia = orchestration?.mode === "multi";
+  const openingLeia = leias.find(
+    (entry) => entry.id === orchestration?.openingLeiaId,
+  );
+  const problemLeia = leias.find(
+    (entry) => entry.id === orchestration?.problemLeiaId,
+  );
 
   return (
     <Box sx={{ maxWidth: 880 }}>
+      {isMultiLeia && (
+        <Box
+          sx={{
+            mb: 3,
+            p: 2,
+            border: "1px solid",
+            borderColor: "primary.light",
+            borderRadius: 1.5,
+            bgcolor: "primary.50",
+          }}
+        >
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ sm: "center" }}
+            spacing={2}
+          >
+            <Stack direction="row" spacing={1.25} alignItems="flex-start">
+              <AccountTreeOutlinedIcon color="primary" />
+              <Box>
+                <Typography fontWeight={600}>MultiLEIA activity</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Starts with {openingLeia?.leia.metadata.name || "the first LEIA"}. Shared problem: {problemLeia?.leia.spec?.problem?.metadata?.name || problemLeia?.leia.metadata.name || "activity problem"}. Up to {orchestration?.maxInternalTurns || 2} LEIA turns before the participant replies.
+                </Typography>
+              </Box>
+            </Stack>
+            <Button
+              size="small"
+              variant="contained"
+              disabled={Boolean(startingSessionLeiaId)}
+              startIcon={<ScienceOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() =>
+                onStartTestSession(null, replication.id, effectiveIdx, true)
+              }
+            >
+              {startingSessionLeiaId === "multi"
+                ? "Starting..."
+                : "Test MultiLEIA"}
+            </Button>
+          </Stack>
+        </Box>
+      )}
       <LeiaEditor
         idx={effectiveIdx}
         item={item}

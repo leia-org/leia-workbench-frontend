@@ -70,5 +70,12 @@ export interface ReplicationData {
   experiment: {
     name: string;
     leias: ReplicationLeia[];
+    orchestration?: {
+      mode: "single" | "multi";
+      maxInternalTurns: number;
+      openingLeiaId: string | null;
+      problemLeiaId: string | null;
+      sharedTask: string;
+    };
   };
 }

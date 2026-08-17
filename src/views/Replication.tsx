@@ -746,15 +746,16 @@ export const Replication: React.FC = () => {
   };
 
   const executeStartTestSession = async (
-    leiaId: string,
-    replicationId: string
+    leiaId: string | null,
+    replicationId: string,
+    multiLeia = false,
   ) => {
-    if (loading || startingSessionLeiaId || !leiaId || !replicationId) return;
-    setStartingSessionLeiaId(leiaId);
+    if (loading || startingSessionLeiaId || (!leiaId && !multiLeia) || !replicationId) return;
+    setStartingSessionLeiaId(multiLeia ? "multi" : leiaId);
     try {
       const resp = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/test`,
-        { leiaId, replicationId },
+        { leiaId, replicationId, multiLeia },
         buildRequestConfig()
       );
       const sessionId = resp.data.sessionId;
@@ -771,12 +772,13 @@ export const Replication: React.FC = () => {
   };
 
   const startTestSession = (
-    leiaId: string,
+    leiaId: string | null,
     replicationId: string,
-    idx: number
+    idx: number,
+    multiLeia = false,
   ) => {
     withUnsavedChangesCheck(
-      () => executeStartTestSession(leiaId, replicationId),
+      () => executeStartTestSession(leiaId, replicationId, multiLeia),
       idx
     );
   };

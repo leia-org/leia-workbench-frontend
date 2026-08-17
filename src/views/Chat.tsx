@@ -105,10 +105,15 @@ const extractLeiaResourceIds = (
 
 interface Message {
   text: string;
-  timestamp: Date;
+  timestamp: Date | string;
   isLeia: boolean;
   id?: string; // Agregar ID único para anclas
   sequence?: number;
+  senderType?: "participant" | "agent" | "system";
+  senderId?: string;
+  senderName?: string;
+  recipientIds?: string[];
+  turnId?: string;
 }
 
 interface Exercise {
@@ -178,6 +183,29 @@ type StudentInfographic = {
   fallbackSources?: string[];
 };
 
+type MultiLeiaActor = {
+  id: string;
+  name: string;
+  avatar?: string | null;
+  leiaId?: string | null;
+  personaId?: string | null;
+};
+
+type MultiLeiaPayload = {
+  enabled: true;
+  actors: MultiLeiaActor[];
+  orchestration: {
+    maxInternalTurns: number;
+    openingLeiaId: string | null;
+    problemLeiaId: string | null;
+  };
+  state?: {
+    status?: string;
+    lastSequence?: number;
+    nextActorId?: string | null;
+  } | null;
+};
+
 type LeiaSessionPayload = {
   lukeConfig?: Partial<ChatLukeConfig> | null;
   infographic?: StudentInfographic | null;
@@ -234,6 +262,7 @@ export const Chat = () => {
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [studentInfographic, setStudentInfographic] =
     useState<StudentInfographic | null>(null);
+  const [multiLeia, setMultiLeia] = useState<MultiLeiaPayload | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
   const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
   const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<
@@ -292,6 +321,20 @@ export const Chat = () => {
   const hasRightSidePanel = hasTextWidgets && widgetHasRightSlot;
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
+  const multiLeiaActors = useMemo(
+    () => new Map((multiLeia?.actors || []).map((actor) => [actor.id, actor])),
+    [multiLeia],
+  );
+  const typingActorId =
+    multiLeia?.state?.nextActorId || multiLeia?.orchestration.openingLeiaId;
+  const typingActor = typingActorId
+    ? multiLeiaActors.get(typingActorId)
+    : multiLeia?.actors[0];
+  const typingAvatar = typingActor?.avatar || personaAvatar;
+  const typingAvatarFallback = typingActor
+    ? buildOriginalAvatarPath("personas", typingActor.personaId || "") ||
+      buildOriginalAvatarPath("leias", typingActor.leiaId || "")
+    : personaAvatarFallbackSrc;
   const dataUsageConsentPending =
     Boolean(session?.dataUsage?.config.dataUsageConsentRequired) &&
     session?.dataUsage?.consentStatus !== "accepted" &&
@@ -389,17 +432,11 @@ export const Chat = () => {
     setFailedMessage(null);
 
     try {
-      const leiaText = await runMessageTurn(failedMessage);
-      if (leiaText) {
-        const leiaMessage: Message = {
-          text: leiaText,
-          timestamp: new Date(),
-          isLeia: true,
-          id: generateMessageId(),
-        };
-        setMessages((prev) => [...prev, leiaMessage]);
+      const leiaMessages = await runMessageTurn(failedMessage);
+      if (leiaMessages.length > 0) {
+        setMessages((prev) => [...prev, ...leiaMessages]);
       }
-    } catch (error) {
+    } catch {
       // Si falla de nuevo, guardar el mensaje fallido y mostrar error
       setFailedMessage(failedMessage);
       setMessages((prev) => [
@@ -434,7 +471,7 @@ export const Chat = () => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as any);
+      void handleSubmit();
     }
   };
 
@@ -445,6 +482,7 @@ export const Chat = () => {
       );
 
       if (response.status === 200) {
+        setMultiLeia(response.data.multiLeia || null);
         const personaSpec = extractPersonaSpec(response.data.leia);
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
@@ -549,15 +587,13 @@ export const Chat = () => {
           }));
         setMessages(sortedMessages);
       }
-    } catch (error: any) {
-      setLoadError(
-        error.response?.data?.error || "An unexpected error occurred",
-      );
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
     }
     setTimeout(() => {
       setLoading(false);
     }, 1000);
-  }, [sessionId, navigate]);
+  }, [sessionId]);
 
   useEffect(() => {
     loadData();
@@ -671,9 +707,10 @@ export const Chat = () => {
   // Runs a single user turn against the backend, looping while the model
   // returns tool calls. Each call is executed via the local tools
   // registry and its output shipped back as a function_call_output.
-  // Resolves with the model's final text response.
+  // Resolves with one legacy LEIA response or the ordered set of actor
+  // messages produced by a MultiLEIA graph traversal.
   const runMessageTurn = useCallback(
-    async (initialMessage: string | null): Promise<string> => {
+    async (initialMessage: string | null): Promise<Message[]> => {
       const toolsPayload = buildToolsPayload();
       const baseUrl = `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`;
 
@@ -727,13 +764,36 @@ export const Chat = () => {
         captureNudge(response);
       }
 
-      return typeof response.data?.message === "string" ? response.data.message : "";
+      if (Array.isArray(response.data?.messages)) {
+        if (response.data?.state) {
+          setMultiLeia((previous) =>
+            previous ? { ...previous, state: response.data.state } : previous,
+          );
+        }
+        return response.data.messages.map((message: Message) => ({
+          ...message,
+          timestamp: message.timestamp || new Date(),
+          isLeia: true,
+          id: message.id || generateMessageId(),
+        }));
+      }
+
+      return typeof response.data?.message === "string" && response.data.message
+        ? [
+            {
+              text: response.data.message,
+              timestamp: new Date(),
+              isLeia: true,
+              id: generateMessageId(),
+            },
+          ]
+        : [];
     },
     [buildToolsPayload, sessionId]
   );
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (dataUsageConsentPending) return;
     if (configuration?.mode === "transcription") return;
 
@@ -761,17 +821,11 @@ export const Chat = () => {
     // scrollToBottom();
 
     try {
-      const leiaText = await runMessageTurn(messageText);
-      if (leiaText) {
-        const leiaMessage: Message = {
-          text: leiaText,
-          timestamp: new Date(),
-          isLeia: true,
-          id: generateMessageId(),
-        };
-        setMessages((prev) => [...prev, leiaMessage]);
+      const leiaMessages = await runMessageTurn(messageText);
+      if (leiaMessages.length > 0) {
+        setMessages((prev) => [...prev, ...leiaMessages]);
       }
-    } catch (error) {
+    } catch {
       setFailedMessage(messageText);
       setMessages((prev) => [
         ...prev,
@@ -812,10 +866,8 @@ export const Chat = () => {
           setSession(updatedSession);
           setShowSuccessModal(true);
         }
-      } catch (error: any) {
-        setLoadError(
-          error.response?.data?.error || "An unexpected error occurred",
-        );
+      } catch (error: unknown) {
+        setLoadError(getRequestErrorMessage(error));
       } finally {
         setConcluding(false);
       }
@@ -1267,7 +1319,18 @@ export const Chat = () => {
             className="max-w-3xl mx-auto space-y-4 py-4"
           >
             {hideAudioTranscription && (<LiveTranscriptionNotice/>)}
-            {!hideAudioTranscription && messages.map((msg, index, visibleMessages) => (
+            {!hideAudioTranscription && messages.map((msg, index, visibleMessages) => {
+              const actor = msg.senderId
+                ? multiLeiaActors.get(msg.senderId)
+                : undefined;
+              const actorName = msg.senderName || actor?.name || leiaName || "LEIA";
+              const actorAvatar = actor?.avatar || personaAvatar;
+              const actorAvatarFallback = actor
+                ? buildOriginalAvatarPath("personas", actor.personaId || "") ||
+                  buildOriginalAvatarPath("leias", actor.leiaId || "")
+                : personaAvatarFallbackSrc;
+
+              return (
               <div
                 key={msg.id || index}
                 id={`message-${msg.id || index}`}
@@ -1286,12 +1349,12 @@ export const Chat = () => {
                   }`}
                 >
                   {msg.isLeia ? (
-                    personaAvatar || personaAvatarFallbackSrc ? (
+                    actorAvatar || actorAvatarFallback ? (
                       <PersonaAvatar
-                        src={personaAvatar}
-                        fallbackSrc={personaAvatarFallbackSrc}
-                        alt={`${leiaName || "LEIA"} avatar`}
-                        label={leiaName || "LEIA"}
+                        src={actorAvatar}
+                        fallbackSrc={actorAvatarFallback}
+                        alt={`${actorName} avatar`}
+                        label={actorName}
                         size="md"
                       />
                     ) : (
@@ -1315,6 +1378,11 @@ export const Chat = () => {
                       : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
                   }`}
                 >
+                  {msg.isLeia && multiLeia && (
+                    <p className="mb-1 text-xs font-semibold text-blue-700">
+                      {actorName}
+                    </p>
+                  )}
                   <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
                     {msg.text}
                   </p>
@@ -1359,16 +1427,17 @@ export const Chat = () => {
                     )}
                 </div>
               </div>
-            ))}
+              );
+            })}
             {sendingMessage && (
               <div className="flex items-end gap-2">
-                {personaAvatar || personaAvatarFallbackSrc ? (
+                {typingAvatar || typingAvatarFallback ? (
                   <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-blue-50">
                     <PersonaAvatar
-                      src={personaAvatar}
-                      fallbackSrc={personaAvatarFallbackSrc}
-                      alt={`${leiaName || "LEIA"} avatar`}
-                      label={leiaName || "LEIA"}
+                      src={typingAvatar}
+                      fallbackSrc={typingAvatarFallback}
+                      alt={`${typingActor?.name || leiaName || "LEIA"} avatar`}
+                      label={typingActor?.name || leiaName || "LEIA"}
                       size="md"
                     />
                   </div>
@@ -1378,6 +1447,11 @@ export const Chat = () => {
                   </div>
                 )}
                 <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
+                  {multiLeia && (
+                    <p className="mb-2 text-xs font-medium text-gray-500">
+                      LEIAs are discussing
+                    </p>
+                  )}
                   <TypingAnimation />
                 </div>
               </div>
