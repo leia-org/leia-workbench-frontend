@@ -987,7 +987,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             </FormControl>
           </FieldRow>
           <FieldRow label="Luke voice"
-                    helper={`Leia's pronouns are: ${pronouns}`}
+                    helper={`LEIA's pronouns are: ${pronouns}`}
 >
             <Stack direction="row" alignItems="center" spacing={1}>
               <FormControl size="small" sx={{ minWidth: 220 }}>
