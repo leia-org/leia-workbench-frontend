@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
-import { PhotoIcon } from "@heroicons/react/24/outline";
+import { ExclamationTriangleIcon, PhotoIcon } from "@heroicons/react/24/outline";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
@@ -203,6 +203,12 @@ type MultiLeiaPayload = {
     status?: string;
     lastSequence?: number;
     nextActorId?: string | null;
+    lastPartial?: {
+      turnId: string;
+      actorId: string;
+      actorName: string;
+      timestamp: string;
+    } | null;
   } | null;
 };
 
@@ -703,6 +709,11 @@ export const Chat = () => {
   // student (delivered piggybacked on a turn's response). Instructor-only
   // flags never reach here — only an explicit nudge does.
   const [nudge, setNudge] = useState<string | null>(null);
+  const [dismissedPartialTurnId, setDismissedPartialTurnId] = useState<string | null>(null);
+  const partialRound = multiLeia?.state?.lastPartial;
+  const showPartialRound = Boolean(
+    partialRound && partialRound.turnId !== dismissedPartialTurnId,
+  );
 
   // Runs a single user turn against the backend, looping while the model
   // returns tool calls. Each call is executed via the local tools
@@ -1453,6 +1464,29 @@ export const Chat = () => {
                     </p>
                   )}
                   <TypingAnimation />
+                </div>
+              </div>
+            )}
+            {showPartialRound && partialRound && (
+              <div className="flex justify-center my-2" role="status">
+                <div className="max-w-xl w-full bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 shadow-sm flex items-start gap-3">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-950">
+                      The MultiLEIA round ended early
+                    </p>
+                    <p className="text-sm text-amber-900 mt-0.5">
+                      {partialRound.actorName} could not respond. The messages already shown were saved, and you can continue the conversation normally.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDismissedPartialTurnId(partialRound.turnId)}
+                    className="text-amber-500 hover:text-amber-700 flex-shrink-0"
+                    aria-label="Dismiss incomplete round notice"
+                  >
+                    <XMarkIcon className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             )}
