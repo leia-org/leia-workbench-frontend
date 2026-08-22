@@ -308,6 +308,7 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
         />
         <h1 className="text-xl font-semibold text-gray-900">Editor</h1>
       </div>
+      
       <div className="flex gap-2 items-center">
         {sessionTime && sessionStartedAt && onTimerExpire && (
           <SessionTimer
@@ -316,6 +317,20 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
             onExpire={onTimerExpire}
           />
         )}
+        <button 
+                    onClick={onNotesToggle}
+                    className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <PencilSquareIcon className="w-4 h-4" />
+                      </svg>
+                      <span className="hidden sm:inline">Notes</span>
+                    </button>
         <button
           onClick={onAlert}
           disabled={loadingEvaluation}
@@ -330,20 +345,7 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
             "Send Solution"
           )}
         </button>
-                <button 
-                    onClick={onNotesToggle}
-                    className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <PencilSquareIcon className="w-4 h-4" />
-                      </svg>
-                      <span className="hidden sm:inline">Notes</span>
-                    </button>
+                
       </div>
     </div>
   </header>
