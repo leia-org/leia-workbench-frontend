@@ -16,7 +16,6 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
 import ViewInArOutlinedIcon from "@mui/icons-material/ViewInArOutlined";
-import StarIcon from "@mui/icons-material/Star";
 import StarBorderOutlinedIcon from "@mui/icons-material/StarBorderOutlined";
 import StatusDot from "../admin/StatusDot";
 import { ApiKey } from "../../models/ApiKeys"; // Asegúrate de que esta ruta sea correcta en tu proyecto
@@ -167,9 +166,7 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({
           </Box>
 
           <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
-            <Tooltip
-              title={apiKey.isDefault ? "Unmark Default" : "Mark as Default"}
-            >
+            {!apiKey.isDefault && <Tooltip title="Mark as Default">
               <span>
                 <IconButton
                   onClick={handleToggleDefault}
@@ -190,8 +187,6 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({
                 >
                   {isSaving ? (
                     <CircularProgress size={20} sx={{ color: "text.secondary" }} />
-                  ) : apiKey.isDefault ? (
-                    <StarIcon sx={{ fontSize: 20, color: "warning.main" }} />
                   ) : (
                     <StarBorderOutlinedIcon
                       sx={{ fontSize: 20, color: "text.disabled" }}
@@ -199,7 +194,7 @@ export const ApiKeyCard: React.FC<ApiKeyCardProps> = ({
                   )}
                 </IconButton>
               </span>
-            </Tooltip>
+            </Tooltip>}
 
             {canManage && (
               <>
