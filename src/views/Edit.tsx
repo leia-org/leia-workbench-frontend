@@ -6,7 +6,10 @@ import ReactMarkdown from "react-markdown";
 import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
 import { SessionTimer } from "../components/SessionTimer";
-
+import NotesWidget from "../widgets/NotesWidget";
+import {
+  PencilSquareIcon,
+} from "@heroicons/react/24/outline";
 mermaid.initialize({
   startOnLoad: true,
   theme: "default",
@@ -291,9 +294,10 @@ interface HeaderProps {
   sessionTime?: number | null;
   sessionStartedAt?: string | null;
   onTimerExpire?: () => void;
+  onNotesToggle?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -304,6 +308,7 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
         />
         <h1 className="text-xl font-semibold text-gray-900">Editor</h1>
       </div>
+      
       <div className="flex gap-2 items-center">
         {sessionTime && sessionStartedAt && onTimerExpire && (
           <SessionTimer
@@ -312,6 +317,20 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
             onExpire={onTimerExpire}
           />
         )}
+        <button 
+                    onClick={onNotesToggle}
+                    className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <PencilSquareIcon className="w-4 h-4" />
+                      </svg>
+                      <span className="hidden sm:inline">Notes</span>
+                    </button>
         <button
           onClick={onAlert}
           disabled={loadingEvaluation}
@@ -326,6 +345,7 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
             "Send Solution"
           )}
         </button>
+                
       </div>
     </div>
   </header>
@@ -406,7 +426,7 @@ export const Edit = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
-
+  const [showNotes, setShowNotes] = useState<boolean>(false);
   // Load initial data from localStorage
   useEffect(() => {
     const savedConfiguration = localStorage.getItem("configuration");
@@ -621,7 +641,7 @@ export const Edit = () => {
 
     renderMermaid();
   }, [code, solutionFormat]);
-
+  
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
@@ -650,6 +670,7 @@ export const Edit = () => {
 
   return (
     <div className="flex flex-col h-screen bg-white">
+      {showNotes && <NotesWidget />}
       <Header
         onHome={handleHome}
         onOpenForm={handleOpenForm}
@@ -662,8 +683,9 @@ export const Edit = () => {
         sessionTime={sessionTime}
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
+        onNotesToggle={() => setShowNotes((prev) => !prev)}
       />
-
+      
       {showAlert && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
@@ -693,11 +715,12 @@ export const Edit = () => {
           </div>
         </div>
       )}
-
+      
       <main
         className="flex-1 flex"
         style={{ height: !concluded ? "100%" : "calc(100% - 300px)" }}
       >
+        
         {/* Editor Panel */}
         {!concluded ? (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
