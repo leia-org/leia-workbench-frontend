@@ -12,6 +12,7 @@ import {
   Stack,
   Switch,
   Typography,
+  IconButton,
 } from "@mui/material";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
@@ -19,6 +20,8 @@ import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import PlayCircleFilledWhiteOutlinedIcon from '@mui/icons-material/PlayCircleFilledWhiteOutlined';
+import PauseCircleOutlineOutlinedIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
 import LeiaPreviewDrawer, {
   type ParsedLeia,
 } from "../../../components/admin/LeiaPreview";
@@ -53,6 +56,22 @@ const VOICE_OPTIONS: Array<{ value: string; label: string; gender: string }> = [
   { value: "shimmer", label: "Shimmer - Female", gender: "female" },
   { value: "verse", label: "Verse - Male", gender: "male" },
 ];
+
+const LUKE_VOICE_PREVIEW_PATHS: Record<string, string> = {
+  alloy: "/audio/previews/alloy-example.mp3",
+  ash: "/audio/previews/ash-example.mp3",
+  ballad: "/audio/previews/ballad-example.mp3",
+  coral: "/audio/previews/coral-example.mp3",
+  echo: "/audio/previews/echo-example.mp3",
+  sage: "/audio/previews/sage-example.mp3",
+  shimmer: "/audio/previews/shimmer-example.mp3",
+  verse: "/audio/previews/verse-example.mp3",
+  Puck: "/audio/previews/puck-example.wav",
+  Charon: "/audio/previews/charon-example.wav",
+  Kore: "/audio/previews/kore-example.wav",
+  Fenrir: "/audio/previews/fenrir-example.wav",
+  Aoede: "/audio/previews/aoede-example.wav",
+};
 
 const getFilteredVoiceOptions = (
   pronoun: string | undefined,
@@ -226,6 +245,7 @@ interface LeiaEditorProps {
   ) => void;
   replicationId: string;
   startingSessionLeiaId: string | null;
+  pronouns: string | undefined;
   // Campos que el backend marcó como inválidos para esta Leia.
   invalidFields: string[];
 }
@@ -246,10 +266,12 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onStartTestSession,
   replicationId,
   startingSessionLeiaId,
+  pronouns,
   invalidFields,
 }) => {
   const [showAllVoices, setShowAllVoices] = useState(false);
   const [contentOpen, setContentOpen] = useState(false);
+  const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
   const [studentInfographicAvailable, setStudentInfographicAvailable] =
     useState<boolean | null>(null);
   const [solutionInfographicAvailable, setSolutionInfographicAvailable] =
@@ -259,6 +281,11 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   // BYOK: model + API key for this LEIA.
   const currentApiKeyId = item.runnerConfiguration.apiKeyId;
   const currentModelName = item.runnerConfiguration.modelName ?? "";
+  const selectedLukeProvider =
+    item.runnerConfiguration.lukeConfig?.provider || "gemini";
+  const selectedLukeVoice =
+    item.runnerConfiguration.lukeConfig?.voice ||
+    (selectedLukeProvider === "openai" ? "alloy" : "Puck");
   const problemWidgets = item.leia.spec?.problem?.spec?.widgets;
   const requiresTools =
     Array.isArray(problemWidgets) && problemWidgets.length > 0;
@@ -273,6 +300,30 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   );
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
+  const handlePreviewLukeVoice = () => {
+    if (audioPreviewPlaying) return;
+    const previewPath =
+      LUKE_VOICE_PREVIEW_PATHS[selectedLukeVoice] ||
+      `/audio/previews/${selectedLukeVoice.toLowerCase()}-example.mp3`;
+    const audio = new Audio(previewPath);
+
+    audio.onplay = () => {
+      setAudioPreviewPlaying(true);
+    };
+
+    audio.onended = () => {
+      setAudioPreviewPlaying(false);
+    };
+
+    audio.onerror = () => {
+      setAudioPreviewPlaying(false);
+    };
+
+    audio.play().catch(() => {
+      setAudioPreviewPlaying(false);
+    });
+  };
+
   const compatibleApiKeys = React.useMemo(
     () => {
       const matchingKeys = getValidApiKeys(
@@ -938,48 +989,55 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
               </Select>
             </FormControl>
           </FieldRow>
-          <FieldRow label="Luke voice">
-            <FormControl size="small" sx={{ minWidth: 220 }}>
-              <Select
-                value={
-                  item.runnerConfiguration.lukeConfig?.voice ||
-                  (item.runnerConfiguration.lukeConfig?.provider === "openai"
-                    ? "alloy"
-                    : "Puck")
-                }
-                onChange={(e) =>
-                  onLocalLeiaChange(
-                    idx,
-                    "runnerConfiguration.lukeConfig.voice",
-                    e.target.value
-                  )
-                }
-                sx={{ fontSize: 13 }}
-              >
-                {item.runnerConfiguration.lukeConfig?.provider === "openai" ? (
-                  [
-                    "alloy",
-                    "ash",
-                    "ballad",
-                    "coral",
-                    "echo",
-                    "sage",
-                    "shimmer",
-                    "verse",
-                  ].map((v) => (
-                    <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
-                      {v}
-                    </MenuItem>
-                  ))
-                ) : (
-                  ["Puck", "Charon", "Kore", "Fenrir", "Aoede"].map((v) => (
-                    <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
-                      {v}
-                    </MenuItem>
-                  ))
-                )}
-              </Select>
-            </FormControl>
+          <FieldRow label="Luke voice"
+                    helper={`LEIA's pronouns are: ${pronouns}`}
+>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <Select
+                  value={selectedLukeVoice}
+                  onChange={(e) =>
+                    onLocalLeiaChange(
+                      idx,
+                      "runnerConfiguration.lukeConfig.voice",
+                      e.target.value
+                    )
+                  }
+                  sx={{ fontSize: 13 }}
+                >
+                  {selectedLukeProvider === "openai" ? (
+                    [
+                      "alloy",
+                      "ash",
+                      "ballad",
+                      "coral",
+                      "echo",
+                      "sage",
+                      "shimmer",
+                      "verse",
+                    ].map((v) => (
+                      <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
+                        {v}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    ["Puck", "Charon", "Kore", "Fenrir", "Aoede"].map((v) => (
+                      <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
+                        {v}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+              </FormControl>
+                <IconButton
+                  aria-label="preview voice"
+                  onClick={handlePreviewLukeVoice}
+                  size="small"
+                  sx={{ flex: "0 0 auto" }}
+                >
+                  {!audioPreviewPlaying ? <PlayCircleFilledWhiteOutlinedIcon /> : <PauseCircleOutlineOutlinedIcon />}
+                </IconButton>
+            </Stack>
           </FieldRow>
         </>
       )}
@@ -1083,7 +1141,11 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const problemLeia = leias.find(
     (entry) => entry.id === orchestration?.problemLeiaId,
   );
-
+  const pronouns =
+    item.leia.spec?.persona?.spec?.subjectPronoum &&
+    item.leia.spec?.persona?.spec?.objectPronoum
+      ? `${item.leia.spec.persona.spec.subjectPronoum}/${item.leia.spec.persona.spec.objectPronoum}`
+      : undefined;
   return (
     <Box sx={{ maxWidth: 880 }}>
       {isMultiLeia && (
@@ -1143,6 +1205,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onToggleEvaluateSolution={onToggleEvaluateSolution}
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
+        pronouns= {pronouns}
         startingSessionLeiaId={startingSessionLeiaId}
         invalidFields={invalidLeiaFields[item.id] ?? []}
       />

@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
-import { ExclamationTriangleIcon, PhotoIcon } from "@heroicons/react/24/outline";
+import {
+  ExclamationTriangleIcon,
+  PencilSquareIcon,
+  PhotoIcon,
+} from "@heroicons/react/24/outline";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
@@ -22,6 +26,7 @@ import {
   type WidgetDefinition,
 } from "../widgets";
 import type { FrontendTool } from "@leia-org/luke-client";
+import NotesWidget from "../widgets/NotesWidget";
 
 // Bridge component: registered inside a WidgetsProvider, syncs the live
 // tools registry to a ref owned by the parent so non-hook code (form
@@ -331,6 +336,7 @@ export const Chat = () => {
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
   const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
     useState(false);
+  const [showNotes, setShowNotes] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const studentInfographicViewerRef =
@@ -1230,6 +1236,21 @@ export const Chat = () => {
             onExpire={handleTimerExpire}
           />
         )}
+        <button
+            onClick={() => setShowNotes(!showNotes)}
+            className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <PencilSquareIcon className="w-4 h-4" />
+              </svg>
+              <span className="hidden sm:inline">Notes</span>
+            </button>
+
           {hasStudentInfographic && (
             <button
               onClick={() => studentInfographicViewerRef.current?.open()}
@@ -1301,7 +1322,7 @@ export const Chat = () => {
           </button>
         </div>
       </header>
-
+      {showNotes && <NotesWidget />}
       {/* Widget side panel — text mode only. Luke mode renders its own
           slots inside LukeAudioWidget; here we mount the same widgets in
           a fixed right pane and bridge their tools out to the round-trip
