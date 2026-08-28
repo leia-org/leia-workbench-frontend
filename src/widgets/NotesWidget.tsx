@@ -38,7 +38,7 @@ const Notes = () => {
 
     const timeout = setTimeout(() => {
       const notes = getAllNotes();
-      
+
       const index = notes.findIndex((note) => note.sessionId === sessionId);
 
       if (index !== -1) {
@@ -56,7 +56,7 @@ const Notes = () => {
     return () => {
       clearTimeout(timeout);
     };
-  }, [text, sessionId]); 
+  }, [text, sessionId]);
 
   return (
     <Rnd
