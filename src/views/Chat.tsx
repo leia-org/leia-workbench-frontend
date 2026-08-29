@@ -1,16 +1,32 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { UserCircleIcon, SparklesIcon, XMarkIcon, UserIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import {
+  ExclamationTriangleIcon,
+  PencilSquareIcon,
+  PhotoIcon,
+} from "@heroicons/react/24/outline";
 import axios from "axios";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
+import InfographicViewer, {
+  type InfographicViewerHandle,
+} from "../components/InfographicViewer";
 import { LukeAudioWidget } from "../components/LukeAudioWidget";
+import { PersonaAvatar } from "../components/PersonaAvatar";
 import { SessionTimer } from "../components/SessionTimer";
-import { VoiceModeWithWidgets, findCatalogEntry, useWidgetsContext, type WidgetDefinition } from "../widgets";
+import { buildLeiaInfographicPaths, buildOriginalAvatarPath } from "../lib/avatar";
+import {
+  VoiceModeWithWidgets,
+  findCatalogEntry,
+  useWidgetsContext,
+  type WidgetDefinition,
+} from "../widgets";
 import type { FrontendTool } from "@leia-org/luke-client";
+import NotesWidget from "../widgets/NotesWidget";
 
 // Bridge component: registered inside a WidgetsProvider, syncs the live
 // tools registry to a ref owned by the parent so non-hook code (form
@@ -28,18 +44,135 @@ const ToolsBridge: React.FC<{
 
 const TypingAnimation = () => (
   <div className="flex items-center space-x-1.5">
-    <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDuration: "0.6s" }}></div>
-    <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDuration: "0.6s", animationDelay: "0.2s" }}></div>
-    <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDuration: "0.6s", animationDelay: "0.4s" }}></div>
+    <div
+      className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+      style={{ animationDuration: "0.6s" }}
+    ></div>
+    <div
+      className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+      style={{ animationDuration: "0.6s", animationDelay: "0.2s" }}
+    ></div>
+    <div
+      className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+      style={{ animationDuration: "0.6s", animationDelay: "0.4s" }}
+    ></div>
   </div>
 );
 
+type SseEventHandler = (event: string, data: unknown) => void | Promise<void>;
+
+const consumeSseResponse = async (
+  response: Response,
+  onEvent: SseEventHandler,
+) => {
+  if (!response.body) throw new Error("The conversation stream is unavailable");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const consumeBlock = async (block: string) => {
+    if (!block || block.startsWith(":")) return;
+    let event = "message";
+    const dataLines: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    if (dataLines.length === 0) return;
+
+    const rawData = dataLines.join("\n");
+    let data: unknown = rawData;
+    try {
+      data = JSON.parse(rawData);
+    } catch {
+      // Plain-text SSE payloads remain valid and are passed through unchanged.
+    }
+    await onEvent(event, data);
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        await consumeBlock(block);
+        boundary = buffer.indexOf("\n\n");
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) await consumeBlock(buffer.trim());
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+};
+
+const getString = (value: unknown): string => {
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const extractPersonaSpec = (value: unknown): Record<string, unknown> => {
+  const leia = value as
+    | {
+        leia?: {
+          spec?: {
+            persona?: {
+              spec?: Record<string, unknown>;
+            };
+          };
+        };
+      }
+    | null
+    | undefined;
+
+  return leia?.leia?.spec?.persona?.spec || {};
+};
+
+const extractLeiaResourceIds = (
+  value: unknown,
+): { leiaId: string; personaId: string; problemId: string } => {
+  const leiaEntry = value as
+    | {
+        id?: unknown;
+        leia?: {
+          id?: unknown;
+          spec?: {
+            persona?: {
+              id?: unknown;
+            };
+            problem?: {
+              id?: unknown;
+            };
+          };
+        };
+      }
+    | null
+    | undefined;
+
+  return {
+    leiaId: getString(leiaEntry?.leia?.id ?? leiaEntry?.id),
+    personaId: getString(leiaEntry?.leia?.spec?.persona?.id),
+    problemId: getString(leiaEntry?.leia?.spec?.problem?.id),
+  };
+};
+
 interface Message {
   text: string;
-  timestamp: Date;
+  timestamp: Date | string;
   isLeia: boolean;
   id?: string; // Agregar ID único para anclas
   sequence?: number;
+  senderType?: "participant" | "agent" | "system";
+  senderId?: string;
+  senderName?: string;
+  recipientIds?: string[];
+  turnId?: string;
 }
 
 interface Exercise {
@@ -88,7 +221,6 @@ interface Session {
   evaluation: string | null | undefined;
   score: number | null | undefined;
   dataUsage?: SessionDataUsage | null;
-  userEmail?: string | null;
 }
 
 type WidgetConfig = {
@@ -104,8 +236,44 @@ type ChatLukeConfig = {
   widgets?: WidgetConfig[];
 };
 
+type StudentInfographic = {
+  src: string;
+  fallbackSrc?: string | null;
+  fallbackSources?: string[];
+};
+
+type MultiLeiaActor = {
+  id: string;
+  name: string;
+  avatar?: string | null;
+  leiaId?: string | null;
+  personaId?: string | null;
+};
+
+type MultiLeiaPayload = {
+  enabled: true;
+  actors: MultiLeiaActor[];
+  orchestration: {
+    maxInternalTurns: number;
+    openingLeiaId: string | null;
+    problemLeiaId: string | null;
+  };
+  state?: {
+    status?: string;
+    lastSequence?: number;
+    nextActorId?: string | null;
+    lastPartial?: {
+      turnId: string;
+      actorId: string;
+      actorName: string;
+      timestamp: string;
+    } | null;
+  } | null;
+};
+
 type LeiaSessionPayload = {
   lukeConfig?: Partial<ChatLukeConfig> | null;
+  infographic?: StudentInfographic | null;
   leia?: {
     spec?: {
       problem?: {
@@ -119,10 +287,13 @@ type LeiaSessionPayload = {
 
 const DEFAULT_LUKE_CONFIG = {
   provider: "gemini",
-  voice: "Puck"
+  voice: "Puck",
 } satisfies Pick<ChatLukeConfig, "provider" | "voice">;
 
-const getRequestErrorMessage = (error: unknown) => (axios.isAxiosError(error) ? error.response?.data?.error || error.response?.data?.message || "An unexpected error occurred" : "An unexpected error occurred");
+const getRequestErrorMessage = (error: unknown) =>
+  axios.isAxiosError(error)
+    ? error.response?.data?.error || error.response?.data?.message || "An unexpected error occurred"
+    : "An unexpected error occurred";
 
 function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[] {
   const widgets = leia?.leia?.spec?.problem?.spec?.widgets;
@@ -139,7 +310,9 @@ export const Chat = () => {
   const [concluding, setConcluding] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
-  const [configuration, setConfiguration] = useState<Configuration | null>(null);
+  const [configuration, setConfiguration] = useState<Configuration | null>(
+    null,
+  );
   const [replication, setReplication] = useState<Replication | null>(null);
   const [showInstructions, setShowInstructions] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -152,18 +325,26 @@ export const Chat = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
-  const [leiaName, setLeiaName] = useState<string | null>(null);    
-  const [leiaFullName, setLeiaFullName] = useState<string | null>(null);
-  const [leiaRole, setLeiaRole] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [studentInfographic, setStudentInfographic] =
+    useState<StudentInfographic | null>(null);
+  const [multiLeia, setMultiLeia] = useState<MultiLeiaPayload | null>(null);
+  const [leiaName, setLeiaName] = useState<string | null>(null);
+  const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
+  const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<
+    string | null
+  >(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
-  const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] = useState(false);
+  const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
+    useState(false);
+  const [showNotes, setShowNotes] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const studentInfographicViewerRef =
+    useRef<InfographicViewerHandle | null>(null);
   const lastLeiaMessageRef = useRef<HTMLDivElement>(null);
   // Live mirror of the widget-registered tools. handleSubmit reads it on
   // each turn without re-binding, and the tool round-trip loop uses it to
-  // execute calls coming back from the model.fdf
+  // execute calls coming back from the model.
   const toolsRef = useRef<Record<string, FrontendTool>>({});
   const handleToolsSync = useCallback((t: Record<string, FrontendTool>) => {
     toolsRef.current = t;
@@ -182,7 +363,7 @@ export const Chat = () => {
           id: `${w.widgetType}-${slot}`,
           slot,
           Component: entry.Component,
-          props: w.params ? { params: w.params } : undefined
+          props: w.params ? { params: w.params } : undefined,
         } as WidgetDefinition;
       })
       .filter((w): w is WidgetDefinition => w !== null);
@@ -191,35 +372,72 @@ export const Chat = () => {
   // Text mode renders an extra side panel that hosts the same widgets
   // luke mode mounts. The panel is what registers the tool functions in
   // the WidgetsProvider, so without it the tools payload would be empty.
-  const hasTextWidgets = audioMode !== "luke" && audioMode !== "audio" && configuration?.mode !== "transcription" && widgetDefs.length > 0;
+  const hasTextWidgets =
+    audioMode !== "luke" &&
+    audioMode !== "audio" &&
+    configuration?.mode !== "transcription" &&
+    widgetDefs.length > 0;
+  const hasStudentInfographic = Boolean(studentInfographic?.src);
+  const widgetHasLeftSlot = widgetDefs.some((w) => w.slot === "left");
+  const widgetHasRightSlot = widgetDefs.some((w) => w.slot === "right");
   // Which sides we need to make room for. The chat column carves out the
   // same half (left or right) that the panel occupies, otherwise the
   // panel sits on top of the messages.
-  const hasLeftSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "left");
-  const hasRightSidePanel = hasTextWidgets && widgetDefs.some((w) => w.slot === "right");
+  const hasLeftSidePanel = hasTextWidgets && widgetHasLeftSlot;
+  const hasRightSidePanel = hasTextWidgets && widgetHasRightSlot;
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
-  const dataUsageConsentPending = Boolean(session?.dataUsage?.config.dataUsageConsentRequired) && session?.dataUsage?.consentStatus !== "accepted" && session?.dataUsage?.consentStatus !== "declined" && session?.dataUsage?.consentStatus !== "not_required" && !session?.finishedAt && !session?.isTest;
+  const multiLeiaActors = useMemo(
+    () => new Map((multiLeia?.actors || []).map((actor) => [actor.id, actor])),
+    [multiLeia],
+  );
+  const typingActorId =
+    multiLeia?.state?.nextActorId || multiLeia?.orchestration.openingLeiaId;
+  const typingActor = typingActorId
+    ? multiLeiaActors.get(typingActorId)
+    : multiLeia?.actors[0];
+  const typingAvatar = typingActor?.avatar || personaAvatar;
+  const typingAvatarFallback = typingActor
+    ? buildOriginalAvatarPath("personas", typingActor.personaId || "") ||
+      buildOriginalAvatarPath("leias", typingActor.leiaId || "")
+    : personaAvatarFallbackSrc;
+  const dataUsageConsentPending =
+    Boolean(session?.dataUsage?.config.dataUsageConsentRequired) &&
+    session?.dataUsage?.consentStatus !== "accepted" &&
+    session?.dataUsage?.consentStatus !== "declined" &&
+    session?.dataUsage?.consentStatus !== "not_required" &&
+    !session?.finishedAt &&
+    !session?.isTest;
 
-  const handleTranscriptComplete = useCallback((transcript: string, isLeia: boolean, timestamp: Date, sequence: number) => {
-    const newMessage: Message = {
-      text: transcript,
-      timestamp: timestamp,
-      isLeia,
-      id: generateMessageId(),
-      sequence: sequence
-    };
-    setMessages((prev) => {
-      const updated = [...prev, newMessage];
+  const handleTranscriptComplete = useCallback(
+    (
+      transcript: string,
+      isLeia: boolean,
+      timestamp: Date,
+      sequence: number,
+    ) => {
+      const newMessage: Message = {
+        text: transcript,
+        timestamp: timestamp,
+        isLeia,
+        id: generateMessageId(),
+        sequence: sequence,
+      };
+      setMessages((prev) => {
+        const updated = [...prev, newMessage];
 
-      return updated.sort((a, b) => {
-        if (a.sequence !== undefined && b.sequence !== undefined) {
-          return a.sequence - b.sequence;
-        }
-        return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        return updated.sort((a, b) => {
+          if (a.sequence !== undefined && b.sequence !== undefined) {
+            return a.sequence - b.sequence;
+          }
+          return (
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+        });
       });
-    });
-  }, []);
+    },
+    [],
+  );
 
   const handleAudioError = useCallback((error: Error) => {
     console.error("Audio error:", error);
@@ -231,13 +449,13 @@ export const Chat = () => {
     enabled: audioMode === "audio" && !dataUsageConsentPending,
     forceMute: showInstructions || dataUsageConsentPending,
     onTranscriptComplete: handleTranscriptComplete,
-    onError: handleAudioError
+    onError: handleAudioError,
   });
 
   const lukeToken = useLukeToken({
     sessionId: sessionId || "",
     enabled: audioMode === "luke" && !dataUsageConsentPending,
-    onError: handleAudioError
+    onError: handleAudioError,
   });
 
   // Función mejorada para scroll automático usando utilidades
@@ -249,7 +467,7 @@ export const Chat = () => {
   const scrollToLeiaMessage = useCallback((messageId: string) => {
     scrollUtils.scrollToElement(`message-${messageId}`, {
       behavior: "smooth",
-      block: "center" as ScrollLogicalPosition
+      block: "center" as ScrollLogicalPosition,
     });
   }, []);
 
@@ -280,17 +498,11 @@ export const Chat = () => {
     setFailedMessage(null);
 
     try {
-      const leiaText = await runMessageTurn(failedMessage);
-      if (leiaText) {
-        const leiaMessage: Message = {
-          text: leiaText,
-          timestamp: new Date(),
-          isLeia: true,
-          id: generateMessageId()
-        };
-        setMessages((prev) => [...prev, leiaMessage]);
+      const leiaMessages = await runMessageTurn(failedMessage);
+      if (leiaMessages.length > 0) {
+        setMessages((prev) => [...prev, ...leiaMessages]);
       }
-    } catch (error) {
+    } catch {
       // Si falla de nuevo, guardar el mensaje fallido y mostrar error
       setFailedMessage(failedMessage);
       setMessages((prev) => [
@@ -299,8 +511,8 @@ export const Chat = () => {
           text: "This message is taking longer than usual.",
           timestamp: new Date(),
           isLeia: true,
-          id: generateMessageId()
-        }
+          id: generateMessageId(),
+        },
       ]);
     } finally {
       setSendingMessage(false);
@@ -325,34 +537,58 @@ export const Chat = () => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as any);
+      void handleSubmit();
     }
   };
 
   const loadData = useCallback(async () => {
     try {
-      const response = await axios.get(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`);
+      const response = await axios.get(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`,
+      );
 
       if (response.status === 200) {
+        setMultiLeia(response.data.multiLeia || null);
+        const personaSpec = extractPersonaSpec(response.data.leia);
         setExercise(response.data.leia.leia.spec.problem.spec);
         setConfiguration(response.data.leia.configuration);
         const durationSeconds = response.data.replication?.duration;
         if (typeof durationSeconds === "number" && durationSeconds > 0) {
           setSessionTime(durationSeconds / 60);
         }
-        setLeiaName(response.data.leia.leia.spec.persona?.spec?.firstName || null);
-        setLeiaRole(response.data.leia.roleDisplay || null);
-        setLeiaFullName(response.data.leia.leia.spec.persona?.spec?.fullName || null);
-        setUserEmail(response.data.session.userEmail || null);
+        setLeiaName(
+          getString(personaSpec.firstName) ||
+            getString(personaSpec.fullName) ||
+            null,
+        );
+        setPersonaAvatar(getString(personaSpec.avatar) || null);
+        const resourceIds = extractLeiaResourceIds(response.data.leia);
+        setPersonaAvatarFallbackSrc(
+          buildOriginalAvatarPath("personas", resourceIds.personaId) ||
+            buildOriginalAvatarPath("leias", resourceIds.leiaId) ||
+            null,
+        );
         setReplication(response.data.replication);
         setSession(response.data.session);
-        setTooltipMessage(response.data.leia.leia.spec.behaviour.spec.tooltip || null);
+        setTooltipMessage(
+          response.data.leia.leia.spec.behaviour.spec.tooltip || null,
+        );
         localStorage.setItem("sessionId", response.data.session.id);
-        localStorage.setItem("exercise", JSON.stringify(response.data.leia.leia.spec.problem.spec));
-        localStorage.setItem("configuration", JSON.stringify(response.data.leia.configuration));
-        localStorage.setItem("replication", JSON.stringify(response.data.replication));
+        localStorage.setItem(
+          "exercise",
+          JSON.stringify(response.data.leia.leia.spec.problem.spec),
+        );
+        localStorage.setItem(
+          "configuration",
+          JSON.stringify(response.data.leia.configuration),
+        );
+        localStorage.setItem(
+          "replication",
+          JSON.stringify(response.data.replication),
+        );
         localStorage.setItem("session", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
+
         if (response.data.leia?.audioMode === "realtime") {
           console.log("Audio mode detected, switching to audio interface");
           setAudioMode("audio");
@@ -364,15 +600,32 @@ export const Chat = () => {
         // replications may still carry them under lukeConfig.widgets, so use
         // the problem definition first and keep the runner config as fallback.
         const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
+        const infographic = responseLeia?.infographic;
+        setStudentInfographic(
+          infographic?.src
+            ? {
+                src: infographic.src,
+                fallbackSrc:
+                  infographic.fallbackSrc ||
+                  buildLeiaInfographicPaths(resourceIds.leiaId, "infographic")[0],
+                fallbackSources: [
+                  ...(infographic.fallbackSources || []),
+                  ...buildLeiaInfographicPaths(resourceIds.leiaId, "infographic"),
+                ],
+              }
+            : null,
+        );
         const problemWidgets = getProblemWidgets(responseLeia);
         const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
-        const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets) ? runnerLukeConfig.widgets : [];
+        const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
+          ? runnerLukeConfig.widgets
+          : [];
         const widgets = problemWidgets.length > 0 ? problemWidgets : runnerWidgets;
         if (runnerLukeConfig || widgets.length > 0) {
           setLukeConfig({
             provider: runnerLukeConfig?.provider ?? DEFAULT_LUKE_CONFIG.provider,
             voice: runnerLukeConfig?.voice ?? DEFAULT_LUKE_CONFIG.voice,
-            widgets
+            widgets,
           });
         } else {
           setLukeConfig(null);
@@ -382,25 +635,31 @@ export const Chat = () => {
         }
         let messages = response.data.messages;
 
-        if (response.data.leia.configuration?.mode === "transcription" && response.data.leia.configuration?.data?.messages) {
+        if (
+          response.data.leia.configuration?.mode === "transcription" &&
+          response.data.leia.configuration?.data?.messages
+        ) {
           messages = response.data.leia.configuration.data.messages;
         }
 
         const sortedMessages = messages
-          .sort((a: Message, b: Message) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+          .sort(
+            (a: Message, b: Message) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+          )
           .map((msg: Message) => ({
             ...msg,
-            id: msg.id || generateMessageId()
+            id: msg.id || generateMessageId(),
           }));
         setMessages(sortedMessages);
       }
-    } catch (error: any) {
-      setLoadError(error.response?.data?.error || "An unexpected error occurred");
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
     }
     setTimeout(() => {
       setLoading(false);
     }, 1000);
-  }, [sessionId, navigate]);
+  }, [sessionId]);
 
   useEffect(() => {
     loadData();
@@ -502,7 +761,7 @@ export const Chat = () => {
     return entries.map(([name, tool]) => ({
       name,
       description: tool.description,
-      parameters: tool.parameters
+      parameters: tool.parameters,
     }));
   }, []);
 
@@ -510,15 +769,105 @@ export const Chat = () => {
   // student (delivered piggybacked on a turn's response). Instructor-only
   // flags never reach here — only an explicit nudge does.
   const [nudge, setNudge] = useState<string | null>(null);
+  const [dismissedPartialTurnId, setDismissedPartialTurnId] = useState<string | null>(null);
+  const partialRound = multiLeia?.state?.lastPartial;
+  const showPartialRound = Boolean(
+    partialRound && partialRound.turnId !== dismissedPartialTurnId,
+  );
 
   // Runs a single user turn against the backend, looping while the model
   // returns tool calls. Each call is executed via the local tools
   // registry and its output shipped back as a function_call_output.
-  // Resolves with the model's final text response.
+  // Resolves with one legacy LEIA response or the ordered set of actor
+  // messages produced by a MultiLEIA graph traversal.
   const runMessageTurn = useCallback(
-    async (initialMessage: string | null): Promise<string> => {
+    async (initialMessage: string | null): Promise<Message[]> => {
       const toolsPayload = buildToolsPayload();
       const baseUrl = `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/messages`;
+
+      if (multiLeia && initialMessage !== null) {
+        const response = await fetch(`${baseUrl}/stream`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            Accept: "text/event-stream",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ message: initialMessage }),
+        });
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(errorBody || `Conversation stream failed (${response.status})`);
+        }
+
+        let completed = false;
+        await consumeSseResponse(response, async (event, rawData) => {
+          const data = rawData as {
+            message?: Message;
+            state?: MultiLeiaPayload["state"];
+            nudge?: string;
+            error?: string;
+            nextActorId?: string;
+          };
+
+          if (event === "route" && data.nextActorId) {
+            setMultiLeia((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    state: { ...previous.state, nextActorId: data.nextActorId },
+                  }
+                : previous,
+            );
+            return;
+          }
+
+          if (event === "message" && data.message) {
+            const incoming: Message = {
+              ...data.message,
+              timestamp: data.message.timestamp || new Date(),
+              isLeia: true,
+              id: data.message.id || generateMessageId(),
+            };
+            setMessages((previous) => {
+              const duplicated = previous.some(
+                (candidate) =>
+                  (incoming.id && candidate.id === incoming.id) ||
+                  (incoming.turnId &&
+                    incoming.sequence !== undefined &&
+                    candidate.turnId === incoming.turnId &&
+                    candidate.sequence === incoming.sequence),
+              );
+              return duplicated ? previous : [...previous, incoming];
+            });
+
+            window.requestAnimationFrame(() => scrollToBottom(true));
+            return;
+          }
+
+          if (event === "complete") {
+            completed = true;
+            if (data.state) {
+              setMultiLeia((previous) =>
+                previous ? { ...previous, state: data.state } : previous,
+              );
+            }
+            if (typeof data.nudge === "string" && data.nudge.trim()) {
+              setNudge(data.nudge.trim());
+            }
+            return;
+          }
+
+          if (event === "error") {
+            throw new Error(data.error || "The MultiLEIA conversation stream failed");
+          }
+        });
+
+        if (!completed) {
+          throw new Error("The conversation stream closed before the round completed");
+        }
+        return [];
+      }
 
       const initialBody: Record<string, unknown> = {};
       if (initialMessage !== null) initialBody.message = initialMessage;
@@ -546,9 +895,7 @@ export const Chat = () => {
             const tool = toolsRef.current[call.name];
             let output: unknown;
             if (!tool) {
-              output = {
-                error: `tool '${call.name}' is not registered on this client`
-              };
+              output = { error: `tool '${call.name}' is not registered on this client` };
             } else {
               let args: Record<string, unknown> = {};
               try {
@@ -559,32 +906,52 @@ export const Chat = () => {
               try {
                 output = await tool.execute(args);
               } catch (err) {
-                output = {
-                  error: (err as Error).message ?? "tool execution failed"
-                };
+                output = { error: (err as Error).message ?? "tool execution failed" };
               }
             }
             return { callId: call.callId, output };
           })
         );
 
-        const continuationBody: Record<string, unknown> = {
-          toolResults: results
-        };
+        const continuationBody: Record<string, unknown> = { toolResults: results };
         if (toolsPayload.length > 0) continuationBody.tools = toolsPayload;
         response = await axios.post(baseUrl, continuationBody);
         captureNudge(response);
       }
 
-      return typeof response.data?.message === "string" ? response.data.message : "";
+      if (Array.isArray(response.data?.messages)) {
+        if (response.data?.state) {
+          setMultiLeia((previous) =>
+            previous ? { ...previous, state: response.data.state } : previous,
+          );
+        }
+        return response.data.messages.map((message: Message) => ({
+          ...message,
+          timestamp: message.timestamp || new Date(),
+          isLeia: true,
+          id: message.id || generateMessageId(),
+        }));
+      }
+
+      return typeof response.data?.message === "string" && response.data.message
+        ? [
+            {
+              text: response.data.message,
+              timestamp: new Date(),
+              isLeia: true,
+              id: generateMessageId(),
+            },
+          ]
+        : [];
     },
-    [buildToolsPayload, sessionId]
+    [buildToolsPayload, multiLeia, scrollToBottom, sessionId]
   );
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (dataUsageConsentPending) return;
     if (configuration?.mode === "transcription") return;
+    if (sendingMessage || retryingMessage) return;
 
     const messageText = newMessageText.trim();
     if (!messageText) return;
@@ -601,7 +968,7 @@ export const Chat = () => {
       text: messageText,
       timestamp: new Date(),
       isLeia: false,
-      id: generateMessageId()
+      id: generateMessageId(),
     };
 
     setMessages((prev) => [...prev, newMessage]);
@@ -610,17 +977,11 @@ export const Chat = () => {
     // scrollToBottom();
 
     try {
-      const leiaText = await runMessageTurn(messageText);
-      if (leiaText) {
-        const leiaMessage: Message = {
-          text: leiaText,
-          timestamp: new Date(),
-          isLeia: true,
-          id: generateMessageId()
-        };
-        setMessages((prev) => [...prev, leiaMessage]);
+      const leiaMessages = await runMessageTurn(messageText);
+      if (leiaMessages.length > 0) {
+        setMessages((prev) => [...prev, ...leiaMessages]);
       }
-    } catch (error) {
+    } catch {
       setFailedMessage(messageText);
       setMessages((prev) => [
         ...prev,
@@ -628,8 +989,8 @@ export const Chat = () => {
           text: "This message is taking longer than usual.",
           timestamp: new Date(),
           isLeia: true,
-          id: generateMessageId()
-        }
+          id: generateMessageId(),
+        },
       ]);
     } finally {
       setSendingMessage(false);
@@ -638,21 +999,31 @@ export const Chat = () => {
 
   const handleFinishConversation = async () => {
     if (dataUsageConsentPending) return;
-    if (!messages.length && configuration?.mode !== "transcription" && audioMode !== "luke" && audioMode !== "audio") return;
+    if (
+      !messages.length &&
+      configuration?.mode !== "transcription" &&
+      audioMode !== "luke" &&
+      audioMode !== "audio"
+    )
+      return;
     setConcluding(true);
     if (configuration?.askSolution) {
       navigate("/edit");
     } else {
       try {
-        const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`);
+        const response = await axios.post(
+          `${
+            import.meta.env.VITE_APP_BACKEND
+          }/api/v1/interactions/${sessionId}/finish`,
+        );
 
         if (response.status === 200) {
           const updatedSession = response.data;
           setSession(updatedSession);
           setShowSuccessModal(true);
         }
-      } catch (error: any) {
-        setLoadError(error.response?.data?.error || "An unexpected error occurred");
+      } catch (error: unknown) {
+        setLoadError(getRequestErrorMessage(error));
       } finally {
         setConcluding(false);
       }
@@ -663,7 +1034,9 @@ export const Chat = () => {
     if (dataUsageConsentPending) return;
     setConcluding(true);
     try {
-      const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`);
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+      );
       if (response.status === 200) {
         setSession(response.data);
         setShowSuccessModal(true);
@@ -679,7 +1052,10 @@ export const Chat = () => {
     if (dataUsageConsentSubmitting) return;
     setDataUsageConsentSubmitting(true);
     try {
-      const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/data-usage-consent`, { accepted });
+      const response = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/data-usage-consent`,
+        { accepted },
+      );
       setSession(response.data.session);
       localStorage.setItem("session", JSON.stringify(response.data.session));
     } catch (error: unknown) {
@@ -707,6 +1083,21 @@ export const Chat = () => {
     }
   }, [session, showSuccessModal, navigate]);
 
+  const renderStudentInfographic = () =>
+    studentInfographic ? (
+      <InfographicViewer
+        ref={studentInfographicViewerRef}
+        src={studentInfographic.src}
+        candidateSources={[
+          studentInfographic.src,
+          studentInfographic.fallbackSrc,
+          ...(studentInfographic.fallbackSources || []),
+        ]}
+        title="Exercise infographic"
+        hidden
+      />
+    ) : null;
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -719,10 +1110,17 @@ export const Chat = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="max-w-md p-6 bg-red-50 rounded-xl">
-          <h1 className="text-2xl font-bold text-red-700 mb-2">Error loading the exercise</h1>
+          <h1 className="text-2xl font-bold text-red-700 mb-2">
+            Error loading the exercise
+          </h1>
           <p className="text-red-600 mb-4">{loadError}</p>
-          <p className="font-semibold text-red-700 mb-4">Try again or contact the person in charge</p>
-          <button onClick={() => navigate("/")} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+          <p className="font-semibold text-red-700 mb-4">
+            Try again or contact the person in charge
+          </p>
+          <button
+            onClick={() => navigate("/")}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
             Go back
           </button>
         </div>
@@ -733,22 +1131,39 @@ export const Chat = () => {
   return (
     <div className="flex flex-col h-screen bg-white chat-container">
       {/* Meta viewport para móviles */}
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+      <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      />
 
       {dataUsageConsentPending && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">Data Usage Consent Acceptance</h2>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Data Usage Consent Acceptance
+              </h2>
             </div>
             <div className="px-6 py-4">
-              <p className="text-gray-600 whitespace-pre-wrap">{session?.dataUsage?.config.dataUsageConsentMessage}</p>
+              <p className="text-gray-600 whitespace-pre-wrap">
+                {session?.dataUsage?.config.dataUsageConsentMessage}
+              </p>
             </div>
             <div className="px-6 py-4 border-t flex flex-col sm:flex-row justify-end gap-2">
-              <button type="button" disabled={dataUsageConsentSubmitting} onClick={() => handleDataUsageConsentDecision(false)} className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
                 No, I do not consent
               </button>
-              <button type="button" disabled={dataUsageConsentSubmitting} onClick={() => handleDataUsageConsentDecision(true)} className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              <button
+                type="button"
+                disabled={dataUsageConsentSubmitting}
+                onClick={() => handleDataUsageConsentDecision(true)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
                 Yes, I consent
               </button>
             </div>
@@ -760,22 +1175,43 @@ export const Chat = () => {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center px-6 py-4 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">Instructions</h2>
-              <button onClick={() => setShowInstructions(false)} className="text-gray-400 hover:text-gray-500">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <h2 className="text-xl font-semibold text-gray-900">
+                Instructions
+              </h2>
+              <button
+                onClick={() => setShowInstructions(false)}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
             <div className="px-6 py-4">
               <p className="text-gray-600">{exercise?.description}</p>
               <p className="text-gray-600 mt-4">
-                When you're ready, click the button below to start the task.
-                {audioMode === "audio" || audioMode === "luke" ? "Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need." : ""}
+                
+                {(audioMode === "audio" || audioMode === "luke")
+                  ? " Make sure your microphone is enabled, your microphone will be unmuted automatically after closing this dialog. You can toggle the mute button whenever you need. "
+                  : ""}
+                  When you're ready, click the button below to start the task.
               </p>
             </div>
             <div className="px-6 py-4 border-t flex justify-end">
-              <button onClick={() => setShowInstructions(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <button
+                onClick={() => setShowInstructions(false)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
                 Continue Task
               </button>
             </div>
@@ -783,43 +1219,86 @@ export const Chat = () => {
         </div>
       )}
 
-      <header className="flex items-center px-4 py-3 border-b bg-white sticky top-0 z-10">
+      <header className="flex justify-between items-center px-4 py-3 border-b bg-white sticky top-0 z-10">
         <div className="flex items-center space-x-2">
-          <img src="/logo/leia_main_dark.png" alt="LEIA Logo" className="w-6 h-6" />
+          <img
+            src="/logo/leia_main_dark.png"
+            alt="LEIA Logo"
+            className="w-6 h-6"
+          />
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
         </div>
-        <div className="ml-auto mr-4 flex items-center gap-3">
-          {leiaFullName && (
-            <div className="flex items-center gap-1.5 bg-blue-50 rounded-full pl-1.5 pr-3 py-1">
-              <UserCircleIcon className="w-5 h-5 text-blue-700 flex-shrink-0" />
-              <div className="flex items-baseline gap-1.5 leading-none">
-                <span className="text-sm font-medium text-gray-900">{leiaFullName}</span>
-                {leiaRole && <span className="text-xs text-gray-500">· {leiaRole}</span>}
-              </div>
-            </div>
-          )}
-
-          {leiaFullName && userEmail && <div className="w-px h-5 bg-gray-200" />}
-
-          {userEmail && (
-            <div className="flex items-center gap-1.5 bg-blue-600 rounded-full pl-1.5 pr-3 py-1">
-              <UserIcon className="w-4 h-4 text-white flex-shrink-0" />
-              <span className="text-sm text-white">{userEmail}</span>
-            </div>
-          )}
-        </div>
         <div className="flex gap-2">
-          {!dataUsageConsentPending && sessionTime && session?.startedAt && <SessionTimer durationMinutes={sessionTime} sessionStartedAt={session.startedAt} onExpire={handleTimerExpire} />}
-          <button onClick={() => setShowInstructions(true)} className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+        {!dataUsageConsentPending && sessionTime && session?.startedAt && (
+          <SessionTimer
+            durationMinutes={sessionTime}
+            sessionStartedAt={session.startedAt}
+            onExpire={handleTimerExpire}
+          />
+        )}
+        <button
+            onClick={() => setShowNotes(!showNotes)}
+            className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <PencilSquareIcon className="w-4 h-4" />
+              </svg>
+              <span className="hidden sm:inline">Notes</span>
+            </button>
+
+          {hasStudentInfographic && (
+            <button
+              onClick={() => studentInfographicViewerRef.current?.open()}
+              className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+              title="Open exercise guidance"
+              aria-label="Open exercise guidance"
+            >
+              <PhotoIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Guidance</span>
+            </button>
+          )}
+          <button
+            onClick={() => setShowInstructions(true)}
+            className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="w-4 h-4"
+            >
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+                clipRule="evenodd"
+              />
             </svg>
             <span className="hidden sm:inline">Instructions</span>
           </button>
-          <button onClick={handleFinishConversation} disabled={concluding || dataUsageConsentPending || (!messages.length && configuration?.mode !== "transcription" && audioMode !== "luke" && audioMode !== "audio")} className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+          <button
+            onClick={handleFinishConversation}
+            disabled={
+              concluding ||
+              dataUsageConsentPending ||
+              (!messages.length &&
+                configuration?.mode !== "transcription" &&
+                audioMode !== "luke" &&
+                audioMode !== "audio")
+            }
+            className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
             {(() => {
-              const hasCodeEditorWidget = audioMode !== "audio" && !!lukeConfig?.widgets?.some((w) => w.widgetType === "codeEditor");
-              const askSolutionLabel = hasCodeEditorWidget ? "Send Solution" : "Go to Editor";
+              const hasCodeEditorWidget =
+                audioMode !== "audio" &&
+                !!lukeConfig?.widgets?.some((w) => w.widgetType === "codeEditor");
+              const askSolutionLabel = hasCodeEditorWidget
+                ? "Send Solution"
+                : "Go to Editor";
               return concluding ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -827,28 +1306,48 @@ export const Chat = () => {
                 </>
               ) : (
                 <>
-                  <span className="hidden sm:inline">{configuration?.askSolution ? askSolutionLabel : "Finish Session"}</span>
-                  <span className="sm:hidden">{configuration?.askSolution ? askSolutionLabel : "Finish Session"}</span>
+                  <span className="hidden sm:inline">
+                    {configuration?.askSolution
+                      ? askSolutionLabel
+                      : "Finish Session"}
+                  </span>
+                  <span className="sm:hidden">
+                    {configuration?.askSolution
+                      ? askSolutionLabel
+                      : "Finish Session"}
+                  </span>
                 </>
               );
             })()}
           </button>
         </div>
       </header>
-
+      {showNotes && <NotesWidget />}
       {/* Widget side panel — text mode only. Luke mode renders its own
           slots inside LukeAudioWidget; here we mount the same widgets in
           a fixed right pane and bridge their tools out to the round-trip
           loop owned by handleSubmit. */}
+      {hasStudentInfographic && renderStudentInfographic()}
+
       {hasTextWidgets && (
         <VoiceModeWithWidgets widgets={widgetDefs}>
-          {({ rightSlot, leftSlot }) => (
-            <>
-              <ToolsBridge onTools={handleToolsSync} />
-              {rightSlot && <div className="fixed top-14 right-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-l border-neutral-800">{rightSlot}</div>}
-              {leftSlot && <div className="fixed top-14 left-0 bottom-0 w-1/2 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-r border-neutral-800">{leftSlot}</div>}
-            </>
-          )}
+          {({ rightSlot, leftSlot }) => {
+            return (
+              <>
+                <ToolsBridge onTools={handleToolsSync} />
+                {rightSlot && (
+                  <div className="fixed top-14 right-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-l bg-neutral-900 text-white border-neutral-800">
+                    {rightSlot}
+                  </div>
+                )}
+                {leftSlot && (
+                  <div className="fixed top-14 left-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-r bg-neutral-900 text-white border-neutral-800">
+                    {leftSlot}
+                  </div>
+                )}
+              </>
+            );
+          }}
         </VoiceModeWithWidgets>
       )}
 
@@ -858,10 +1357,50 @@ export const Chat = () => {
         <div className="flex-1 flex flex-col overflow-hidden">
           {lukeToken.isReady && lukeConfig ? (
             (() => {
-              const base = <LukeAudioWidget wsUrl={lukeToken.wsUrl!} token={lukeToken.token!} lukeConfig={lukeConfig} leiaName={leiaName || undefined} forceMute={showInstructions || dataUsageConsentPending} showTranscription={!hideAudioTranscription} mode="inline" onTranscriptComplete={handleTranscriptComplete} />;
+              const base = (
+                <LukeAudioWidget
+                  wsUrl={lukeToken.wsUrl!}
+                  token={lukeToken.token!}
+                  lukeConfig={lukeConfig}
+                  leiaName={leiaName || undefined}
+                  avatarSrc={personaAvatar || undefined}
+                  avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
+                  forceMute={showInstructions || dataUsageConsentPending}
+                  showTranscription={!hideAudioTranscription}
+                  mode="inline"
+                  onTranscriptComplete={handleTranscriptComplete}
+                />
+              );
 
               if (widgetDefs.length === 0) return base;
-              return <VoiceModeWithWidgets widgets={widgetDefs}>{({ tools, leftSlot, rightSlot }) => <LukeAudioWidget wsUrl={lukeToken.wsUrl!} token={lukeToken.token!} lukeConfig={lukeConfig} leiaName={leiaName || undefined} forceMute={showInstructions || dataUsageConsentPending} showTranscription={!hideAudioTranscription} mode="inline" tools={tools as Record<string, import("@leia-org/luke-client").FrontendTool>} leftSlot={leftSlot} rightSlot={rightSlot} onTranscriptComplete={handleTranscriptComplete} />}</VoiceModeWithWidgets>;
+              return (
+                <VoiceModeWithWidgets widgets={widgetDefs}>
+                  {({ tools, leftSlot, rightSlot }) => {
+                    return (
+                      <LukeAudioWidget
+                        wsUrl={lukeToken.wsUrl!}
+                        token={lukeToken.token!}
+                        lukeConfig={lukeConfig}
+                        leiaName={leiaName || undefined}
+                        avatarSrc={personaAvatar || undefined}
+                        avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
+                        forceMute={showInstructions || dataUsageConsentPending}
+                        showTranscription={!hideAudioTranscription}
+                        mode="inline"
+                        tools={
+                          tools as Record<
+                            string,
+                            import("@leia-org/luke-client").FrontendTool
+                          >
+                        }
+                        leftSlot={leftSlot}
+                        rightSlot={rightSlot}
+                        onTranscriptComplete={handleTranscriptComplete}
+                      />
+                    );
+                  }}
+                </VoiceModeWithWidgets>
+              );
             })()
           ) : (
             <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -872,22 +1411,58 @@ export const Chat = () => {
             </div>
           )}
         </div>
-      ) : configuration?.mode === "transcription" && !configuration?.data?.messages && configuration?.data?.link ? (
+      ) : configuration?.mode === "transcription" &&
+      !configuration?.data?.messages &&
+      configuration?.data?.link ? (
         /* Vista de transcripción externa */
         <div className="flex-1 flex items-center justify-center bg-gray-50 px-4">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
             <div className="mb-6">
               <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <svg
+                  className="w-8 h-8 text-blue-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
                 </svg>
               </div>
-              <h2 className="text-2xl font-semibold text-gray-900 mb-3">Transcription Exercise</h2>
-              <p className="text-gray-600 mb-6">This exercise is configured in transcription mode. Click the button below to access the external transcription content.</p>
+              <h2 className="text-2xl font-semibold text-gray-900 mb-3">
+                Transcription Exercise
+              </h2>
+              <p className="text-gray-600 mb-6">
+                This exercise is configured in transcription mode. Click the
+                button below to access the external transcription content.
+              </p>
             </div>
-            <button onClick={() => window.open(configuration.data.link, "_blank", "noopener,noreferrer")} className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center gap-3 shadow-sm">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            <button
+              onClick={() =>
+                window.open(
+                  configuration.data.link,
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center gap-3 shadow-sm"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
               </svg>
               Open Transcription
             </button>
@@ -898,36 +1473,103 @@ export const Chat = () => {
         <div
           className="flex-1 overflow-y-auto px-4 pb-20 md:pb-32 scroll-smooth bg-gray-50 chat-messages"
           style={{
-            height: mobileUtils.isMobile() ? `${mobileUtils.getMobileViewportHeight() - 120}px` : "auto",
+            height: mobileUtils.isMobile()
+              ? `${mobileUtils.getMobileViewportHeight() - 120}px`
+              : "auto",
             minHeight: "400px",
             maxHeight: mobileUtils.isMobile() ? "calc(100vh - 140px)" : "none",
             background: "#f9fafb",
             // Carve out the half that the widget panel occupies so the
             // messages don't slide under it.
             paddingLeft: hasLeftSidePanel ? "50%" : undefined,
-            paddingRight: hasRightSidePanel ? "50%" : undefined
+            paddingRight: hasRightSidePanel ? "50%" : undefined,
           }}
         >
-          <div ref={chatMessagesRef} className="max-w-3xl mx-auto space-y-4 py-4">
-            {hideAudioTranscription && <LiveTranscriptionNotice />}
-            {!hideAudioTranscription &&
-              messages.map((msg, index, visibleMessages) => (
-                <div key={msg.id || index} id={`message-${msg.id || index}`} ref={msg.isLeia && index === visibleMessages.length - 1 ? lastLeiaMessageRef : null} className={`flex items-end gap-2 ${msg.isLeia ? "flex-row" : "flex-row-reverse"}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.isLeia ? "bg-blue-50" : "bg-blue-600"}`}>
-                    {msg.isLeia ? (
-                      <UserCircleIcon className="w-5 h-5 text-blue-700" />
+          <div
+            ref={chatMessagesRef}
+            className="max-w-3xl mx-auto space-y-4 py-4"
+          >
+            {hideAudioTranscription && (<LiveTranscriptionNotice/>)}
+            {!hideAudioTranscription && messages.map((msg, index, visibleMessages) => {
+              const actor = msg.senderId
+                ? multiLeiaActors.get(msg.senderId)
+                : undefined;
+              const actorName = msg.senderName || actor?.name || leiaName || "LEIA";
+              const actorAvatar = actor?.avatar || personaAvatar;
+              const actorAvatarFallback = actor
+                ? buildOriginalAvatarPath("personas", actor.personaId || "") ||
+                  buildOriginalAvatarPath("leias", actor.leiaId || "")
+                : personaAvatarFallbackSrc;
+
+              return (
+              <div
+                key={msg.id || index}
+                id={`message-${msg.id || index}`}
+                ref={
+                  msg.isLeia && index === visibleMessages.length - 1
+                    ? lastLeiaMessageRef
+                    : null
+                }
+                className={`flex items-end gap-2 ${
+                  msg.isLeia ? "flex-row" : "flex-row-reverse"
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${
+                    msg.isLeia ? "bg-blue-50" : "bg-blue-600"
+                  }`}
+                >
+                  {msg.isLeia ? (
+                    actorAvatar || actorAvatarFallback ? (
+                      <PersonaAvatar
+                        src={actorAvatar}
+                        fallbackSrc={actorAvatarFallback}
+                        alt={`${actorName} avatar`}
+                        label={actorName}
+                        size="md"
+                      />
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
-                        <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
-                      </svg>
-                    )}
-                  </div>
-                  <div className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${msg.isLeia ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm" : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"}`}>
-                    <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                    {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
-                    {msg.isLeia && index === visibleMessages.length - 1 && failedMessage && msg.text.includes("This message is taking longer than usual.") && (
+                      <UserCircleIcon className="w-6 h-6 text-blue-700" />
+                    )
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-6 h-6 text-white"
+                    >
+                      <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
+                    </svg>
+                  )}
+                </div>
+                <div
+                  className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
+                    msg.isLeia
+                      ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm"
+                      : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
+                  }`}
+                >
+                  {msg.isLeia && multiLeia && (
+                    <p className="mb-1 text-xs font-semibold text-blue-700">
+                      {actorName}
+                    </p>
+                  )}
+                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                    {msg.text}
+                  </p>
+                  {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
+                  {msg.isLeia &&
+                    index === visibleMessages.length - 1 &&
+                    failedMessage &&
+                    msg.text.includes(
+                      "This message is taking longer than usual.",
+                    ) && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
-                        <button onClick={retryFailedMessage} disabled={retryingMessage} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        <button
+                          onClick={retryFailedMessage}
+                          disabled={retryingMessage}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
                           {retryingMessage ? (
                             <>
                               <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -935,8 +1577,18 @@ export const Chat = () => {
                             </>
                           ) : (
                             <>
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                />
                               </svg>
                               Retry
                             </>
@@ -944,16 +1596,52 @@ export const Chat = () => {
                         </button>
                       </div>
                     )}
-                  </div>
                 </div>
-              ))}
+              </div>
+              );
+            })}
             {sendingMessage && (
               <div className="flex items-end gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <UserCircleIcon className="w-5 h-5 text-blue-700" />
-                </div>
+                {typingAvatar || typingAvatarFallback ? (
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-blue-50">
+                    <PersonaAvatar
+                      src={typingAvatar}
+                      fallbackSrc={typingAvatarFallback}
+                      alt={`${typingActor?.name || leiaName || "LEIA"} avatar`}
+                      label={typingActor?.name || leiaName || "LEIA"}
+                      size="md"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <UserCircleIcon className="w-6 h-6 text-blue-700" />
+                  </div>
+                )}
                 <div className="min-w-[60px] bg-white border border-gray-200 rounded-t-2xl rounded-r-2xl rounded-bl-md px-4 py-3 shadow-sm">
                   <TypingAnimation />
+                </div>
+              </div>
+            )}
+            {showPartialRound && partialRound && (
+              <div className="flex justify-center my-2" role="status">
+                <div className="max-w-xl w-full bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 shadow-sm flex items-start gap-3">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-950">
+                      The MultiLEIA round ended early
+                    </p>
+                    <p className="text-sm text-amber-900 mt-0.5">
+                      {partialRound.actorName} could not respond. The messages already shown were saved, and you can continue the conversation normally.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDismissedPartialTurnId(partialRound.turnId)}
+                    className="text-amber-500 hover:text-amber-700 flex-shrink-0"
+                    aria-label="Dismiss incomplete round notice"
+                  >
+                    <XMarkIcon className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             )}
@@ -962,7 +1650,12 @@ export const Chat = () => {
                 <div className="max-w-xl w-full bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 shadow-sm flex items-start gap-3">
                   <SparklesIcon className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-amber-900 flex-1">{nudge}</p>
-                  <button type="button" onClick={() => setNudge(null)} className="text-amber-400 hover:text-amber-600 flex-shrink-0" aria-label="Dismiss">
+                  <button
+                    type="button"
+                    onClick={() => setNudge(null)}
+                    className="text-amber-400 hover:text-amber-600 flex-shrink-0"
+                    aria-label="Dismiss"
+                  >
                     <XMarkIcon className="w-4 h-4" />
                   </button>
                 </div>
@@ -973,12 +1666,16 @@ export const Chat = () => {
       )}
 
       {/* Input de chat - Ocultar en transcripción externa y en modo luke */}
-      {audioMode !== "luke" && !(configuration?.mode === "transcription" && !configuration?.data?.messages && configuration?.data?.link) && (
+      {audioMode !== "luke" && !(
+        configuration?.mode === "transcription" &&
+        !configuration?.data?.messages &&
+        configuration?.data?.link
+      ) && (
         <div
           className="fixed bottom-0 px-4 pb-6 bg-gray-50 z-10 chat-input"
           style={{
             left: hasLeftSidePanel ? "50%" : 0,
-            right: hasRightSidePanel ? "50%" : 0
+            right: hasRightSidePanel ? "50%" : 0,
           }}
         >
           <div className="max-w-3xl mx-auto relative">
@@ -988,28 +1685,69 @@ export const Chat = () => {
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 shadow-lg max-w-sm mx-auto">
                   <div className="flex items-start gap-2">
                     <div className="flex-shrink-0">
-                      <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      <svg
+                        className="w-5 h-5 text-blue-600 mt-0.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
                       </svg>
                     </div>
                     <div className="flex-1">
                       <p className="text-sm text-blue-800 mb-2">
-                        <strong>{audioMode === "audio" ? "Try saying:" : "Try typing:"}</strong>
+                        <strong>
+                          {audioMode === "audio"
+                            ? "Try saying:"
+                            : "Try typing:"}
+                        </strong>
                       </p>
                       {audioMode === "audio" ? (
-                        <p className="text-sm text-blue-700 bg-blue-100 rounded px-3 py-2">{tooltipMessage || "Hi, my name is (...) and I am here to (...), nice to meet you!"}</p>
+                        <p className="text-sm text-blue-700 bg-blue-100 rounded px-3 py-2">
+                          {tooltipMessage ||
+                            "Hi, my name is (...) and I am here to (...), nice to meet you!"}
+                        </p>
                       ) : (
                         <>
-                          <button onClick={() => copyToInput(tooltipMessage || "Hi, my name is (...) and I am here to (...), nice to meet you!")} className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left">
-                            {tooltipMessage || "Hi, my name is (...) and I am here to (...), nice to meet you!"}
+                          <button
+                            onClick={() =>
+                              copyToInput(
+                                tooltipMessage ||
+                                  "Hi, my name is (...) and I am here to (...), nice to meet you!",
+                              )
+                            }
+                            className="text-sm text-blue-600 hover:text-blue-800 bg-blue-100 hover:bg-blue-200 rounded px-3 py-1.5 transition-colors w-full text-left"
+                          >
+                            {tooltipMessage ||
+                              "Hi, my name is (...) and I am here to (...), nice to meet you!"}
                           </button>
-                          <p className="text-xs text-blue-600 mt-1">Click to copy to input</p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            Click to copy to input
+                          </p>
                         </>
                       )}
                     </div>
-                    <button onClick={() => setShowTooltip(false)} className="flex-shrink-0 text-blue-400 hover:text-blue-600">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <button
+                      onClick={() => setShowTooltip(false)}
+                      className="flex-shrink-0 text-blue-400 hover:text-blue-600"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -1027,17 +1765,63 @@ export const Chat = () => {
                   }}
                   className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg flex items-center gap-2 transition-all"
                 >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                    />
                   </svg>
-                  {hasNewMessages && <span className="text-sm font-medium">New messages</span>}
+                  {hasNewMessages && (
+                    <span className="text-sm font-medium">New messages</span>
+                  )}
                 </button>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex gap-2 bg-white rounded-lg p-3 shadow-lg border border-gray-200">
-              <textarea ref={inputRef} value={newMessageText} onChange={handleTextareaChange} onKeyDown={handleKeyDown} placeholder={configuration?.mode === "transcription" ? "Disabled in transcription exercise" : audioMode === "audio" ? "Audio mode enabled - Use the audio controls to speak" : "Type a message... (Shift+Enter for new line)"} className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto" style={{ minHeight: "40px", maxHeight: "150px" }} disabled={dataUsageConsentPending || configuration?.mode === "transcription" || audioMode === "audio"} rows={1} />
-              <button type="submit" disabled={dataUsageConsentPending || configuration?.mode === "transcription" || audioMode === "audio" || !newMessageText.trim() || sendingMessage || retryingMessage} className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 self-end">
+            <form
+              onSubmit={handleSubmit}
+              className="flex gap-2 bg-white rounded-lg p-3 shadow-lg border border-gray-200"
+            >
+              <textarea
+                ref={inputRef}
+                value={newMessageText}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  configuration?.mode === "transcription"
+                    ? "Disabled in transcription exercise"
+                    : audioMode === "audio"
+                      ? "Audio mode enabled - Use the audio controls to speak"
+                      : "Type a message... (Shift+Enter for new line)"
+                }
+                className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
+                style={{ minHeight: "40px", maxHeight: "150px" }}
+                disabled={
+                  dataUsageConsentPending ||
+                  configuration?.mode === "transcription" ||
+                  audioMode === "audio"
+                }
+                rows={1}
+              />
+              <button
+                type="submit"
+                disabled={
+                  dataUsageConsentPending ||
+                  configuration?.mode === "transcription" ||
+                  audioMode === "audio" ||
+                  !newMessageText.trim() ||
+                  sendingMessage ||
+                  retryingMessage
+                }
+                className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 self-end"
+              >
                 Send
               </button>
             </form>
@@ -1049,23 +1833,55 @@ export const Chat = () => {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
             <div className="flex justify-between items-center px-6 py-4 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">Session Completed</h2>
-              <button onClick={() => setShowSuccessModal(false)} className="text-gray-400 hover:text-gray-500">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <h2 className="text-xl font-semibold text-gray-900">
+                Session Completed
+              </h2>
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
             <div className="px-6 py-4">
               <div className="flex items-center justify-center mb-4">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-10 w-10 text-green-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
                   </svg>
                 </div>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Success!</h3>
-              <p className="text-gray-600 text-center mb-4">{replication?.form ? "Your session has been successfully completed. Please fill out the form to provide your feedback." : "Your session has been successfully completed."}</p>
+              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
+                Success!
+              </h3>
+              <p className="text-gray-600 text-center mb-4">
+                {replication?.form
+                  ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
+                  : "Your session has been successfully completed."}
+              </p>
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button
@@ -1075,19 +1891,44 @@ export const Chat = () => {
                 }}
                 className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                  />
                 </svg>
                 Home
               </button>
-              {replication?.form && (replication.form.startsWith("http://") || replication.form.startsWith("https://")) && (
-                <button onClick={() => window.open(replication.form, "_blank")} className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                  Open Form
-                </button>
-              )}
+              {replication?.form &&
+                (replication.form.startsWith("http://") ||
+                  replication.form.startsWith("https://")) && (
+                  <button
+                    onClick={() => window.open(replication.form, "_blank")}
+                    className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                      />
+                    </svg>
+                    Open Form
+                  </button>
+                )}
             </div>
           </div>
         </div>
@@ -1099,20 +1940,49 @@ export const Chat = () => {
             <div className="px-6 py-4">
               <div className="flex items-center justify-center mb-4">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-10 w-10 text-green-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
                   </svg>
                 </div>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Session Already Completed</h3>
-              <p className="text-gray-600 text-center mb-4">This session has already been completed. You will be redirected to the home page in {redirectingIn} seconds.</p>
+              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
+                Session Already Completed
+              </h3>
+              <p className="text-gray-600 text-center mb-4">
+                This session has already been completed. You will be redirected
+                to the home page in {redirectingIn} seconds.
+              </p>
             </div>
           </div>
         </div>
       )}
 
       {/* Audio Controls Floating Popup - Legacy realtime mode */}
-      {audioMode === "audio" && <AudioControls isConnected={realtimeAudio.isConnected} isMuted={realtimeAudio.isMuted || realtimeAudio.forceMute} forceMute={realtimeAudio.forceMute} isLeiaSpeaking={realtimeAudio.isLeiaSpeaking} audioElement={realtimeAudio.audioElement} mediaStream={realtimeAudio.mediaStream} leiaAudioStream={realtimeAudio.leiaAudioStream} onToggleMute={realtimeAudio.toggleMute} onEndSession={handleFinishConversation} />}
+      {audioMode === "audio" && (
+        <AudioControls
+          isConnected={realtimeAudio.isConnected}
+          isMuted={realtimeAudio.isMuted || realtimeAudio.forceMute}
+          forceMute={realtimeAudio.forceMute}
+          isLeiaSpeaking={realtimeAudio.isLeiaSpeaking}
+          audioElement={realtimeAudio.audioElement}
+          mediaStream={realtimeAudio.mediaStream}
+          leiaAudioStream={realtimeAudio.leiaAudioStream}
+          onToggleMute={realtimeAudio.toggleMute}
+          onEndSession={handleFinishConversation}
+        />
+      )}
+
     </div>
   );
 };

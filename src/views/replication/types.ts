@@ -20,6 +20,9 @@ export interface ReplicationLeia {
     apiKeyId?: string | null;
     audioMode?: "realtime" | "luke" | null;
     hideAudioTranscription?: boolean | null;
+    infographic?: {
+      showToStudent?: boolean;
+    };
     realtimeConfig?: {
       model?: string;
       voice?: string;
@@ -67,5 +70,12 @@ export interface ReplicationData {
   experiment: {
     name: string;
     leias: ReplicationLeia[];
+    orchestration?: {
+      mode: "single" | "multi";
+      maxInternalTurns: number;
+      openingLeiaId: string | null;
+      problemLeiaId: string | null;
+      sharedTask: string;
+    };
   };
 }

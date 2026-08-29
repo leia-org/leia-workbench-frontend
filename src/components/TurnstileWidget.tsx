@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { turnstileSiteKey } from "../config/turnstile";
 
 declare global {
   interface Window {
@@ -32,12 +33,12 @@ export const TurnstileWidget = ({ onTokenChange }: TurnstileWidgetProps) => {
     let intervalId: number | undefined;
 
     const renderWidget = () => {
-      if (!containerRef.current || !window.turnstile || widgetId) {
+      if (!containerRef.current || !window.turnstile || widgetId || !turnstileSiteKey) {
         return;
       }
 
       widgetId = window.turnstile.render(containerRef.current, {
-        sitekey: import.meta.env.VITE_CLOUDFLARE_SITE_KEY,
+        sitekey: turnstileSiteKey,
         callback: onTokenChange,
         "expired-callback": () => onTokenChange(""),
         "error-callback": () => onTokenChange(""),

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { UserCircleIcon, UserIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { io } from "socket.io-client";
 
@@ -36,15 +36,12 @@ export const SpectatorView = () => {
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [leiaFullName, setLeiaFullName] = useState<string | null>(null);
-  const [leiaRole, setLeiaRole] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({
         behavior: "smooth",
-        block: "end"
+        block: "end",
       });
     }
   }, []);
@@ -59,27 +56,37 @@ export const SpectatorView = () => {
       }
 
       try {
-        const response = await axios.get(`${import.meta.env.VITE_APP_BACKEND}/api/v1/spectator/sessions/${sessionId}?token=${token}`);
+        const response = await axios.get(
+          `${
+            import.meta.env.VITE_APP_BACKEND
+          }/api/v1/spectator/sessions/${sessionId}?token=${token}`
+        );
 
         console.log(response);
 
         setSession(response.data.session);
         setIsActive(!response.data.session.finishedAt);
         setMode(response.data.leia.configuration.mode);
-        setLeiaRole(response.data.leia.roleDisplay || null);
-        setLeiaFullName(response.data.leia.leia.spec.persona?.spec?.fullName || null);
-        setUserEmail(response.data.session.userEmail || null);
+
         let messages = response.data.messages;
 
-        if (response.data.leia.configuration?.mode === "transcription" && response.data.leia.configuration?.data?.messages) {
+        if (
+          response.data.leia.configuration?.mode === "transcription" &&
+          response.data.leia.configuration?.data?.messages
+        ) {
           messages = response.data.leia.configuration.data.messages;
         }
 
         const sortedMessages = messages
-          .sort((a: Message, b: Message) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+          .sort(
+            (a: Message, b: Message) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          )
           .map((msg: Message) => ({
             ...msg,
-            id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            id:
+              msg.id ||
+              `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           }));
         setMessages(sortedMessages);
 
@@ -100,8 +107,8 @@ export const SpectatorView = () => {
 
     const newSocket = io(import.meta.env.VITE_APP_BACKEND, {
       auth: {
-        jwt: token
-      }
+        jwt: token,
+      },
     });
 
     newSocket.on("connect", () => {
@@ -120,8 +127,8 @@ export const SpectatorView = () => {
           id: message.id,
           text: message.text,
           isLeia: message.isLeia,
-          timestamp: new Date(message.timestamp)
-        }
+          timestamp: new Date(message.timestamp),
+        },
       ]);
       setTimeout(scrollToBottom, 100);
     });
@@ -174,7 +181,9 @@ export const SpectatorView = () => {
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
           <div className="text-lg text-red-600 mb-4">{error}</div>
-          <p className="text-sm text-gray-600">Please check your spectate link and try again.</p>
+          <p className="text-sm text-gray-600">
+            Please check your spectate link and try again.
+          </p>
         </div>
       </div>
     );
@@ -185,40 +194,49 @@ export const SpectatorView = () => {
       {/* Header */}
       <header className="flex justify-between items-center px-4 py-3 border-b bg-white sticky top-0 z-10">
         <div className="flex items-center space-x-3">
-          <img src="/logo/leia_main_dark.png" alt="LEIA Logo" className="w-6 h-6" />
+          <img
+            src="/logo/leia_main_dark.png"
+            alt="LEIA Logo"
+            className="w-6 h-6"
+          />
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold text-gray-900">Spectator Mode</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}`}>{isActive ? "Active" : "Finished"}</span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${mode == "standard" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>{mode}</span>
+            <h1 className="text-lg font-semibold text-gray-900">
+              Spectator Mode
+            </h1>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                isActive
+                  ? "bg-green-100 text-green-700"
+                  : "bg-gray-100 text-gray-700"
+              }`}
+            >
+              {isActive ? "Active" : "Finished"}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                mode == "standard"
+                  ? "bg-blue-100 text-blue-700"
+                  : "bg-orange-100 text-orange-700"
+              }`}
+            >
+              {mode}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="ml-auto mr-4 flex items-center gap-3">
-            {leiaFullName && (
-              <div className="flex items-center gap-1.5 bg-blue-50 rounded-full pl-1.5 pr-3 py-1">
-                <UserCircleIcon className="w-5 h-5 text-blue-700 flex-shrink-0" />
-                <div className="flex items-baseline gap-1.5 leading-none">
-                  <span className="text-sm font-medium text-gray-900">{leiaFullName}</span>
-                  {leiaRole && <span className="text-xs text-gray-500">· {leiaRole}</span>}
-                </div>
-              </div>
-            )}
-
-            {leiaFullName && userEmail && <div className="w-px h-5 bg-gray-200" />}
-
-            {userEmail && (
-              <div className="flex items-center gap-1.5 bg-blue-600 rounded-full pl-1.5 pr-3 py-1">
-                <UserIcon className="w-4 h-4 text-white flex-shrink-0" />
-                <span className="text-sm text-white">{userEmail}</span>
-              </div>
-            )}
-          </div>
           <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
             <span>{getElapsedTime()}</span>
             <span>•</span>
             <span>{messages.length} messages</span>
           </div>
-          <button onClick={handleCopyLink} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${copied ? "bg-green-600 text-white" : "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"}`}>
+          <button
+            onClick={handleCopyLink}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              copied
+                ? "bg-green-600 text-white"
+                : "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
+            }`}
+          >
             {copied ? "✓ Copied!" : "Copy Link"}
           </button>
         </div>
@@ -226,25 +244,50 @@ export const SpectatorView = () => {
 
       {/* Messages */}
       <main className="flex-1 overflow-y-auto px-4 pb-6 bg-gray-50">
-        <div ref={messagesContainerRef} className="max-w-3xl mx-auto space-y-4 py-4">
+        <div
+          ref={messagesContainerRef}
+          className="max-w-3xl mx-auto space-y-4 py-4"
+        >
           {messages.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-500">No messages yet...</p>
             </div>
           ) : (
             messages.map((message, index) => (
-              <div key={message.id || index} className={`flex items-end gap-2 ${message.isLeia ? "flex-row" : "flex-row-reverse"}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${message.isLeia ? "bg-blue-50" : "bg-blue-600"}`}>
+              <div
+                key={message.id || index}
+                className={`flex items-end gap-2 ${
+                  message.isLeia ? "flex-row" : "flex-row-reverse"
+                }`}
+              >
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    message.isLeia ? "bg-blue-50" : "bg-blue-600"
+                  }`}
+                >
                   {message.isLeia ? (
                     <UserCircleIcon className="w-5 h-5 text-blue-700" />
                   ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-5 h-5 text-white"
+                    >
                       <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
                     </svg>
                   )}
                 </div>
-                <div className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${message.isLeia ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm" : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"}`}>
-                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{message.text}</p>
+                <div
+                  className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
+                    message.isLeia
+                      ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm"
+                      : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
+                  }`}
+                >
+                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                    {message.text}
+                  </p>
                 </div>
               </div>
             ))
@@ -255,7 +298,9 @@ export const SpectatorView = () => {
 
       {/* Footer */}
       <footer className="bg-white border-t px-6 py-3">
-        <div className="max-w-4xl mx-auto text-center text-sm text-gray-500">You are viewing this conversation in spectator mode (read-only)</div>
+        <div className="max-w-4xl mx-auto text-center text-sm text-gray-500">
+          You are viewing this conversation in spectator mode (read-only)
+        </div>
       </footer>
     </div>
   );
