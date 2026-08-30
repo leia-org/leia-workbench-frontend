@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, SparklesIcon, XMarkIcon, UserIcon } from "@heroicons/react/24/solid";
 import {
   ExclamationTriangleIcon,
   PencilSquareIcon,
@@ -329,6 +329,9 @@ export const Chat = () => {
     useState<StudentInfographic | null>(null);
   const [multiLeia, setMultiLeia] = useState<MultiLeiaPayload | null>(null);
   const [leiaName, setLeiaName] = useState<string | null>(null);
+  const [leiaFullName, setLeiaFullName] = useState<string | null>(null);
+  const [leiaRole, setLeiaRole] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
   const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<
     string | null
@@ -561,6 +564,9 @@ export const Chat = () => {
             getString(personaSpec.fullName) ||
             null,
         );
+        setLeiaFullName(getString(personaSpec.fullName) || null);
+        setLeiaRole(response.data.leia.leia.spec.problem.spec.overrides.behaviour.spec.role || response.data.leia.leia.spec.behaviour.spec.role || null)
+        setUserEmail(response.data.session.userEmail || null);
         setPersonaAvatar(getString(personaSpec.avatar) || null);
         const resourceIds = extractLeiaResourceIds(response.data.leia);
         setPersonaAvatarFallbackSrc(
@@ -1227,6 +1233,32 @@ export const Chat = () => {
             className="w-6 h-6"
           />
           <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
+        </div>
+        <div className="ml-auto mr-4 flex items-center gap-3">
+          {leiaFullName && (
+            <div className="flex items-center gap-1.5 bg-blue-50 rounded-full pl-1.5 pr-3 py-1">
+              <PersonaAvatar
+                src={personaAvatar}
+                fallbackSrc={personaAvatarFallbackSrc}
+                alt={`${leiaFullName} avatar`}
+                label={leiaFullName}
+                size="sm"
+              />
+              <div className="flex items-baseline gap-1.5 leading-none">
+                <span className="text-sm font-medium text-gray-900">{leiaFullName}</span>
+                {leiaRole && <span className="text-xs text-gray-500">· {leiaRole}</span>}
+              </div>
+            </div>
+          )}
+
+          {leiaFullName && userEmail && <div className="w-px h-5 bg-gray-200" />}
+
+          {userEmail && (
+            <div className="flex items-center gap-1.5 bg-blue-600 rounded-full pl-1.5 pr-3 py-1">
+              <UserIcon className="w-4 h-4 text-white flex-shrink-0" />
+              <span className="text-sm text-white">{userEmail}</span>
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
         {!dataUsageConsentPending && sessionTime && session?.startedAt && (
