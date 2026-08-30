@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
-import { UserCircleIcon, UserIcon } from "@heroicons/react/24/solid";
+import {UserIcon } from "@heroicons/react/24/solid";
 import { PersonaAvatar } from "../components/PersonaAvatar";
 import { buildOriginalAvatarPath } from "../lib/avatar";
 
