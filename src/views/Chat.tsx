@@ -565,8 +565,12 @@ export const Chat = () => {
             null,
         );
         setLeiaFullName(getString(personaSpec.fullName) || null);
-        setLeiaRole(response.data.leia.leia.spec.problem.spec.overrides.behaviour.spec.role || response.data.leia.leia.spec.behaviour.spec.role || null)
-        setUserEmail(response.data.session.userEmail || null);
+        setLeiaRole(
+          response.data.leia?.leia?.spec?.problem?.spec?.overrides?.behaviour?.spec?.role ||
+            response.data.leia?.leia?.spec?.behaviour?.spec?.role ||
+            null
+        );
+        setUserEmail(response.data.session?.userEmail || null);
         setPersonaAvatar(getString(personaSpec.avatar) || null);
         const resourceIds = extractLeiaResourceIds(response.data.leia);
         setPersonaAvatarFallbackSrc(

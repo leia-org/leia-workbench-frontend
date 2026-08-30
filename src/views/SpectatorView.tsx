@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { io } from "socket.io-client";
+import { UserCircleIcon, UserIcon } from "@heroicons/react/24/solid";
+import { PersonaAvatar } from "../components/PersonaAvatar";
+import { buildOriginalAvatarPath } from "../lib/avatar";
+
 
 interface Message {
   text: string;
@@ -33,6 +36,12 @@ export const SpectatorView = () => {
   const [isActive, setIsActive] = useState(true);
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState("standard");
+
+  const [leiaFullName, setLeiaFullName] = useState<string | null>(null);
+  const [leiaRole, setLeiaRole] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [personaAvatar, setPersonaAvatar] = useState<string | null>(null);
+  const [personaAvatarFallbackSrc, setPersonaAvatarFallbackSrc] = useState<string | null>(null);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -67,6 +76,26 @@ export const SpectatorView = () => {
         setSession(response.data.session);
         setIsActive(!response.data.session.finishedAt);
         setMode(response.data.leia.configuration.mode);
+
+
+        const leiaData = response.data.leia?.leia;
+        const personaSpec = leiaData?.spec?.persona?.spec;
+        const problemOverrideRole = leiaData?.spec?.problem?.spec?.overrides?.behaviour?.spec?.role;
+        const behaviourRole = leiaData?.spec?.behaviour?.spec?.role;
+
+        setLeiaRole(problemOverrideRole || behaviourRole || null);
+        setUserEmail(response.data.session?.userEmail || null);
+
+        const personaId = leiaData?.spec?.persona?.id || "";
+        const leiaId = leiaData?.id || response.data.leia?.id || "";
+
+        setLeiaFullName(personaSpec?.fullName?.trim() || null);
+        setPersonaAvatar(personaSpec?.avatar?.trim() || null);
+        setPersonaAvatarFallbackSrc(
+          buildOriginalAvatarPath("personas", personaId) ||
+            buildOriginalAvatarPath("leias", leiaId) ||
+            null,
+        );
 
         let messages = response.data.messages;
 
@@ -223,6 +252,32 @@ export const SpectatorView = () => {
             </span>
           </div>
         </div>
+        <div className="ml-auto mr-4 flex items-center gap-3">
+          {leiaFullName && (
+            <div className="flex items-center gap-1.5 bg-blue-50 rounded-full pl-1.5 pr-3 py-1">
+              <PersonaAvatar
+                src={personaAvatar}
+                fallbackSrc={personaAvatarFallbackSrc}
+                alt={`${leiaFullName} avatar`}
+                label={leiaFullName}
+                size="sm"
+              />
+              <div className="flex items-baseline gap-1.5 leading-none">
+                <span className="text-sm font-medium text-gray-900">{leiaFullName}</span>
+                {leiaRole && <span className="text-xs text-gray-500">· {leiaRole}</span>}
+              </div>
+            </div>
+          )}
+
+          {leiaFullName && userEmail && <div className="w-px h-5 bg-gray-200" />}
+
+          {userEmail && (
+            <div className="flex items-center gap-1.5 bg-blue-600 rounded-full pl-1.5 pr-3 py-1">
+              <UserIcon className="w-4 h-4 text-white flex-shrink-0" />
+              <span className="text-sm text-white">{userEmail}</span>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
             <span>{getElapsedTime()}</span>
@@ -266,7 +321,13 @@ export const SpectatorView = () => {
                   }`}
                 >
                   {message.isLeia ? (
-                    <UserCircleIcon className="w-5 h-5 text-blue-700" />
+                    <PersonaAvatar
+                      src={personaAvatar}
+                      fallbackSrc={personaAvatarFallbackSrc}
+                      alt={`${leiaFullName} avatar`}
+                      label={leiaFullName}
+                      size="sm"
+                    />
                   ) : (
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
