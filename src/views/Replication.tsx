@@ -293,6 +293,29 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const handleChangeLanguage = async (newLanguage: string) => {
+    if (!replication || !newLanguage) return;
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/language`,
+        { language: newLanguage },
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      toast.success("Replication language updated successfully", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Error updating replication language"), {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      console.error("Update error:", err);
+    }
+  };
+
   const handleChangeDuration = async (newDuration: number) => {
     if (!replication) return;
     try {
@@ -867,6 +890,7 @@ export const Replication: React.FC = () => {
             onChangeDuration={handleChangeDuration}
             onDeleteDuration={handleDeleteDuration}
             onRegenerateCode={regenerateCode}
+            onSwitchLanguage={handleChangeLanguage}
             onToggleActive={toggleActive}
             onToggleRepeatable={toggleRepeatable}
             onToggleShared={toggleShared}

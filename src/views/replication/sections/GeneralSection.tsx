@@ -32,6 +32,7 @@ interface GeneralSectionProps {
   onChangeDuration: (newDuration: number) => Promise<void>;
   onDeleteDuration: () => Promise<void>;
   onRegenerateCode: () => Promise<void>;
+  onSwitchLanguage: (newLanguage: string) => Promise<void>;
   onToggleActive: () => Promise<void>;
   onToggleRepeatable: () => Promise<void>;
   onToggleShared: () => Promise<void>;
@@ -106,6 +107,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = (props) => {
     onChangeDuration,
     onDeleteDuration,
     onRegenerateCode,
+    onSwitchLanguage,
     onToggleActive,
     onToggleRepeatable,
     onToggleShared,
@@ -125,6 +127,8 @@ export const GeneralSection: React.FC<GeneralSectionProps> = (props) => {
   const [nameOpen, setNameOpen] = useState(false);
   const [durationOpen, setDurationOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [languageOpen, setLanguageOpen] = useState(false);
+  const [newLanguage, setNewLanguage] = useState("");
   const [durHours, setDurHours] = useState<number>(0);
   const [durMinutes, setDurMinutes] = useState<number>(30);
   const [durSeconds, setDurSeconds] = useState<number>(0);
@@ -323,6 +327,27 @@ export const GeneralSection: React.FC<GeneralSectionProps> = (props) => {
 
       <SectionTitle>State</SectionTitle>
 
+      <Field
+        label="Language"
+        helper="The language used for evaluation and feedback."
+      >
+        <Stack direction="row" alignItems="center" gap={1}>
+          <Typography sx={{ fontSize: 14 }}>{replication.language}</Typography>
+          {isAdmin && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<EditOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => {
+                setNewLanguage(replication.language);
+                setLanguageOpen(true);
+              }}
+            >
+              Rename
+            </Button>
+          )}
+        </Stack>
+      </Field>
       <Field label="Active" helper="Controls whether students can join.">
         <Switch
           checked={replication.isActive}
@@ -330,7 +355,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = (props) => {
           size="small"
         />
       </Field>
-
+      
       <Field label="Repeatable" helper="Allow the same student to retry.">
         <Switch
           checked={replication.isRepeatable}
@@ -412,6 +437,36 @@ export const GeneralSection: React.FC<GeneralSectionProps> = (props) => {
         </DialogActions>
       </Dialog>
 
+      {/* Language dialog */}
+      <Dialog open={languageOpen} onClose={() => setLanguageOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Change replication language</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            value={newLanguage}
+            onChange={(e) => setNewLanguage(e.target.value)}
+            placeholder="Language"
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLanguageOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!newLanguage.trim()}
+            onClick={async () => {
+              await onSwitchLanguage(newLanguage.trim());
+              setLanguageOpen(false);
+            }}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
       {/* Duration dialog — hours + minutes picker. The backend still
           stores the raw second count; we just hide that from the admin
           since "type the duration in seconds" is a bad ask. */}
