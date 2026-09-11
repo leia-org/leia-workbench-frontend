@@ -1,5 +1,12 @@
-import React, { useEffect, useState, useCallback, memo } from "react";
-import { useNavigate } from "react-router-dom";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  memo,
+} from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import mermaid from "mermaid";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
@@ -392,6 +399,21 @@ interface Configuration {
 
 export const Edit = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isPrairieLearnEmbed = searchParams.get("embed") === "prairielearn";
+  const parentOrigin = useMemo(() => {
+    const candidate = searchParams.get("parentOrigin");
+    if (!candidate) return null;
+    try {
+      const parsed = new URL(candidate);
+      return parsed.protocol === "http:" || parsed.protocol === "https:"
+        ? parsed.origin
+        : null;
+    } catch {
+      return null;
+    }
+  }, [searchParams]);
+  const completionPostedRef = useRef(false);
   const [formUrl, setFormUrl] = useState<string | null>(null);
   const [solutionFormat, setSolutionFormat] = useState<string>("text");
   const [code, setCode] = useState(() => {
@@ -427,6 +449,47 @@ export const Edit = () => {
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
+
+  const publishPrairieLearnReceipt = useCallback(async () => {
+    if (
+      !isPrairieLearnEmbed ||
+      !parentOrigin ||
+      !sessionId ||
+      completionPostedRef.current
+    ) {
+      return;
+    }
+
+    completionPostedRef.current = true;
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/integrations/prairielearn/receipt`,
+      );
+      const receipt = response.data?.receipt;
+      if (typeof receipt !== "string" || !receipt) {
+        throw new Error("LEIA did not return a signed completion receipt.");
+      }
+      window.parent.postMessage(
+        {
+          type: "leia:completed",
+          payload: { version: 1, receipt },
+        },
+        parentOrigin,
+      );
+    } catch (error: unknown) {
+      completionPostedRef.current = false;
+      window.parent.postMessage(
+        {
+          type: "leia:error",
+          message: axios.isAxiosError(error)
+            ? error.response?.data?.message || "Could not sign the LEIA score."
+            : "Could not sign the LEIA score.",
+        },
+        parentOrigin,
+      );
+    }
+  }, [isPrairieLearnEmbed, parentOrigin, sessionId]);
+
   // Load initial data from localStorage
   useEffect(() => {
     const savedConfiguration = localStorage.getItem("configuration");
@@ -489,13 +552,14 @@ export const Edit = () => {
       await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
       );
+      await publishPrairieLearnReceipt();
     } catch (error) {
       console.error("Failed to finish session on timer expiry:", error);
     } finally {
       setSessionFinishedAt(new Date().toISOString());
       setShowSuccessModal(true);
     }
-  }, [sessionId]);
+  }, [publishPrairieLearnReceipt, sessionId]);
 
   useEffect(() => {
     if (sessionFinishedAt && !showSuccessModal) {
@@ -606,12 +670,36 @@ export const Edit = () => {
         setEvaluation("Solution submitted successfully.");
         setShowEvaluation(true);
       }
+      await publishPrairieLearnReceipt();
     } catch (error) {
       console.error("Failed to get evaluation:", error);
     } finally {
       setLoadingEvaluation(false);
     }
-  }, [concludeProblem, configuration, sessionId]);
+  }, [concludeProblem, configuration, publishPrairieLearnReceipt, sessionId]);
+
+  useEffect(() => {
+    if (!isPrairieLearnEmbed || !sessionId) return;
+
+    let cancelled = false;
+    const restoreCompletedSession = async () => {
+      try {
+        const response = await axios.get(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`,
+        );
+        if (!cancelled && response.data?.session?.finishedAt) {
+          await publishPrairieLearnReceipt();
+        }
+      } catch (restoreError) {
+        console.error("Failed to restore completed PrairieLearn session:", restoreError);
+      }
+    };
+
+    void restoreCompletedSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPrairieLearnEmbed, publishPrairieLearnReceipt, sessionId]);
   useEffect(() => {
     const renderMermaid = async () => {
       if (solutionFormat !== "mermaid") {

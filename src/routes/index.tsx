@@ -15,6 +15,7 @@ import { AuthProvider } from '../context';
 import { Outlet } from 'react-router-dom';
 import { ApiKeysPage } from '../views/ApiKeys';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { PrairieLearnEmbed } from '../views/PrairieLearnEmbed';
 
 
 export const router = createBrowserRouter([
@@ -31,6 +32,10 @@ export const router = createBrowserRouter([
   {
     path: '/chat/:sessionId',
     element: <Chat />,
+  },
+  {
+    path: '/embed/prairielearn',
+    element: <PrairieLearnEmbed />,
   },
   {
     path: '/edit',

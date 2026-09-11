@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import {
   ExclamationTriangleIcon,
@@ -303,6 +303,21 @@ function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[]
 export const Chat = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
+  const [searchParams] = useSearchParams();
+  const isPrairieLearnEmbed = searchParams.get("embed") === "prairielearn";
+  const parentOrigin = useMemo(() => {
+    const candidate = searchParams.get("parentOrigin");
+    if (!candidate) return null;
+    try {
+      const parsed = new URL(candidate);
+      return parsed.protocol === "http:" || parsed.protocol === "https:"
+        ? parsed.origin
+        : null;
+    } catch {
+      return null;
+    }
+  }, [searchParams]);
+  const completionPostedRef = useRef(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1008,7 +1023,8 @@ export const Chat = () => {
       return;
     setConcluding(true);
     if (configuration?.askSolution) {
-      navigate("/edit");
+      const embedQuery = searchParams.toString();
+      navigate(embedQuery ? `/edit?${embedQuery}` : "/edit");
     } else {
       try {
         const response = await axios.post(
@@ -1066,6 +1082,51 @@ export const Chat = () => {
   };
 
   useEffect(() => {
+    if (!isPrairieLearnEmbed || !parentOrigin || !session || !sessionId) return;
+
+    if (!session.finishedAt) {
+      window.parent.postMessage({ type: "leia:progress" }, parentOrigin);
+      return;
+    }
+
+    if (completionPostedRef.current) return;
+    completionPostedRef.current = true;
+
+    const publishSignedReceipt = async () => {
+      try {
+        const response = await axios.get(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/integrations/prairielearn/receipt`,
+        );
+        const receipt = response.data?.receipt;
+        if (typeof receipt !== "string" || !receipt) {
+          throw new Error("LEIA did not return a signed completion receipt.");
+        }
+        window.parent.postMessage(
+          {
+            type: "leia:completed",
+            payload: { version: 1, receipt },
+          },
+          parentOrigin,
+        );
+      } catch (error: unknown) {
+        completionPostedRef.current = false;
+        window.parent.postMessage(
+          {
+            type: "leia:error",
+            message: axios.isAxiosError(error)
+              ? error.response?.data?.message || "Could not sign the LEIA score."
+              : "Could not sign the LEIA score.",
+          },
+          parentOrigin,
+        );
+      }
+    };
+
+    void publishSignedReceipt();
+  }, [isPrairieLearnEmbed, parentOrigin, session, sessionId]);
+
+  useEffect(() => {
+    if (isPrairieLearnEmbed) return;
     if (session?.finishedAt && !showSuccessModal) {
       // Start countdown and redirect
       const timer = setInterval(() => {
@@ -1081,7 +1142,7 @@ export const Chat = () => {
 
       return () => clearInterval(timer);
     }
-  }, [session, showSuccessModal, navigate]);
+  }, [isPrairieLearnEmbed, session, showSuccessModal, navigate]);
 
   const renderStudentInfographic = () =>
     studentInfographic ? (
@@ -1880,14 +1941,16 @@ export const Chat = () => {
               <p className="text-gray-600 text-center mb-4">
                 {replication?.form
                   ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
-                  : "Your session has been successfully completed."}
+                  : isPrairieLearnEmbed
+                    ? "Your session has been completed. Return to PrairieLearn and submit the question."
+                    : "Your session has been successfully completed."}
               </p>
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button
                 onClick={() => {
                   setShowSuccessModal(false);
-                  navigate("/");
+                  if (!isPrairieLearnEmbed) navigate("/");
                 }}
                 className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
               >
@@ -1904,7 +1967,7 @@ export const Chat = () => {
                     d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
                   />
                 </svg>
-                Home
+                {isPrairieLearnEmbed ? "Done" : "Home"}
               </button>
               {replication?.form &&
                 (replication.form.startsWith("http://") ||
@@ -1934,7 +1997,7 @@ export const Chat = () => {
         </div>
       )}
 
-      {session?.finishedAt && !showSuccessModal && (
+      {session?.finishedAt && !showSuccessModal && !isPrairieLearnEmbed && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
             <div className="px-6 py-4">
