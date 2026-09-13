@@ -70,6 +70,7 @@ export const Login = () => {
         {
           email: studentIdentifier.trim(),
           code: experimentCode.trim(),
+          ...(searchParams.get("previousSessionId") ? { previousSessionId: searchParams.get("previousSessionId") } : {}),
         }
       );
       const data = response.data;

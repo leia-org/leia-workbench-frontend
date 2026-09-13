@@ -558,6 +558,9 @@ export const Edit = () => {
       );
       if (response.status === 200) {
         // Capture spectate URL from response
+        if (response.data.reflectiveAvailable) {
+          return true;
+        }
         if (response.data.spectateUrl) {
           setSpectateUrl(response.data.spectateUrl);
         }
@@ -589,8 +592,9 @@ export const Edit = () => {
 
   const getEvaluation = useCallback(async () => {
     setLoadingEvaluation(true);
+    let reflectivePending = false;
     try {
-      await concludeProblem();
+      reflectivePending = (await concludeProblem()) === true;
       console.log(configuration);
       if (configuration?.evaluateSolution) {
         const response = await axios.get(
@@ -598,11 +602,11 @@ export const Edit = () => {
             import.meta.env.VITE_APP_BACKEND
           }/api/v1/interactions/${sessionId}/evaluation/`
         );
-        if (response.status === 200) {
+        if (response.status === 200 && !reflectivePending) {
           setEvaluation(response.data.evaluation);
           setShowEvaluation(true);
         }
-      } else {
+      } else if (!reflectivePending) {
         setEvaluation("Solution submitted successfully.");
         setShowEvaluation(true);
       }
@@ -610,8 +614,9 @@ export const Edit = () => {
       console.error("Failed to get evaluation:", error);
     } finally {
       setLoadingEvaluation(false);
+      if (reflectivePending) navigate(`/chat/${sessionId}?previousSessionId=${sessionId}`);
     }
-  }, [concludeProblem, configuration, sessionId]);
+  }, [concludeProblem, configuration, sessionId, navigate]);
   useEffect(() => {
     const renderMermaid = async () => {
       if (solutionFormat !== "mermaid") {

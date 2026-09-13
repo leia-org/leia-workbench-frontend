@@ -317,6 +317,9 @@ export const Chat = () => {
   const [showInstructions, setShowInstructions] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [reflectiveAvailable, setReflectiveAvailable] = useState(false);
+  const [startingReflection, setStartingReflection] = useState(false);
+  const [reflectionError, setReflectionError] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showTooltip, setShowTooltip] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -570,6 +573,7 @@ export const Chat = () => {
         );
         setReplication(response.data.replication);
         setSession(response.data.session);
+        setReflectiveAvailable(response.data.reflectiveAvailable === true);
         setTooltipMessage(
           response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
@@ -1066,7 +1070,7 @@ export const Chat = () => {
   };
 
   useEffect(() => {
-    if (session?.finishedAt && !showSuccessModal) {
+    if (session?.finishedAt && !showSuccessModal && !reflectiveAvailable) {
       // Start countdown and redirect
       const timer = setInterval(() => {
         setRedirectingIn((prev) => {
@@ -1081,7 +1085,7 @@ export const Chat = () => {
 
       return () => clearInterval(timer);
     }
-  }, [session, showSuccessModal, navigate]);
+  }, [session, showSuccessModal, navigate, reflectiveAvailable]);
 
   const renderStudentInfographic = () =>
     studentInfographic ? (
@@ -1097,6 +1101,29 @@ export const Chat = () => {
         hidden
       />
     ) : null;
+
+  if (session?.finishedAt && reflectiveAvailable && !loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+      <div className="max-w-lg rounded-2xl bg-white p-8 shadow-sm space-y-5">
+        <h1 className="text-2xl font-semibold">Reflect on your solution</h1>
+        <p>Your solution has been saved. Continue with a short interview about your reasoning. You will not need to submit another solution.</p>
+        {reflectionError && <p role="alert" className="text-red-600">{reflectionError}</p>}
+        <button disabled={startingReflection} className="rounded-lg bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
+          onClick={async () => {
+            setStartingReflection(true);
+            setReflectionError(null);
+            try {
+              const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/reflective`);
+              localStorage.setItem("sessionId", response.data.sessionId);
+              window.location.assign(`/chat/${response.data.sessionId}?previousSessionId=${sessionId}`);
+            } catch (error) {
+              setReflectionError(getRequestErrorMessage(error));
+              setStartingReflection(false);
+            }
+          }}>{startingReflection ? "Starting…" : "Continue with Reflective LEIA"}</button>
+      </div>
+    </div>;
+  }
 
   if (loading) {
     return (

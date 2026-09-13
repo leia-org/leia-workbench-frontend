@@ -563,6 +563,19 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const toggleReflective = async () => {
+    if (!replication) return;
+    try {
+      const response = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/toggle-reflective`, {}, buildRequestConfig()
+      );
+      setReplication(response.data);
+      setLocalReplication(structuredClone(response.data));
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not change Reflective LEIA configuration"));
+    }
+  };
+
   const toggleShared = async () => {
     if (!replication || !isAuthorised) return;
     try {
@@ -867,6 +880,7 @@ export const Replication: React.FC = () => {
             replication={replication}
             onChangeForm={handleChangeForm}
             onDeleteForm={handleDeleteForm}
+            onToggleReflective={toggleReflective}
           />
         );
       case "dataUsage":

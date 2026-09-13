@@ -509,6 +509,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         <Switch
           size="small"
           checked={item.configuration.askSolution}
+          disabled={item.leia.spec?.behaviour?.spec?.reflective === true}
           onChange={() => onToggleAskSolution(idx)}
         />
       </FieldRow>
@@ -519,6 +520,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         <Switch
           size="small"
           checked={item.configuration.evaluateSolution}
+          disabled={item.leia.spec?.behaviour?.spec?.reflective === true}
           onChange={() => onToggleEvaluateSolution(idx)}
         />
       </FieldRow>

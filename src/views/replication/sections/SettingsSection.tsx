@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogTitle,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -19,6 +20,7 @@ interface SettingsSectionProps {
   replication: ReplicationData;
   onChangeForm: (newForm: string) => Promise<void>;
   onDeleteForm: () => Promise<void>;
+  onToggleReflective: () => Promise<void>;
 }
 
 const Field: React.FC<{
@@ -59,6 +61,7 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   replication,
   onChangeForm,
   onDeleteForm,
+  onToggleReflective,
 }) => {
   const [open, setOpen] = useState(false);
   const [newForm, setNewForm] = useState("");
@@ -79,6 +82,10 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
         Additional replication-level configuration.
       </Typography>
 
+      <Field label="Reflective LEIA" helper="Continue with a reflective interview after the normal LEIA's solution is submitted. Applies to new interviews; existing interviews can continue.">
+        <Switch checked={replication.reflectiveEnabled === true}
+          onChange={() => void onToggleReflective()} inputProps={{ "aria-label": "Enable Reflective LEIA" }} />
+      </Field>
       <Field
         label="External form URL"
         helper="Optional link shown after the conversation."
