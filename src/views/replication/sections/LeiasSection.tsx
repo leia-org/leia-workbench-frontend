@@ -401,6 +401,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   const isStartingAny = Boolean(startingSessionLeiaId);
   const isStartingThis = startingSessionLeiaId === item.id;
+  const isReflective = item.leia.spec?.behaviour?.spec?.reflective === true;
   const leiaResourceId = String(item.leia.id || item.id || "");
   const infographicSrc =
     typeof item.leia.spec?.infographic === "string" &&
@@ -449,14 +450,18 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   return (
     <Box>
-      <ImageAvailabilityProbe
-        sources={infographicCandidates}
-        onAvailableChange={setStudentInfographicAvailable}
-      />
-      <ImageAvailabilityProbe
-        sources={solutionInfographicCandidates}
-        onAvailableChange={setSolutionInfographicAvailable}
-      />
+      {!isReflective && (
+        <>
+          <ImageAvailabilityProbe
+            sources={infographicCandidates}
+            onAvailableChange={setStudentInfographicAvailable}
+          />
+          <ImageAvailabilityProbe
+            sources={solutionInfographicCandidates}
+            onAvailableChange={setSolutionInfographicAvailable}
+          />
+        </>
+      )}
       <Stack
         direction="row"
         alignItems="center"
@@ -501,31 +506,31 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         <strong>{item.sessionCount}</strong>
       </Typography>
 
-      <SectionLabel>Conversation</SectionLabel>
-      <FieldRow
-        label="Ask for student solution"
-        helper="Student writes a solution at the end."
-      >
-        <Switch
-          size="small"
-          checked={item.configuration.askSolution}
-          disabled={item.leia.spec?.behaviour?.spec?.reflective === true}
-          onChange={() => onToggleAskSolution(idx)}
-        />
-      </FieldRow>
-      <FieldRow
-        label="Automatic evaluation"
-        helper="Run automatic evaluation against the solution."
-      >
-        <Switch
-          size="small"
-          checked={item.configuration.evaluateSolution}
-          disabled={item.leia.spec?.behaviour?.spec?.reflective === true}
-          onChange={() => onToggleEvaluateSolution(idx)}
-        />
-      </FieldRow>
+      {!isReflective && (
+        <>
+          <SectionLabel>Conversation</SectionLabel>
+          <FieldRow
+            label="Ask for student solution"
+            helper="Student writes a solution at the end."
+          >
+            <Switch
+              size="small"
+              checked={item.configuration.askSolution}
+              onChange={() => onToggleAskSolution(idx)}
+            />
+          </FieldRow>
+          <FieldRow
+            label="Automatic evaluation"
+            helper="Run automatic evaluation against the solution."
+          >
+            <Switch
+              size="small"
+              checked={item.configuration.evaluateSolution}
+              onChange={() => onToggleEvaluateSolution(idx)}
+            />
+          </FieldRow>
 
-      <SectionLabel>Infographics</SectionLabel>
+          <SectionLabel>Infographics</SectionLabel>
       {studentInfographicAvailable === null ||
       solutionInfographicAvailable === null ? (
         <Typography
@@ -579,7 +584,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           and generate it before enabling student access.
         </Typography>
       )}
-      <FieldRow
+          <FieldRow
         label="Show during exercise"
         helper="Student can open the infographic during the exercise."
       >
@@ -595,8 +600,8 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             );
           }}
         />
-      </FieldRow>
-      <FieldRow
+          </FieldRow>
+          <FieldRow
         label="Instructor solution"
         helper="Only visible here in the workbench."
       >
@@ -618,7 +623,9 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             </Typography>
           )}
         </Stack>
-      </FieldRow>
+          </FieldRow>
+        </>
+      )}
 
       <SectionLabel>Runner</SectionLabel>
       {requiresTools && (
