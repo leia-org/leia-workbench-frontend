@@ -16,6 +16,7 @@ interface MasterDetailLayoutProps {
   storageKey?: string;
   /** Initial width when nothing is persisted yet. */
   defaultWidth?: number;
+  onListScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
 }
 
 const MIN_LIST_WIDTH = 280;
@@ -42,6 +43,7 @@ export const MasterDetailLayout: React.FC<MasterDetailLayoutProps> = ({
   isListEmpty = false,
   storageKey,
   defaultWidth = 420,
+  onListScroll,
 }) => {
   const [listWidth, setListWidth] = useState<number>(
     () => readPersistedWidth(storageKey) ?? defaultWidth
@@ -152,7 +154,7 @@ export const MasterDetailLayout: React.FC<MasterDetailLayoutProps> = ({
           />
           {listHeaderActions}
         </Box>
-        <Box sx={{ flex: 1, overflowY: "auto" }}>
+        <Box sx={{ flex: 1, overflowY: "auto", overflowAnchor: "none" }} onScroll={onListScroll}>
           {isListEmpty ? (
             <Box
               sx={{
