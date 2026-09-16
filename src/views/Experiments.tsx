@@ -351,8 +351,8 @@ export const Experiments: React.FC = () => {
     fetchExperiments();
   }, [navigate, tokenRef]);
 
-    const loadMoreExperiments = useCallback(async () => {
-      setLoadingMore(true);
+  const loadMoreExperiments = useCallback(async () => {
+    setLoadingMore(true);
     try {
       const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
