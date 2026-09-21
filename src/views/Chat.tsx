@@ -566,9 +566,7 @@ export const Chat = () => {
         );
         setLeiaFullName(getString(personaSpec.fullName) || null);
         setLeiaRole(
-          response.data.leia?.leia?.spec?.problem?.spec?.overrides?.behaviour?.spec?.role ||
-            response.data.leia?.leia?.spec?.behaviour?.spec?.role ||
-            null
+            response.data.leia?.leia?.spec?.behaviour?.spec?.role
         );
         setUserEmail(response.data.session?.userEmail || null);
         setPersonaAvatar(getString(personaSpec.avatar) || null);
