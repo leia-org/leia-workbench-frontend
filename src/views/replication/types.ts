@@ -62,6 +62,7 @@ export interface ReplicationData {
   createdAt: string;
   updatedAt: string;
   form: string | undefined | null;
+  language: string;
   dataUsageConfig?: {
     dataUsageConsentRequired: boolean;
     dataUsageConsentMessage: string;
