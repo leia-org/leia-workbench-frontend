@@ -7,6 +7,7 @@ import {
   PhotoIcon,
 } from "@heroicons/react/24/outline";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
@@ -39,6 +40,19 @@ const ToolsBridge: React.FC<{
   useEffect(() => {
     onTools(tools as Record<string, FrontendTool>);
   }, [tools, onTools]);
+  return null;
+};
+
+// Same idea as ToolsBridge, but for the widget-owned submission content
+// (e.g. the diagram authored in MermaidViewerWidget), read on demand by
+// handleFinishConversation instead of via the legacy localStorage bridge.
+const SubmissionBridge: React.FC<{
+  onSubmissionContent: (code: string | null) => void;
+}> = ({ onSubmissionContent }) => {
+  const { submissionContent } = useWidgetsContext();
+  useEffect(() => {
+    onSubmissionContent(submissionContent);
+  }, [submissionContent, onSubmissionContent]);
   return null;
 };
 
@@ -349,6 +363,14 @@ export const Chat = () => {
   const handleToolsSync = useCallback((t: Record<string, FrontendTool>) => {
     toolsRef.current = t;
   }, []);
+  // Live mirror of the widget-owned submission content (see SubmissionBridge
+  // above). handleFinishConversation reads it on demand instead of
+  // navigating to the legacy /edit view when a mermaidViewer widget is
+  // driving the submission.
+  const submissionRef = useRef<string | null>(null);
+  const handleSubmissionSync = useCallback((code: string | null) => {
+    submissionRef.current = code;
+  }, []);
 
   // Resolve the configured widgets against the local catalog once per
   // lukeConfig change. Same shape used in luke mode and text mode.
@@ -385,6 +407,11 @@ export const Chat = () => {
   // panel sits on top of the messages.
   const hasLeftSidePanel = hasTextWidgets && widgetHasLeftSlot;
   const hasRightSidePanel = hasTextWidgets && widgetHasRightSlot;
+  // Each panel gets half the screen when it's the only one, but that would
+  // leave 0% for the chat column when both are mounted at once (e.g. a
+  // mermaidViewer + codeEditor pair) — narrow both panels so the chat stays
+  // usable.
+  const sidePanelWidth = hasLeftSidePanel && hasRightSidePanel ? "30%" : "50%";
   const [tooltipMessage, setTooltipMessage] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
   const multiLeiaActors = useMemo(
@@ -1007,6 +1034,49 @@ export const Chat = () => {
     )
       return;
     setConcluding(true);
+
+    const hasMermaidWidget = !!lukeConfig?.widgets?.some(
+      (w) => w.widgetType === "mermaidViewer",
+    );
+    const submissionContent = submissionRef.current;
+
+    if (configuration?.askSolution && hasMermaidWidget && submissionContent?.trim()) {
+      // A mermaidViewer widget owns the submission directly, so post it here
+      // instead of routing through the legacy /edit view (which only reads
+      // CodeEditorWidget's bridge key).
+      try {
+        const response = await axios.post(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
+          { result: submissionContent },
+        );
+
+        if (response.status === 200) {
+          // Must set session and show the modal in the same tick: session
+          // has finishedAt truthy as soon as it's set, and the auto-redirect
+          // effect below fires on finishedAt && !showSuccessModal — awaiting
+          // the evaluation fetch first would open a window where it redirects
+          // home before the student sees a confirmation.
+          setSession(response.data);
+          setShowSuccessModal(true);
+          if (configuration?.evaluateSolution) {
+            axios
+              .get(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/evaluation`)
+              .then((evalResponse) => {
+                setSession((prev) => (prev ? { ...prev, ...evalResponse.data } : prev));
+              })
+              .catch((evalError) => {
+                console.error("Failed to fetch evaluation:", evalError);
+              });
+          }
+        }
+      } catch (error: unknown) {
+        setLoadError(getRequestErrorMessage(error));
+      } finally {
+        setConcluding(false);
+      }
+      return;
+    }
+
     if (configuration?.askSolution) {
       navigate("/edit");
     } else {
@@ -1293,10 +1363,13 @@ export const Chat = () => {
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {(() => {
-              const hasCodeEditorWidget =
-                audioMode !== "audio" &&
-                !!lukeConfig?.widgets?.some((w) => w.widgetType === "codeEditor");
-              const askSolutionLabel = hasCodeEditorWidget
+              // Must match handleFinishConversation's own check — the label
+              // has to reflect what the button actually does (submit vs
+              // navigate to /edit).
+              const hasMermaidWidget = !!lukeConfig?.widgets?.some(
+                (w) => w.widgetType === "mermaidViewer",
+              );
+              const askSolutionLabel = hasMermaidWidget
                 ? "Send Solution"
                 : "Go to Editor";
               return concluding ? (
@@ -1330,24 +1403,29 @@ export const Chat = () => {
       {hasStudentInfographic && renderStudentInfographic()}
 
       {hasTextWidgets && (
-        <VoiceModeWithWidgets widgets={widgetDefs}>
-          {({ rightSlot, leftSlot }) => {
-            return (
-              <>
-                <ToolsBridge onTools={handleToolsSync} />
-                {rightSlot && (
-                  <div className="fixed top-14 right-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-l bg-neutral-900 text-white border-neutral-800">
-                    {rightSlot}
-                  </div>
-                )}
-                {leftSlot && (
-                  <div className="fixed top-14 left-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-r bg-neutral-900 text-white border-neutral-800">
-                    {leftSlot}
-                  </div>
-                )}
-              </>
-            );
-          }}
+        <VoiceModeWithWidgets widgets={widgetDefs} sessionId={sessionId}>
+          {({ rightSlot, leftSlot }) => (
+            <>
+              <ToolsBridge onTools={handleToolsSync} />
+              <SubmissionBridge onSubmissionContent={handleSubmissionSync} />
+              {rightSlot && (
+                <div
+                  className="fixed top-14 right-0 bottom-0 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-l border-neutral-800"
+                  style={{ width: sidePanelWidth }}
+                >
+                  {rightSlot}
+                </div>
+              )}
+              {leftSlot && (
+                <div
+                  className="fixed top-14 left-0 bottom-0 bg-neutral-900 text-white z-20 flex flex-col overflow-hidden border-r border-neutral-800"
+                  style={{ width: sidePanelWidth }}
+                >
+                  {leftSlot}
+                </div>
+              )}
+            </>
+          )}
         </VoiceModeWithWidgets>
       )}
 
@@ -1374,9 +1452,10 @@ export const Chat = () => {
 
               if (widgetDefs.length === 0) return base;
               return (
-                <VoiceModeWithWidgets widgets={widgetDefs}>
-                  {({ tools, leftSlot, rightSlot }) => {
-                    return (
+                <VoiceModeWithWidgets widgets={widgetDefs} sessionId={sessionId}>
+                  {({ tools, leftSlot, rightSlot }) => (
+                    <>
+                      <SubmissionBridge onSubmissionContent={handleSubmissionSync} />
                       <LukeAudioWidget
                         wsUrl={lukeToken.wsUrl!}
                         token={lukeToken.token!}
@@ -1397,8 +1476,8 @@ export const Chat = () => {
                         rightSlot={rightSlot}
                         onTranscriptComplete={handleTranscriptComplete}
                       />
-                    );
-                  }}
+                    </>
+                  )}
                 </VoiceModeWithWidgets>
               );
             })()
@@ -1481,8 +1560,8 @@ export const Chat = () => {
             background: "#f9fafb",
             // Carve out the half that the widget panel occupies so the
             // messages don't slide under it.
-            paddingLeft: hasLeftSidePanel ? "50%" : undefined,
-            paddingRight: hasRightSidePanel ? "50%" : undefined,
+            paddingLeft: hasLeftSidePanel ? sidePanelWidth : undefined,
+            paddingRight: hasRightSidePanel ? sidePanelWidth : undefined,
           }}
         >
           <div
@@ -1674,8 +1753,8 @@ export const Chat = () => {
         <div
           className="fixed bottom-0 px-4 pb-6 bg-gray-50 z-10 chat-input"
           style={{
-            left: hasLeftSidePanel ? "50%" : 0,
-            right: hasRightSidePanel ? "50%" : 0,
+            left: hasLeftSidePanel ? sidePanelWidth : 0,
+            right: hasRightSidePanel ? sidePanelWidth : 0,
           }}
         >
           <div className="max-w-3xl mx-auto relative">
@@ -1882,6 +1961,24 @@ export const Chat = () => {
                   ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
                   : "Your session has been successfully completed."}
               </p>
+              {configuration?.evaluateSolution && !session?.evaluation && (
+                <div className="mt-2 mb-4 flex items-center justify-center gap-2 text-sm text-gray-500">
+                  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                  Generating feedback...
+                </div>
+              )}
+              {session?.evaluation && (
+                <div className="mt-2 mb-4 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  {typeof session.score === "number" && (
+                    <p className="text-sm font-semibold text-gray-900 mb-2">
+                      Score: {session.score}
+                    </p>
+                  )}
+                  <div className="prose prose-sm max-w-none text-gray-700">
+                    <ReactMarkdown>{session.evaluation}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button
