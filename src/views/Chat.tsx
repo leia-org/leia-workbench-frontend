@@ -656,6 +656,20 @@ export const Chat = () => {
             id: msg.id || generateMessageId(),
           }));
         setMessages(sortedMessages);
+        const consent = response.data.session?.dataUsage;
+        const consentPending = !response.data.session?.isTest && consent?.config?.dataUsageConsentRequired &&
+          !["accepted", "declined", "not_required"].includes(consent.consentStatus);
+        if (sortedMessages.length === 0 && response.data.leia?.audioMode == null && !response.data.multiLeia && !consentPending) {
+          const opening = await axios.post(
+            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/opening`,
+          );
+          if (opening.data.message) {
+            setMessages([{
+              ...opening.data.message,
+              id: opening.data.message.id || generateMessageId(),
+            }]);
+          }
+        }
       }
     } catch (error: unknown) {
       setLoadError(getRequestErrorMessage(error));
@@ -1043,6 +1057,7 @@ export const Chat = () => {
       );
       if (response.status === 200) {
         setSession(response.data);
+        setReflectiveAvailable(response.data.reflectiveAvailable === true);
         setShowSuccessModal(true);
       }
     } catch (error: unknown) {
@@ -1062,6 +1077,16 @@ export const Chat = () => {
       );
       setSession(response.data.session);
       localStorage.setItem("session", JSON.stringify(response.data.session));
+      const consentStatus = response.data.session?.dataUsage?.consentStatus;
+      if (["accepted", "declined", "not_required"].includes(consentStatus) &&
+        messages.length === 0 && audioMode === "text" && !multiLeia) {
+        const opening = await axios.post(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/opening`,
+        );
+        if (opening.data.message) {
+          setMessages([{ ...opening.data.message, id: opening.data.message.id || generateMessageId() }]);
+        }
+      }
     } catch (error: unknown) {
       setLoadError(getRequestErrorMessage(error));
     } finally {
@@ -1105,8 +1130,8 @@ export const Chat = () => {
   if (session?.finishedAt && reflectiveAvailable && !loading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
       <div className="max-w-lg rounded-2xl bg-white p-8 shadow-sm space-y-5">
-        <h1 className="text-2xl font-semibold">Reflect on your solution</h1>
-        <p>Your solution has been saved. Continue with a short interview about your reasoning. You will not need to submit another solution.</p>
+        <h1 className="text-2xl font-semibold">Continue the activity</h1>
+        <p>Continue with the next LEIA, which has access to the previous conversation.</p>
         {reflectionError && <p role="alert" className="text-red-600">{reflectionError}</p>}
         <button disabled={startingReflection} className="rounded-lg bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
           onClick={async () => {
@@ -1120,7 +1145,7 @@ export const Chat = () => {
               setReflectionError(getRequestErrorMessage(error));
               setStartingReflection(false);
             }
-          }}>{startingReflection ? "Starting…" : "Continue with Reflective LEIA"}</button>
+          }}>{startingReflection ? "Starting…" : "Continue"}</button>
       </div>
     </div>;
   }

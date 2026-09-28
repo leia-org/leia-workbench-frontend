@@ -56,7 +56,6 @@ export interface ReplicationData {
   isActive: boolean;
   duration: number | null;
   isRepeatable: boolean;
-  reflectiveEnabled?: boolean;
   isShared: boolean;
   shareToken?: string | null;
   code: string;

@@ -401,7 +401,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   const isStartingAny = Boolean(startingSessionLeiaId);
   const isStartingThis = startingSessionLeiaId === item.id;
-  const isReflective = item.leia.spec?.behaviour?.spec?.reflective === true;
   const leiaResourceId = String(item.leia.id || item.id || "");
   const infographicSrc =
     typeof item.leia.spec?.infographic === "string" &&
@@ -450,8 +449,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   return (
     <Box>
-      {!isReflective && (
-        <>
           <ImageAvailabilityProbe
             sources={infographicCandidates}
             onAvailableChange={setStudentInfographicAvailable}
@@ -460,8 +457,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             sources={solutionInfographicCandidates}
             onAvailableChange={setSolutionInfographicAvailable}
           />
-        </>
-      )}
       <Stack
         direction="row"
         alignItems="center"
@@ -506,8 +501,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         <strong>{item.sessionCount}</strong>
       </Typography>
 
-      {!isReflective && (
-        <>
           <SectionLabel>Conversation</SectionLabel>
           <FieldRow
             label="Ask for student solution"
@@ -624,9 +617,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           )}
         </Stack>
           </FieldRow>
-        </>
-      )}
-
       <SectionLabel>Runner</SectionLabel>
       {requiresTools && (
         <Box
