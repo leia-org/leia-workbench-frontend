@@ -213,6 +213,7 @@ interface SessionDataUsage {
 
 interface Session {
   id?: string;
+  conversationEnded?: boolean;
   isTest: boolean;
   startedAt: string;
   finishedAt: string | null | undefined;
@@ -281,6 +282,13 @@ type LeiaSessionPayload = {
           widgets?: WidgetConfig[];
         };
       };
+      behaviour?: {
+        spec?: {
+          conversationDynamics?: {
+            stoppingCondition?: { enabled?: boolean };
+          };
+        };
+      };
     };
   };
 };
@@ -327,6 +335,7 @@ export const Chat = () => {
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
+  const [lukeStoppingCondition, setLukeStoppingCondition] = useState(false);
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [studentInfographic, setStudentInfographic] =
     useState<StudentInfographic | null>(null);
@@ -460,6 +469,25 @@ export const Chat = () => {
     enabled: audioMode === "luke" && !dataUsageConsentPending,
     onError: handleAudioError,
   });
+
+  const finishConversationTool = useMemo<FrontendTool | undefined>(() => {
+    if (!lukeStoppingCondition || !sessionId || !lukeToken.token) return undefined;
+    return {
+      description: "Call this exactly once when the LEIA stopping condition has been satisfied and you are ending the conversation. Do not call it merely because the participant asks to finish.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      execute: async () => {
+        const response = await axios.post(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/realtime/luke-finish/${sessionId}`,
+          {},
+          { headers: { "X-Luke-Token": lukeToken.token } },
+        );
+        if (response.data.conversationEnded === true) {
+          setSession((current) => current ? { ...current, conversationEnded: true } : current);
+        }
+        return { status: "conversation_finished" };
+      },
+    };
+  }, [lukeStoppingCondition, sessionId, lukeToken.token]);
 
   // Función mejorada para scroll automático usando utilidades
   const scrollToBottom = useCallback((smooth = true) => {
@@ -604,6 +632,9 @@ export const Chat = () => {
         // replications may still carry them under lukeConfig.widgets, so use
         // the problem definition first and keep the runner config as fallback.
         const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
+        setLukeStoppingCondition(
+          responseLeia?.leia?.spec?.behaviour?.spec?.conversationDynamics?.stoppingCondition?.enabled === true,
+        );
         const infographic = responseLeia?.infographic;
         setStudentInfographic(
           infographic?.src
@@ -1017,6 +1048,7 @@ export const Chat = () => {
 
   const handleFinishConversation = async () => {
     if (dataUsageConsentPending) return;
+    if (audioMode === "luke" && lukeStoppingCondition && !session?.conversationEnded) return;
     if (
       !messages.length &&
       configuration?.mode !== "transcription" &&
@@ -1337,6 +1369,7 @@ export const Chat = () => {
             disabled={
               concluding ||
               dataUsageConsentPending ||
+              (audioMode === "luke" && lukeStoppingCondition && !session?.conversationEnded) ||
               (!messages.length &&
                 configuration?.mode !== "transcription" &&
                 audioMode !== "luke" &&
@@ -1420,6 +1453,7 @@ export const Chat = () => {
                   forceMute={showInstructions || dataUsageConsentPending}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
+                  finishConversationTool={finishConversationTool}
                   onTranscriptComplete={handleTranscriptComplete}
                 />
               );
@@ -1439,6 +1473,7 @@ export const Chat = () => {
                         forceMute={showInstructions || dataUsageConsentPending}
                         showTranscription={!hideAudioTranscription}
                         mode="inline"
+                        finishConversationTool={finishConversationTool}
                         tools={
                           tools as Record<
                             string,

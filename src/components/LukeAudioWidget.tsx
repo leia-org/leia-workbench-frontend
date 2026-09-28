@@ -27,6 +27,7 @@ interface LukeAudioWidgetProps {
    *  reference triggers a Luke reconnect so the new set is declared at
    *  provider setup (works for both OpenAI and Gemini). */
   tools?: Record<string, FrontendTool>;
+  finishConversationTool?: FrontendTool;
   /** Content rendered in the left slot, next to the avatar. */
   leftSlot?: React.ReactNode;
   /** Content rendered in the right slot, next to the avatar. */
@@ -231,11 +232,15 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   forceMute = false,
   showTranscription: initialShowTranscription = false,
   tools,
+  finishConversationTool,
   leftSlot,
   rightSlot,
   onTranscriptComplete,
   onError,
 }) => {
+  const lukeTools = React.useMemo(() => finishConversationTool
+    ? { ...tools, finish_conversation: finishConversationTool }
+    : tools, [tools, finishConversationTool]);
   const {
     connectionState,
     isConnected,
@@ -254,7 +259,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     serverUrl: wsUrl,
     authToken: token,
     autoConnect: true,
-    tools,
+    tools: lukeTools,
     onError,
   });
 
@@ -269,13 +274,13 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   // Only commit a new snapshot once we've actually re-opened the WS
   // with it — otherwise a tools change during "connecting" would
   // silently overwrite the ref and we'd never reload.
-  const committedToolsRef = useRef(tools);
+  const committedToolsRef = useRef(lukeTools);
   useEffect(() => {
     if (connectionState !== "connected") return;
-    if (committedToolsRef.current === tools) return;
-    committedToolsRef.current = tools;
+    if (committedToolsRef.current === lukeTools) return;
+    committedToolsRef.current = lukeTools;
     reload();
-  }, [tools, connectionState, reload]);
+  }, [lukeTools, connectionState, reload]);
   const prevForceMuteRef = useRef(forceMute);
   const sequenceCounterRef = useRef(0);
   const emittedCountRef = useRef(0);
