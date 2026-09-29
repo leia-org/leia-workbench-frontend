@@ -7,6 +7,7 @@ import {
   PhotoIcon,
 } from "@heroicons/react/24/outline";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
@@ -326,6 +327,7 @@ export const Chat = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [reflectiveAvailable, setReflectiveAvailable] = useState(false);
+  const [staticStage, setStaticStage] = useState<{ title: string; content: string } | null>(null);
   const [startingReflection, setStartingReflection] = useState(false);
   const [reflectionError, setReflectionError] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
@@ -335,7 +337,7 @@ export const Chat = () => {
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
-  const [lukeStoppingCondition, setLukeStoppingCondition] = useState(false);
+  const [stoppingConditionEnabled, setStoppingConditionEnabled] = useState(false);
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [studentInfographic, setStudentInfographic] =
     useState<StudentInfographic | null>(null);
@@ -471,7 +473,7 @@ export const Chat = () => {
   });
 
   const finishConversationTool = useMemo<FrontendTool | undefined>(() => {
-    if (!lukeStoppingCondition || !sessionId || !lukeToken.token) return undefined;
+    if (!stoppingConditionEnabled || !sessionId || !lukeToken.token) return undefined;
     return {
       description: "Call this exactly once when the LEIA stopping condition has been satisfied and you are ending the conversation. Do not call it merely because the participant asks to finish.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
@@ -487,7 +489,7 @@ export const Chat = () => {
         return { status: "conversation_finished" };
       },
     };
-  }, [lukeStoppingCondition, sessionId, lukeToken.token]);
+  }, [stoppingConditionEnabled, sessionId, lukeToken.token]);
 
   // Función mejorada para scroll automático usando utilidades
   const scrollToBottom = useCallback((smooth = true) => {
@@ -579,6 +581,14 @@ export const Chat = () => {
       );
 
       if (response.status === 200) {
+        if (response.data.stage?.type === 'StaticContentStage') {
+          setStaticStage(response.data.stage);
+          setSession(response.data.session);
+          setReflectiveAvailable((response.data.nextStageAvailable ?? response.data.reflectiveAvailable) === true);
+          setLoading(false);
+          return;
+        }
+        setStaticStage(null);
         setMultiLeia(response.data.multiLeia || null);
         const personaSpec = extractPersonaSpec(response.data.leia);
         setExercise(response.data.leia.leia.spec.problem.spec);
@@ -601,7 +611,7 @@ export const Chat = () => {
         );
         setReplication(response.data.replication);
         setSession(response.data.session);
-        setReflectiveAvailable(response.data.reflectiveAvailable === true);
+        setReflectiveAvailable((response.data.nextStageAvailable ?? response.data.reflectiveAvailable) === true);
         setTooltipMessage(
           response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
@@ -627,12 +637,14 @@ export const Chat = () => {
         } else if (response.data.leia?.audioMode === "luke") {
           console.log("Luke audio mode detected");
           setAudioMode("luke");
+        } else {
+          setAudioMode("text");
         }
         // Widgets authored in Designer live on problem.spec.widgets. Older
         // replications may still carry them under lukeConfig.widgets, so use
         // the problem definition first and keep the runner config as fallback.
         const responseLeia = response.data.leia as LeiaSessionPayload | undefined;
-        setLukeStoppingCondition(
+        setStoppingConditionEnabled(
           responseLeia?.leia?.spec?.behaviour?.spec?.conversationDynamics?.stoppingCondition?.enabled === true,
         );
         const infographic = responseLeia?.infographic;
@@ -694,6 +706,9 @@ export const Chat = () => {
           const opening = await axios.post(
             `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/opening`,
           );
+          if (opening.data.conversationEnded === true) {
+            setSession((current) => current ? { ...current, conversationEnded: true } : current);
+          }
           if (opening.data.message) {
             setMessages([{
               ...opening.data.message,
@@ -925,14 +940,17 @@ export const Chat = () => {
       // The supervisor may piggyback a nudge on any response in the round-trip
       // (including an intermediate toolCalls response), so capture it whenever
       // it appears, not just on the final turn.
-      const captureNudge = (resp: { data?: { nudge?: unknown } }) => {
+      const captureResponseState = (resp: { data?: { nudge?: unknown; conversationEnded?: unknown } }) => {
         if (typeof resp.data?.nudge === "string" && resp.data.nudge.trim()) {
           setNudge(resp.data.nudge.trim());
+        }
+        if (resp.data?.conversationEnded === true) {
+          setSession((current) => current ? { ...current, conversationEnded: true } : current);
         }
       };
 
       let response = await axios.post(baseUrl, initialBody);
-      captureNudge(response);
+      captureResponseState(response);
       // Cap the round-trip depth so a misbehaving tool loop cannot brick
       // the UI. Matches the practical ceiling we see in tool-using flows.
       for (let i = 0; i < 8; i++) {
@@ -965,7 +983,7 @@ export const Chat = () => {
         const continuationBody: Record<string, unknown> = { toolResults: results };
         if (toolsPayload.length > 0) continuationBody.tools = toolsPayload;
         response = await axios.post(baseUrl, continuationBody);
-        captureNudge(response);
+        captureResponseState(response);
       }
 
       if (Array.isArray(response.data?.messages)) {
@@ -998,6 +1016,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (session?.conversationEnded) return;
     if (dataUsageConsentPending) return;
     if (configuration?.mode === "transcription") return;
     if (sendingMessage || retryingMessage) return;
@@ -1046,9 +1065,15 @@ export const Chat = () => {
     }
   };
 
+  const waitingForConversationEnd = stoppingConditionEnabled &&
+    !session?.conversationEnded &&
+    configuration?.mode !== "transcription" &&
+    !multiLeia && (audioMode === "text" || audioMode === "luke");
+
   const handleFinishConversation = async () => {
+    if (sendingMessage || retryingMessage) return;
     if (dataUsageConsentPending) return;
-    if (audioMode === "luke" && lukeStoppingCondition && !session?.conversationEnded) return;
+    if (waitingForConversationEnd) return;
     if (
       !messages.length &&
       configuration?.mode !== "transcription" &&
@@ -1089,7 +1114,7 @@ export const Chat = () => {
       );
       if (response.status === 200) {
         setSession(response.data);
-        setReflectiveAvailable(response.data.reflectiveAvailable === true);
+        setReflectiveAvailable((response.data.nextStageAvailable ?? response.data.reflectiveAvailable) === true);
         setShowSuccessModal(true);
       }
     } catch (error: unknown) {
@@ -1115,6 +1140,9 @@ export const Chat = () => {
         const opening = await axios.post(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/opening`,
         );
+        if (opening.data.conversationEnded === true) {
+          setSession((current) => current ? { ...current, conversationEnded: true } : current);
+        }
         if (opening.data.message) {
           setMessages([{ ...opening.data.message, id: opening.data.message.id || generateMessageId() }]);
         }
@@ -1163,14 +1191,14 @@ export const Chat = () => {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
       <div className="max-w-lg rounded-2xl bg-white p-8 shadow-sm space-y-5">
         <h1 className="text-2xl font-semibold">Continue the activity</h1>
-        <p>Continue with the next LEIA, which has access to the previous conversation.</p>
+        <p>Continue with the next stage of this activity.</p>
         {reflectionError && <p role="alert" className="text-red-600">{reflectionError}</p>}
         <button disabled={startingReflection} className="rounded-lg bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
           onClick={async () => {
             setStartingReflection(true);
             setReflectionError(null);
             try {
-              const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/reflective`);
+              const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/next-stage`);
               localStorage.setItem("sessionId", response.data.sessionId);
               window.location.assign(`/chat/${response.data.sessionId}?previousSessionId=${sessionId}`);
             } catch (error) {
@@ -1180,6 +1208,23 @@ export const Chat = () => {
           }}>{startingReflection ? "Starting…" : "Continue"}</button>
       </div>
     </div>;
+  }
+
+  if (staticStage && !loading) {
+    return <main className="min-h-screen bg-slate-50 p-6"><article className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-sm">
+      <h1 className="text-2xl font-semibold mb-6">{staticStage.title}</h1>
+      <div className="prose max-w-none"><ReactMarkdown>{staticStage.content}</ReactMarkdown></div>
+      {reflectionError && <p role="alert" className="text-red-600">{reflectionError}</p>}
+      {session?.finishedAt ? <p className="mt-6 font-semibold">Activity completed. Returning to the start…</p> : <button disabled={startingReflection} className="mt-6 rounded-lg bg-blue-600 px-5 py-3 text-white disabled:opacity-50" onClick={async () => {
+        setStartingReflection(true); setReflectionError(null);
+        try {
+          const response = await axios.post(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`);
+          setReflectiveAvailable((response.data.nextStageAvailable ?? response.data.reflectiveAvailable) === true);
+          setSession(response.data);
+        } catch (error) { setReflectionError(getRequestErrorMessage(error)); }
+        finally { setStartingReflection(false); }
+      }}>{startingReflection ? 'Completing…' : 'Complete stage'}</button>}
+    </article></main>;
   }
 
   if (loading) {
@@ -1368,8 +1413,10 @@ export const Chat = () => {
             onClick={handleFinishConversation}
             disabled={
               concluding ||
+              sendingMessage ||
+              retryingMessage ||
               dataUsageConsentPending ||
-              (audioMode === "luke" && lukeStoppingCondition && !session?.conversationEnded) ||
+              waitingForConversationEnd ||
               (!messages.length &&
                 configuration?.mode !== "transcription" &&
                 audioMode !== "luke" &&
@@ -1882,7 +1929,9 @@ export const Chat = () => {
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  configuration?.mode === "transcription"
+                  session?.conversationEnded
+                    ? "Conversation completed. Continue using the button above."
+                    : configuration?.mode === "transcription"
                     ? "Disabled in transcription exercise"
                     : audioMode === "audio"
                       ? "Audio mode enabled - Use the audio controls to speak"
@@ -1891,6 +1940,7 @@ export const Chat = () => {
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
                 disabled={
+                  Boolean(session?.conversationEnded) ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio"
@@ -1900,6 +1950,7 @@ export const Chat = () => {
               <button
                 type="submit"
                 disabled={
+                  Boolean(session?.conversationEnded) ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio" ||

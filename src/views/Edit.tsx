@@ -558,7 +558,7 @@ export const Edit = () => {
       );
       if (response.status === 200) {
         // Capture spectate URL from response
-        if (response.data.reflectiveAvailable) {
+        if ((response.data.nextStageAvailable ?? response.data.reflectiveAvailable)) {
           return true;
         }
         if (response.data.spectateUrl) {

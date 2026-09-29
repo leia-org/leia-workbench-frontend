@@ -51,6 +51,11 @@ interface SupervisorFlag {
 
 interface Session {
   id: string;
+  activityRunId?: string;
+  previousSession?: string;
+  stageId?: string;
+  stageTitle?: string;
+  interactionMode?: string;
   startedAt: string;
   finishedAt: string | null;
   result: string | null;
@@ -70,6 +75,27 @@ interface Session {
     decidedAt: string | null;
     automatedRemovalApplied: boolean;
   } | null;
+}
+
+function groupSessions(sessions: Session[]) {
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const groups = new Map<string, { id: string; startedAt: string; sessions: Session[] }>();
+  for (const session of sessions) {
+    if (session.interactionMode === 'static') continue;
+    let root = session;
+    const seen = new Set<string>();
+    while (root.previousSession && byId.has(root.previousSession) && !seen.has(root.id)) {
+      seen.add(root.id); root = byId.get(root.previousSession)!;
+    }
+    const id = session.activityRunId || root.id;
+    const group = groups.get(id) || { id, startedAt: root.startedAt, sessions: [] };
+    group.sessions.push(session);
+    if (session.startedAt < group.startedAt) group.startedAt = session.startedAt;
+    groups.set(id, group);
+  }
+  return [...groups.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).map((group) => ({
+    ...group, sessions: group.sessions.sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+  }));
 }
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
@@ -396,13 +422,14 @@ export const Conversations: React.FC = () => {
             ? Array.from({ length: 6 }).map((_, i) => (
                 <SessionRowSkeleton key={i} />
               ))
-            : filteredSessions.map((s) => (
-                <SessionRow
-                  key={s.id}
-                  item={s}
-                  selected={s.id === selectedId}
-                  onClick={() => setSelectedId(s.id)}
-                />
+            : groupSessions(filteredSessions).map((group) => (
+                <Box key={group.id}>
+                  <Box sx={{ px: 2, py: 1.5, bgcolor: 'surfaces.subtle' }}>
+                    <Typography variant="subtitle2">{group.sessions[0].user?.email || 'Anonymous'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{formatTimeAgo(group.startedAt)} · {group.sessions.length} conversations</Typography>
+                  </Box>
+                  {group.sessions.map((s) => <SessionRow key={s.id} item={s} selected={s.id === selectedId} onClick={() => setSelectedId(s.id)} />)}
+                </Box>
               ))
         }
         detail={
@@ -490,7 +517,7 @@ const SessionRow: React.FC<{
             textOverflow: "ellipsis",
           }}
         >
-          {item.user?.email || "Anonymous"}
+          {item.stageTitle || (item.stageId ? `Stage ${item.stageId}` : "LEIA conversation")}
         </Typography>
       </Box>
       <Typography

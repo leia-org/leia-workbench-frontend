@@ -244,6 +244,7 @@ interface LeiaEditorProps {
     multiLeia?: boolean,
   ) => void;
   replicationId: string;
+  stageFlow?: boolean;
   startingSessionLeiaId: string | null;
   pronouns: string | undefined;
   // Campos que el backend marcó como inválidos para esta Leia.
@@ -265,6 +266,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onToggleEvaluateSolution,
   onStartTestSession,
   replicationId,
+  stageFlow = false,
   startingSessionLeiaId,
   pronouns,
   invalidFields,
@@ -492,7 +494,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             onClick={() => onStartTestSession(item.id, replicationId, idx)}
             sx={{ borderColor: "divider", color: "text.primary" }}
           >
-            {isStartingThis ? "Starting..." : "Test session"}
+            {isStartingThis || startingSessionLeiaId === "stages" ? "Starting..." : stageFlow ? "Test stage sequence" : "Test session"}
           </Button>
         </Stack>
       </Stack>
@@ -1123,7 +1125,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   if (leias.length === 0) {
     return (
       <Typography variant="body2" sx={{ color: "text.secondary" }}>
-        No LEIAs in this replication.
+        {localReplication.experiment.stages ? <Button disabled={Boolean(startingSessionLeiaId)} onClick={() => onStartTestSession(null, replication.id, -1)}>Test stage sequence</Button> : 'No LEIAs in this replication.'}
       </Typography>
     );
   }
@@ -1133,7 +1135,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const item = leias[effectiveIdx];
   const serverItem = replication.experiment.leias[effectiveIdx];
   const orchestration = localReplication.experiment.orchestration;
-  const isMultiLeia = orchestration?.mode === "multi";
+  const isMultiLeia = !localReplication.experiment.stages && orchestration?.mode === "multi";
   const openingLeia = leias.find(
     (entry) => entry.id === orchestration?.openingLeiaId,
   );
@@ -1147,6 +1149,11 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
       : undefined;
   return (
     <Box sx={{ maxWidth: 880 }}>
+      {localReplication.experiment.stages && <Box sx={{ mb: 3 }}>
+        <Typography variant="h6">Activity stages</Typography>
+        <Stack spacing={1} sx={{ my: 2 }}>{localReplication.experiment.stages.map((stage, index) => <Typography key={stage.id}>{index + 1}. {stage.title} · {stage.type}</Typography>)}</Stack>
+        <Button variant="contained" disabled={Boolean(startingSessionLeiaId)} onClick={() => onStartTestSession(null, replication.id, effectiveIdx)}>Test stage sequence</Button>
+      </Box>}
       {isMultiLeia && (
         <Box
           sx={{
@@ -1203,6 +1210,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onToggleAskSolution={onToggleAskSolution}
         onToggleEvaluateSolution={onToggleEvaluateSolution}
         onStartTestSession={onStartTestSession}
+        stageFlow={Boolean(localReplication.experiment.stages)}
         replicationId={replication.id}
         pronouns= {pronouns}
         startingSessionLeiaId={startingSessionLeiaId}

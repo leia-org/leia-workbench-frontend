@@ -71,6 +71,7 @@ export interface ReplicationData {
   experiment: {
     name: string;
     leias: ReplicationLeia[];
+    stages?: { id: string; title: string; type: string; version: number; config: Record<string, unknown> }[];
     orchestration?: {
       mode: "single" | "multi";
       maxInternalTurns: number;
