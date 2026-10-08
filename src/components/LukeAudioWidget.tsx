@@ -241,6 +241,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     isConnected,
     providers,
     selectedProvider,
+    selectedVoice,
     selectProvider,
     reload,
     isRecording,
@@ -304,11 +305,15 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     ) {
       const target = providers.find((p) => p.name === lukeConfig.provider);
       if (target) {
-        selectProvider(target.id, lukeConfig.voice);
+        // The hook already selects the default provider on handshake. Avoid
+        // reconnecting that same provider/voice while its opening is playing.
+        if (selectedProvider?.id !== target.id || selectedVoice?.id !== lukeConfig.voice) {
+          selectProvider(target.id, lukeConfig.voice);
+        }
         lastSelectedSessionRef.current = sessionId;
       }
     }
-  }, [isConnected, providers, lukeConfig, selectProvider, sessionId]);
+  }, [isConnected, providers, lukeConfig, selectedProvider, selectedVoice, selectProvider, sessionId]);
 
   // Auto-start recording ONCE per session, after the configured
   // provider has been auto-selected.

@@ -489,11 +489,10 @@ export const Edit = () => {
       await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
       );
-    } catch (error) {
-      console.error("Failed to finish session on timer expiry:", error);
-    } finally {
       setSessionFinishedAt(new Date().toISOString());
       setShowSuccessModal(true);
+    } catch (error) {
+      console.error("Failed to finish session on timer expiry:", error);
     }
   }, [sessionId]);
 
