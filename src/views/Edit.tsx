@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, memo } from "react";
+import React, { useEffect, useState, useCallback, useRef, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import mermaid from "mermaid";
 import axios from "axios";
@@ -415,6 +415,9 @@ export const Edit = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [concluded, setConcluded] = useState(false);
   const [concludedSvg, setConcludedSvg] = useState<string | null>(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [solutionError, setSolutionError] = useState<string | null>(null);
+  const submissionPendingRef = useRef(false);
   const [configuration, setConfiguration] = useState<Configuration | null>(
     null
   );
@@ -489,11 +492,10 @@ export const Edit = () => {
       await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
       );
-    } catch (error) {
-      console.error("Failed to finish session on timer expiry:", error);
-    } finally {
       setSessionFinishedAt(new Date().toISOString());
       setShowSuccessModal(true);
+    } catch (error) {
+      console.error("Failed to finish session on timer expiry:", error);
     }
   }, [sessionId]);
 
@@ -546,6 +548,7 @@ export const Edit = () => {
   }, [formUrl]);
 
   const concludeProblem = useCallback(async () => {
+    if (concluded) return;
     try {
       const sessionId = localStorage.getItem("sessionId");
       const response = await axios.post(
@@ -557,41 +560,43 @@ export const Edit = () => {
         }
       );
       if (response.status === 200) {
+        // Submission is committed now. Preview/evaluation failures must not
+        // leave the editor open or cause a second submission on retry.
+        setConcluded(true);
+        setShowAlert(false);
         // Capture spectate URL from response
         if (response.data.spectateUrl) {
           setSpectateUrl(response.data.spectateUrl);
         }
 
-        const updatedDataResponse = await axios.get(
-          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`
-        );
-        const exerciseSolution =
-          updatedDataResponse.data.leia.leia.spec.problem.spec.solution;
-        if (
-          updatedDataResponse.data.leia.leia.spec.problem.spec
-            .solutionFormat === "mermaid"
-        ) {
-          const svg = await mermaid.render(
-            "mermaid2-diagram",
-            exerciseSolution
+        try {
+          const { data } = await axios.get(
+            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/solution`
           );
-          setConcludedSvg(svg.svg);
+          setProblemSolution(data.solution);
+          setSolutionFormat(data.solutionFormat || "text");
+          if (data.solutionFormat === "mermaid") {
+            const svg = await mermaid.render("mermaid2-diagram", data.solution);
+            setConcludedSvg(svg.svg);
+          }
+        } catch (previewError) {
+          console.error("Failed to display the reference solution:", previewError);
+          setSolutionError("Your solution was submitted, but the reference solution could not be displayed.");
         }
-        setProblemSolution(exerciseSolution);
-        setConcluded(true);
-        setShowAlert(false);
       }
     } catch (error) {
       console.error("Failed to conclude the problem:", error);
       throw error;
     }
-  }, [code]);
+  }, [code, concluded]);
 
   const getEvaluation = useCallback(async () => {
+    if (submissionPendingRef.current) return;
+    submissionPendingRef.current = true;
+    setSubmissionError(null);
     setLoadingEvaluation(true);
     try {
       await concludeProblem();
-      console.log(configuration);
       if (configuration?.evaluateSolution) {
         const response = await axios.get(
           `${
@@ -608,7 +613,11 @@ export const Edit = () => {
       }
     } catch (error) {
       console.error("Failed to get evaluation:", error);
+      setSubmissionError(axios.isAxiosError(error)
+        ? error.response?.data?.message || error.response?.data?.error || error.message
+        : "Could not complete the request. Please try again.");
     } finally {
+      submissionPendingRef.current = false;
       setLoadingEvaluation(false);
     }
   }, [concludeProblem, configuration, sessionId]);
@@ -676,7 +685,7 @@ export const Edit = () => {
         onOpenForm={handleOpenForm}
         onEvaluate={getEvaluation}
         onAlert={() =>
-          evaluation ? setShowEvaluation(true) : setShowAlert(true)
+          evaluation ? setShowEvaluation(true) : concluded ? void getEvaluation() : setShowAlert(true)
         }
         formUrl={formUrl || ""}
         loadingEvaluation={loadingEvaluation}
@@ -685,6 +694,8 @@ export const Edit = () => {
         onTimerExpire={handleTimerExpire}
         onNotesToggle={() => setShowNotes((prev) => !prev)}
       />
+
+      {submissionError && <div role="alert" className="bg-red-50 text-red-700 p-3">{submissionError}</div>}
 
       {showAlert && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
@@ -698,6 +709,7 @@ export const Edit = () => {
                 to continue working on it.
               </p>
               <div className="flex justify-end mt-4 gap-2">
+                {submissionError && <p role="alert" className="text-red-700">{submissionError}</p>}
                 <button
                   onClick={() => setShowAlert(false)}
                   className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-600 rounded-md hover:bg-gray-50"
@@ -706,9 +718,10 @@ export const Edit = () => {
                 </button>
                 <button
                   onClick={getEvaluation}
+                  disabled={loadingEvaluation}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
                 >
-                  Conclude Problem
+                  {loadingEvaluation ? "Submitting..." : "Conclude Problem"}
                 </button>
               </div>
             </div>
@@ -738,7 +751,7 @@ export const Edit = () => {
               code={problemSolution || ""}
               format={solutionFormat}
               mermaidSvg={concludedSvg}
-              error={error}
+              error={solutionError}
               renderControls={(utils) => <DiagramControls {...utils} />}
             />
           </div>
