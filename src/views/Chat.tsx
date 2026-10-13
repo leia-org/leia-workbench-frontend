@@ -418,6 +418,10 @@ export const Chat = () => {
 
   const openingPending = session?.conversationDynamics?.leiaSpeaksFirst?.enabled === true &&
     session.conversationDynamics.leiaSpeaksFirst.completed !== true && !messages.some((message) => message.isLeia);
+  // Luke starts its greeting after the first microphone frame confirms that
+  // client audio is ready. Muting while openingPending would prevent that
+  // frame forever, so only the instructions and consent gates mute Luke.
+  const lukeForceMute = showInstructions || dataUsageConsentPending;
   const canFinishConversation = session?.conversationDynamics?.canFinish !== false;
   useEffect(() => {
     if (!sessionId || !session?.conversationDynamics || session.finishedAt ||
@@ -1401,7 +1405,7 @@ export const Chat = () => {
                   leiaName={leiaName || undefined}
                   avatarSrc={personaAvatar || undefined}
                   avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
-                  forceMute={showInstructions || dataUsageConsentPending || openingPending}
+                  forceMute={lukeForceMute}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
                   onTranscriptComplete={handleTranscriptComplete}
@@ -1420,7 +1424,7 @@ export const Chat = () => {
                         leiaName={leiaName || undefined}
                         avatarSrc={personaAvatar || undefined}
                         avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
-                        forceMute={showInstructions || dataUsageConsentPending || openingPending}
+                        forceMute={lukeForceMute}
                         showTranscription={!hideAudioTranscription}
                         mode="inline"
                         tools={

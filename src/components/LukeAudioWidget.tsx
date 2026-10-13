@@ -305,10 +305,12 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     ) {
       const target = providers.find((p) => p.name === lukeConfig.provider);
       if (target) {
+        const voice = target.voices.find((voice) => voice.id === lukeConfig.voice)?.id
+          ?? target.voices[0]?.id;
         // The hook already selects the default provider on handshake. Avoid
         // reconnecting that same provider/voice while its opening is playing.
-        if (selectedProvider?.id !== target.id || selectedVoice?.id !== lukeConfig.voice) {
-          selectProvider(target.id, lukeConfig.voice);
+        if (selectedProvider?.id !== target.id || selectedVoice?.id !== voice) {
+          selectProvider(target.id, voice);
         }
         lastSelectedSessionRef.current = sessionId;
       }
