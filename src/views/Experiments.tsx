@@ -280,6 +280,7 @@ export const Experiments: React.FC = () => {
   const nextCursorRef = useRef(nextCursor);
   nextCursorRef.current = nextCursor;
   const isFetchingRef = useRef(false);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
 
   const sortOptions: SortOption[] = useMemo(
     () => [
@@ -390,6 +391,34 @@ export const Experiments: React.FC = () => {
       }
     }, [loadMoreExperiments]);
 
+  const ensureListCanScroll = useCallback(() => {
+    const container = listContainerRef.current;
+    if (
+      !container ||
+      !nextCursorRef.current ||
+      isFetchingRef.current ||
+      container.scrollHeight > container.clientHeight
+    ) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    void loadMoreExperiments();
+  }, [loadMoreExperiments]);
+
+  useEffect(() => {
+    const container = listContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      ensureListCanScroll();
+    });
+    resizeObserver.observe(container);
+    ensureListCanScroll();
+
+    return () => resizeObserver.disconnect();
+  }, [ensureListCanScroll, experiments.length, loading]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const publishedFilter = filters.published ?? [];
@@ -454,6 +483,10 @@ export const Experiments: React.FC = () => {
         searchValue={search}
         onSearchChange={setSearch}
         onListScroll={handleListScroll}
+        onListContainerChange={(element) => {
+          listContainerRef.current = element;
+          if (element) ensureListCanScroll();
+        }}
         listHeaderActions={
           <FilterButton
             groups={filterGroups}
@@ -564,4 +597,3 @@ const ExperimentDetailSkeleton: React.FC = () => (
     </Box>
   </Box>
 );
-

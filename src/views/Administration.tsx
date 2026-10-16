@@ -355,6 +355,7 @@ export const Administration: React.FC = () => {
   const nextCursorRef = useRef(nextCursor);
   nextCursorRef.current = nextCursor;
   const isFetchingRef = useRef(false);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
 
   const handleCopyCode = (rep: Replication) => {
     navigator.clipboard.writeText(rep.code);
@@ -468,6 +469,34 @@ export const Administration: React.FC = () => {
       isFetchingRef.current = false;
     }
     }, [navigate]);
+
+  const ensureListCanScroll = useCallback(() => {
+    const container = listContainerRef.current;
+    if (
+      !container ||
+      !nextCursorRef.current ||
+      isFetchingRef.current ||
+      container.scrollHeight > container.clientHeight
+    ) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    void loadMoreReplications();
+  }, [loadMoreReplications]);
+
+  useEffect(() => {
+    const container = listContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      ensureListCanScroll();
+    });
+    resizeObserver.observe(container);
+    ensureListCanScroll();
+
+    return () => resizeObserver.disconnect();
+  }, [ensureListCanScroll, replications.length, loading]);
 
   const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (!nextCursorRef.current || isFetchingRef.current) return;  
@@ -591,6 +620,10 @@ export const Administration: React.FC = () => {
         searchValue={search}
         onSearchChange={setSearch}
         onListScroll={handleListScroll}
+        onListContainerChange={(element) => {
+          listContainerRef.current = element;
+          if (element) ensureListCanScroll();
+        }}
         listHeaderActions={
           <FilterButton
             groups={filterGroups}
