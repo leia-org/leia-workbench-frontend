@@ -211,7 +211,14 @@ interface SessionDataUsage {
   automatedRemovalApplied: boolean;
 }
 
+interface ConversationDynamicsState {
+  canFinish: boolean;
+  leiaSpeaksFirst?: { enabled: boolean; completed: boolean };
+  stoppingCondition: { enabled: boolean; satisfied: boolean };
+}
+
 interface Session {
+  conversationDynamics?: ConversationDynamicsState;
   id?: string;
   isTest: boolean;
   startedAt: string;
@@ -408,6 +415,33 @@ export const Chat = () => {
     session?.dataUsage?.consentStatus !== "not_required" &&
     !session?.finishedAt &&
     !session?.isTest;
+
+  const openingPending = session?.conversationDynamics?.leiaSpeaksFirst?.enabled === true &&
+    session.conversationDynamics.leiaSpeaksFirst.completed !== true && !messages.some((message) => message.isLeia);
+  // Luke starts its greeting after the first microphone frame confirms that
+  // client audio is ready. Muting while openingPending would prevent that
+  // frame forever, so only the instructions and consent gates mute Luke.
+  const lukeForceMute = showInstructions || dataUsageConsentPending;
+  const canFinishConversation = session?.conversationDynamics?.canFinish !== false;
+  useEffect(() => {
+    if (!sessionId || !session?.conversationDynamics || session.finishedAt ||
+        (!openingPending && session.conversationDynamics.canFinish)) return;
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const { data } = await axios.get<ConversationDynamicsState>(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/conversation-dynamics`);
+        if (!disposed && openingPending && data.leiaSpeaksFirst?.completed) {
+          const snapshot = await axios.get(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`);
+          if (!disposed && Array.isArray(snapshot.data.messages)) setMessages(snapshot.data.messages);
+        }
+        if (!disposed) setSession((previous) => previous ? { ...previous, conversationDynamics: data } : previous);
+      } catch (error) { console.error("Failed to refresh conversation dynamics:", error); }
+    };
+    const interval = window.setInterval(refresh, 3000);
+    return () => { disposed = true; window.clearInterval(interval); };
+  }, [sessionId, session?.conversationDynamics?.stoppingCondition.enabled,
+      session?.conversationDynamics?.canFinish, session?.finishedAt, openingPending]);
 
   const handleTranscriptComplete = useCallback(
     (
@@ -919,6 +953,9 @@ export const Chat = () => {
         captureNudge(response);
       }
 
+      if (response.data?.conversationDynamics) {
+        setSession((previous) => previous ? { ...previous, conversationDynamics: response.data.conversationDynamics } : previous);
+      }
       if (Array.isArray(response.data?.messages)) {
         if (response.data?.state) {
           setMultiLeia((previous) =>
@@ -949,7 +986,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (dataUsageConsentPending) return;
+    if (dataUsageConsentPending || openingPending) return;
     if (configuration?.mode === "transcription") return;
     if (sendingMessage || retryingMessage) return;
 
@@ -998,6 +1035,7 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
+    if (!canFinishConversation) return;
     if (dataUsageConsentPending) return;
     if (
       !messages.length &&
@@ -1031,7 +1069,7 @@ export const Chat = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
-    if (dataUsageConsentPending) return;
+    if (dataUsageConsentPending || !canFinishConversation) return;
     setConcluding(true);
     try {
       const response = await axios.post(
@@ -1046,7 +1084,7 @@ export const Chat = () => {
     } finally {
       setConcluding(false);
     }
-  }, [sessionId, dataUsageConsentPending]);
+  }, [sessionId, dataUsageConsentPending, canFinishConversation]);
 
   const handleDataUsageConsentDecision = async (accepted: boolean) => {
     if (dataUsageConsentSubmitting) return;
@@ -1282,7 +1320,9 @@ export const Chat = () => {
           </button>
           <button
             onClick={handleFinishConversation}
+            title={!canFinishConversation ? "LEIA will decide when the conversation ends" : undefined}
             disabled={
+              !canFinishConversation ||
               concluding ||
               dataUsageConsentPending ||
               (!messages.length &&
@@ -1365,7 +1405,7 @@ export const Chat = () => {
                   leiaName={leiaName || undefined}
                   avatarSrc={personaAvatar || undefined}
                   avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
-                  forceMute={showInstructions || dataUsageConsentPending}
+                  forceMute={lukeForceMute}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
                   onTranscriptComplete={handleTranscriptComplete}
@@ -1384,7 +1424,7 @@ export const Chat = () => {
                         leiaName={leiaName || undefined}
                         avatarSrc={personaAvatar || undefined}
                         avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
-                        forceMute={showInstructions || dataUsageConsentPending}
+                        forceMute={lukeForceMute}
                         showTranscription={!hideAudioTranscription}
                         mode="inline"
                         tools={
@@ -1804,6 +1844,7 @@ export const Chat = () => {
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
                 disabled={
+                  openingPending ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio"
@@ -1813,6 +1854,7 @@ export const Chat = () => {
               <button
                 type="submit"
                 disabled={
+                  openingPending ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio" ||
