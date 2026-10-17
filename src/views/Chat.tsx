@@ -418,10 +418,12 @@ export const Chat = () => {
 
   const openingPending = session?.conversationDynamics?.leiaSpeaksFirst?.enabled === true &&
     session.conversationDynamics.leiaSpeaksFirst.completed !== true && !messages.some((message) => message.isLeia);
+  const conversationClosed = session?.conversationDynamics?.stoppingCondition.enabled === true &&
+    session.conversationDynamics.stoppingCondition.satisfied === true;
   // Luke starts its greeting after the first microphone frame confirms that
   // client audio is ready. Muting while openingPending would prevent that
-  // frame forever, so only the instructions and consent gates mute Luke.
-  const lukeForceMute = showInstructions || dataUsageConsentPending;
+  // frame forever, so openingPending must not mute Luke.
+  const lukeForceMute = showInstructions || dataUsageConsentPending || conversationClosed;
   const canFinishConversation = session?.conversationDynamics?.canFinish !== false;
   useEffect(() => {
     if (!sessionId || !session?.conversationDynamics || session.finishedAt ||
@@ -481,7 +483,7 @@ export const Chat = () => {
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
     enabled: audioMode === "audio" && !dataUsageConsentPending,
-    forceMute: showInstructions || dataUsageConsentPending,
+    forceMute: showInstructions || dataUsageConsentPending || conversationClosed,
     onTranscriptComplete: handleTranscriptComplete,
     onError: handleAudioError,
   });
@@ -519,7 +521,7 @@ export const Chat = () => {
 
   // Función para reenviar mensaje fallido
   const retryFailedMessage = async () => {
-    if (!failedMessage || retryingMessage) return;
+    if (!failedMessage || retryingMessage || conversationClosed) return;
 
     setRetryingMessage(true);
 
@@ -986,7 +988,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (dataUsageConsentPending || openingPending) return;
+    if (dataUsageConsentPending || openingPending || conversationClosed) return;
     if (configuration?.mode === "transcription") return;
     if (sendingMessage || retryingMessage) return;
 
@@ -1607,7 +1609,7 @@ export const Chat = () => {
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <button
                           onClick={retryFailedMessage}
-                          disabled={retryingMessage}
+                          disabled={retryingMessage || conversationClosed}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           {retryingMessage ? (
@@ -1831,11 +1833,13 @@ export const Chat = () => {
             >
               <textarea
                 ref={inputRef}
-                value={newMessageText}
+                value={conversationClosed ? "" : newMessageText}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  configuration?.mode === "transcription"
+                  conversationClosed
+                    ? "The conversation has ended"
+                    : configuration?.mode === "transcription"
                     ? "Disabled in transcription exercise"
                     : audioMode === "audio"
                       ? "Audio mode enabled - Use the audio controls to speak"
@@ -1844,6 +1848,7 @@ export const Chat = () => {
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
                 disabled={
+                  conversationClosed ||
                   openingPending ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
@@ -1854,6 +1859,7 @@ export const Chat = () => {
               <button
                 type="submit"
                 disabled={
+                  conversationClosed ||
                   openingPending ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
