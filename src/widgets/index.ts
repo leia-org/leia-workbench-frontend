@@ -5,4 +5,8 @@ export { VoiceModeWithWidgets } from "./VoiceModeWithWidgets";
 export { WIDGET_CATALOG, SLOT_OPTIONS, findCatalogEntry } from "./catalog";
 export type { WidgetCatalogEntry } from "./catalog";
 export { CodeEditorWidget } from "./CodeEditorWidget";
+export { CodeEditorWithTreeWidget } from "./CodeEditorWithTreeWidget";
+export { MermaidViewerWidget, cleanMermaidCode } from "./MermaidViewerWidget";
+export { ProjectTreeWidget } from "./ProjectTreeWidget";
+export type { ProjectTreeNode } from "./ProjectTreeWidget";
 export type { SlotId, WidgetDefinition, ToolsMap } from "./types";
