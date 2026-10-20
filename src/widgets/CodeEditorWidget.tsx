@@ -66,6 +66,8 @@ function mergeProblem(p?: Partial<ProblemDef>): ProblemDef {
             javascript: p.starter?.javascript ?? DEFAULT_PROBLEM.starter.javascript,
             python: p.starter?.python ?? DEFAULT_PROBLEM.starter.python,
             text: p.starter?.text ?? DEFAULT_PROBLEM.starter.text ?? "",
+            java: p.starter?.java ?? DEFAULT_PROBLEM.starter.java,
+            rust: p.starter?.rust ?? DEFAULT_PROBLEM.starter.rust,
         },
         tests: p.tests ?? DEFAULT_PROBLEM.tests,
     };
