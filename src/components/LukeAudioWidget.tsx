@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLuke } from "@leia-org/luke-client";
 import type { FrontendTool, TranscriptionMessage } from "@leia-org/luke-client";
+import { PersonaAvatar } from "./PersonaAvatar";
 
 interface LukeConfig {
   provider: string;
@@ -11,8 +12,12 @@ interface LukeAudioWidgetProps {
   wsUrl: string;
   token: string;
   lukeConfig: LukeConfig;
-  /** Display name for the LEIA — the first letter is used in the avatar. */
+  /** Display name for the LEIA — used in the avatar fallback. */
   leiaName?: string;
+  /** Persona avatar URL or storage key, when available. */
+  avatarSrc?: string;
+  /** Fallback avatar path to try before initials placeholder. */
+  avatarFallbackSrc?: string;
   forceMute?: boolean;
   /** Initial visibility of the transcription side panel. */
   showTranscription?: boolean;
@@ -221,6 +226,8 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   token,
   lukeConfig,
   leiaName,
+  avatarSrc,
+  avatarFallbackSrc,
   forceMute = false,
   showTranscription: initialShowTranscription = false,
   tools,
@@ -234,6 +241,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     isConnected,
     providers,
     selectedProvider,
+    selectedVoice,
     selectProvider,
     reload,
     isRecording,
@@ -297,11 +305,17 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     ) {
       const target = providers.find((p) => p.name === lukeConfig.provider);
       if (target) {
-        selectProvider(target.id, lukeConfig.voice);
+        const voice = target.voices.find((voice) => voice.id === lukeConfig.voice)?.id
+          ?? target.voices[0]?.id;
+        // The hook already selects the default provider on handshake. Avoid
+        // reconnecting that same provider/voice while its opening is playing.
+        if (selectedProvider?.id !== target.id || selectedVoice?.id !== voice) {
+          selectProvider(target.id, voice);
+        }
         lastSelectedSessionRef.current = sessionId;
       }
     }
-  }, [isConnected, providers, lukeConfig, selectProvider, sessionId]);
+  }, [isConnected, providers, lukeConfig, selectedProvider, selectedVoice, selectProvider, sessionId]);
 
   // Auto-start recording ONCE per session, after the configured
   // provider has been auto-selected.
@@ -354,8 +368,6 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     }
     emittedCountRef.current = transcription.length;
   }, [transcription, onTranscriptComplete]);
-
-  const letter = (leiaName?.trim()?.charAt(0) || "L").toUpperCase();
 
   // Halo around the avatar pulses with the ASSISTANT's audio level so you
   // can tell when the LEIA is speaking. The user's own level drives the
@@ -423,16 +435,15 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
             }}
           />
 
-          {/* Avatar circle */}
-          <div
-            className="relative w-44 h-44 rounded-full flex items-center justify-center text-white text-7xl font-semibold shadow-2xl"
-            style={{
-              background:
-                "linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)",
-            }}
-          >
-            {letter}
-          </div>
+          <PersonaAvatar
+            src={avatarSrc}
+            fallbackSrc={avatarFallbackSrc}
+            alt={`${leiaName || "LEIA"} avatar`}
+            label={leiaName || "LEIA"}
+            size="xl"
+            className="relative text-white shadow-2xl"
+            fallbackClassName="bg-gradient-to-br from-blue-500 to-blue-900"
+          />
         </div>
 
         {leiaName && (

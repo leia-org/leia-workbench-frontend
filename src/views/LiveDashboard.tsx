@@ -472,7 +472,7 @@ export const LiveDashboard = () => {
   return (
     <AdminLayout
       breadcrumbs={[
-        { label: "Replications", to: "/administration" },
+        { label: user?.role === "admin" ? "All the replications" : "My replications", to: "/administration" },
         {
           label: replicationName || "Replication",
           to: `/replications/${replicationId}`,

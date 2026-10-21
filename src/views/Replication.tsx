@@ -82,8 +82,11 @@ export const Replication: React.FC = () => {
 
   // BYOK: API keys + provider/model catalogue.
   const { apiKeys, getDefaultKey } = useApiKeys();
-  const { apiKeyProvidersMapped, isLoading: isProvidersLoading } =
-    useProviders();
+  const {
+    apiKeyProvidersMapped,
+    providerProviderModuleMap,
+    isLoading: isProvidersLoading,
+  } = useProviders();
   const defaultKey = getDefaultKey();
 
   // Flattened list of every model the available API keys can serve.
@@ -287,6 +290,29 @@ export const Replication: React.FC = () => {
         autoClose: 5000,
       });
       console.error("Rename error:", err);
+    }
+  };
+
+  const handleChangeLanguage = async (newLanguage: string) => {
+    if (!replication || !newLanguage) return;
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/language`,
+        { language: newLanguage },
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      toast.success("Replication language updated successfully", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Error updating replication language"), {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+      console.error("Update error:", err);
     }
   };
 
@@ -665,13 +691,18 @@ export const Replication: React.FC = () => {
     const localLeiaRunnerConfiguration =
       localReplication.experiment.leias[idx].runnerConfiguration;
     const modelName = localLeiaRunnerConfiguration.modelName;
+    const apiKeyId = localLeiaRunnerConfiguration.apiKeyId;
 
-    if (!modelName) {
+    if (!modelName || !apiKeyId) {
+      const invalidFields = [
+        ...(!modelName ? ["modelName"] : []),
+        ...(!apiKeyId ? ["apiKeyId"] : []),
+      ];
       setInvalidLeiaFields((prev) => ({
         ...prev,
-        [localLeiaId]: ["modelName"],
+        [localLeiaId]: invalidFields,
       }));
-      toast.error("Please select a valid model.", {
+      toast.error("Please select a valid model and API key.", {
         position: "bottom-right",
         autoClose: 5000,
       });
@@ -684,6 +715,11 @@ export const Replication: React.FC = () => {
       ...localLeiaRunnerConfiguration,
       modelName,
     };
+    if (payload.infographic) {
+      payload.infographic = {
+        showToStudent: Boolean(payload.infographic.showToStudent),
+      };
+    }
     if ("provider" in payload) {
       delete (payload as Partial<typeof payload> & { provider?: string })
         .provider;
@@ -733,15 +769,16 @@ export const Replication: React.FC = () => {
   };
 
   const executeStartTestSession = async (
-    leiaId: string,
-    replicationId: string
+    leiaId: string | null,
+    replicationId: string,
+    multiLeia = false,
   ) => {
-    if (loading || startingSessionLeiaId || !leiaId || !replicationId) return;
-    setStartingSessionLeiaId(leiaId);
+    if (loading || startingSessionLeiaId || (!leiaId && !multiLeia) || !replicationId) return;
+    setStartingSessionLeiaId(multiLeia ? "multi" : leiaId);
     try {
       const resp = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/test`,
-        { leiaId, replicationId },
+        { leiaId, replicationId, multiLeia },
         buildRequestConfig()
       );
       const sessionId = resp.data.sessionId;
@@ -758,12 +795,13 @@ export const Replication: React.FC = () => {
   };
 
   const startTestSession = (
-    leiaId: string,
+    leiaId: string | null,
     replicationId: string,
-    idx: number
+    idx: number,
+    multiLeia = false,
   ) => {
     withUnsavedChangesCheck(
-      () => executeStartTestSession(leiaId, replicationId),
+      () => executeStartTestSession(leiaId, replicationId, multiLeia),
       idx
     );
   };
@@ -811,6 +849,7 @@ export const Replication: React.FC = () => {
             hasFetchedAvailableModels={hasProviderData}
             apiKeys={apiKeys}
             apiKeyProvidersMapped={apiKeyProvidersMapped}
+            providerProviderModuleMap={providerProviderModuleMap}
             userRole={user?.role}
             onLocalLeiaChange={handleLocalLeiaChange}
             onLocalLeiaReset={handleLocalLeiaReset}
@@ -851,6 +890,7 @@ export const Replication: React.FC = () => {
             onChangeDuration={handleChangeDuration}
             onDeleteDuration={handleDeleteDuration}
             onRegenerateCode={regenerateCode}
+            onSwitchLanguage={handleChangeLanguage}
             onToggleActive={toggleActive}
             onToggleRepeatable={toggleRepeatable}
             onToggleShared={toggleShared}

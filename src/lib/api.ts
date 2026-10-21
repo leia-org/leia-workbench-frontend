@@ -17,7 +17,7 @@ export async function authFetch(url: string, token: string|null, options: Reques
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers, credentials: 'include' });
   if (res.status === 401 && !url.includes('/login')) {
     window.dispatchEvent(new CustomEvent('auth-unauthorized'));
   }

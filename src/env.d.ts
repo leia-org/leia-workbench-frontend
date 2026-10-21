@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_APP_BACKEND: string
+  readonly VITE_IMAGE_PUBLIC_URL?: string
 }
 
 interface ImportMeta {

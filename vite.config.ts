@@ -27,6 +27,9 @@ export default defineConfig(({ command, mode }) => {
   }
 
   return {
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV || "development"),
+    },
     plugins: [react()],
     server: {
       port: 8080,

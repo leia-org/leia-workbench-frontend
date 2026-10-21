@@ -21,11 +21,21 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import { ApiKey } from "../../models/ApiKeys";
 import { useProviders } from "../../hooks/useProviders";
+import openAiIcon from "../../assets/providers/openai.svg";
+import geminiIcon from "../../assets/providers/gemini.svg";
+import ollamaIcon from "../../assets/providers/ollama.svg";
+
+const providerIcons: Record<string, string> = {
+  openai: openAiIcon,
+  gemini: geminiIcon,
+  ollama: ollamaIcon,
+};
 
 export interface ApiKeyFormModalProps {
   isOpen: boolean;
   mode: "create" | "edit";
   selectedKey: ApiKey | null;
+  canSelectDefault?: boolean;
   userRole?: string;
   onClose: () => void;
 
@@ -33,7 +43,7 @@ export interface ApiKeyFormModalProps {
   errors?: Record<string, string>;
 }
 
-export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, userRole, onClose, onSave, errors = {} }) => {
+export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, selectedKey, canSelectDefault = false, userRole, onClose, onSave, errors = {} }) => {
   const [formData, setFormData] = useState<Partial<ApiKey>>({});
   const [, setInitialFormData] = useState<Partial<ApiKey> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -164,18 +174,30 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
                   value={formData.provider || ""}
                   onChange={handleChange}
                   displayEmpty
-                  renderValue={(selected) =>
-                    selected
-                      ? (selected as string)
-                      : (
+                  renderValue={(selected) => {
+                    if (selected) {
+                      const provider = selected as string;
+                      return (
+                        <Stack direction="row" alignItems="center" spacing={1} sx={{ textTransform: "capitalize" }}>
+                          {providerIcons[provider] && (
+                            <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                          )}
+                          <span>{provider}</span>
+                        </Stack>
+                      );
+                    }
+                    return (
                         <Typography component="span" sx={{ color: "text.disabled" }}>
                           {isLoadingProviders ? "Loading providers..." : "Select a provider"}
                         </Typography>
-                      )
-                  }
+                    );
+                  }}
                 >
                   {apiKeysProviderSet.map((provider) => (
-                    <MenuItem key={provider} value={provider}>
+                    <MenuItem key={provider} value={provider} sx={{ gap: 1, textTransform: "capitalize" }}>
+                      {providerIcons[provider] && (
+                        <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                      )}
                       {provider}
                     </MenuItem>
                   ))}
@@ -202,12 +224,16 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
             </Stack>
             <FormControl
               fullWidth
+              required
+              error={!!errors.model}
               disabled={!formData.provider || isLoadingProviders || providerModels.length === 0}
             >
-              <InputLabel id="api-key-model-label" shrink>Default Model (Optional)</InputLabel>
+              <InputLabel id="api-key-model-label" shrink>
+                Default Model
+              </InputLabel>
               <Select
                 labelId="api-key-model-label"
-                label="Default Model (Optional)"
+                label="Default Model"
                 name="model"
                 value={formData.model || ""}
                 onChange={handleChange}
@@ -221,18 +247,17 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
                           ? "Select a provider first"
                           : providerModels.length === 0
                             ? "No models for this provider"
-                            : "-- none --"}
+                            : "Select a model"}
                       </Typography>
                     )
                 }
               >
-                <MenuItem value=""><em>-- none --</em></MenuItem>
                 {providerModels.map((m) => (
                   <MenuItem key={m} value={m}>{m}</MenuItem>
                 ))}
               </Select>
-              <Typography variant="caption" sx={{ color: "text.secondary", mt: 0.5, ml: 1.75 }}>
-                Preselected wherever this key is used (you can still change it there).
+              <Typography variant="caption" sx={{ color: errors.model ? "error.main" : "text.secondary", mt: 0.5, ml: 1.75 }}>
+                {errors.model || "Preselected wherever this key is used (you can still change it there)."}
               </Typography>
             </FormControl>
             <TextField
@@ -257,7 +282,7 @@ export const ApiKeyFormModal: React.FC<ApiKeyFormModalProps> = ({ isOpen, mode, 
               fullWidth
               InputProps={{ sx: { color: "primary.main" } }}
             />
-            {mode === "create" && (
+            {mode === "create" && canSelectDefault && (
               <Box sx={{ pt: 1, borderTop: "1px solid", borderColor: "divider" }}>
                 <FormControlLabel
                   control={

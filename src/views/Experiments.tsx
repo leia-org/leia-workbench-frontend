@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
@@ -8,6 +8,7 @@ import {
   Stack,
   Typography,
   Skeleton,
+  Chip,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
@@ -37,19 +38,36 @@ interface Experiment {
   leias: ExperimentLeia[];
   createdAt: string;
   updatedAt: string;
+  user?: {
+    name?: string;
+    email?: string;
+    id?: string;
+  } | null;
 }
+
+const getExperimentUserLabel = (experiment: Experiment) => {
+  const owner = experiment.user ;
+  return owner?.email ??  "";
+};
 
 interface RowProps {
   item: Experiment;
   selected: boolean;
   onClick: () => void;
+  showUser: boolean;
 }
 
-const ExperimentRow: React.FC<RowProps> = ({ item, selected, onClick }) => {
+const ExperimentRow: React.FC<RowProps> = ({
+  item,
+  selected,
+  onClick,
+  showUser,
+}) => {
   const modes = useMemo(
     () => [...new Set(item.leias.map((l) => l.configuration.mode))].join(", "),
     [item.leias]
   );
+  const userLabel = getExperimentUserLabel(item);
   return (
     <ButtonBase
       onClick={onClick}
@@ -97,6 +115,26 @@ const ExperimentRow: React.FC<RowProps> = ({ item, selected, onClick }) => {
           >
             {item.name}
           </Typography>
+          {showUser && userLabel && (
+            <Chip
+              size="small"
+              label={userLabel}
+              sx={{
+                height: 20,
+                maxWidth: 160,
+                flexShrink: 1,
+                bgcolor: "surfaces.subtle",
+                color: "text.secondary",
+                borderRadius: 1,
+                "& .MuiChip-label": {
+                  px: 0.75,
+                  fontSize: 11,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+              }}
+            />
+          )}
         </Box>
         <Typography
           variant="caption"
@@ -155,10 +193,12 @@ const DetailRow: React.FC<{ label: string; children: React.ReactNode }> = ({
 const ExperimentDetail: React.FC<{
   item: Experiment;
   onOpen: () => void;
-}> = ({ item, onOpen }) => {
+  showUser: boolean;
+}> = ({ item, onOpen, showUser }) => {
   const modes = [
     ...new Set(item.leias.map((l) => l.configuration.mode)),
   ].join(", ");
+  const userLabel = getExperimentUserLabel(item);
   return (
     <Box sx={{ p: 4, maxWidth: 880 }}>
       <Typography
@@ -196,6 +236,7 @@ const ExperimentDetail: React.FC<{
       </Box>
 
       <Box sx={{ mt: 4 }}>
+        {showUser && userLabel && <DetailRow label="User">{userLabel}</DetailRow>}
         <DetailRow label="# LEIAs">{item.leias.length}</DetailRow>
         <DetailRow label="Modes">{modes || "—"}</DetailRow>
         <DetailRow label="Last updated">
@@ -224,13 +265,22 @@ const ExperimentDetail: React.FC<{
 
 export const Experiments: React.FC = () => {
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<FilterState>({});
   const [sort, setSort] = useState<SortState>({ by: "updated", dir: "desc" });
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const nextCursorRef = useRef(nextCursor);
+  nextCursorRef.current = nextCursor;
+  const isFetchingRef = useRef(false);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
 
   const sortOptions: SortOption[] = useMemo(
     () => [
@@ -275,17 +325,18 @@ export const Experiments: React.FC = () => {
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        const response = await axios.get<Experiment[]>(
+        const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${tokenRef.current}`,
             },
           }
         );
-        setExperiments(response.data);
-        if (response.data.length > 0) {
-          setSelectedId(response.data[0].id);
+        setExperiments(response.data.experiments);
+        setNextCursor(response.data.nextCursor);
+        if (response.data.experiments.length > 0) {
+          setSelectedId(response.data.experiments[0].id);
         }
       } catch (error: unknown) {
         if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -299,14 +350,90 @@ export const Experiments: React.FC = () => {
     };
 
     fetchExperiments();
-  }, [navigate, token]);
+  }, [navigate, tokenRef]);
+
+  const loadMoreExperiments = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokenRef.current}`,
+          },
+          params: {
+            lastActivityId: nextCursorRef.current || undefined,
+          },
+        }
+      );
+      setExperiments((prev) => [...prev, ...response.data.experiments]);
+      setNextCursor(response.data.nextCursor);
+      nextCursorRef.current = response.data.nextCursor;
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setTimeout(() => navigate("/login"), 2000);
+      } else {
+        console.error("Failed to load more experiments:", error);
+      }
+    } finally {
+      setLoadingMore(false);
+      isFetchingRef.current = false;
+    }
+    }, [navigate]);
+
+      const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+      if (!nextCursorRef.current || isFetchingRef.current) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      if ((scrollTop + clientHeight) / scrollHeight >= 0.8) {
+        isFetchingRef.current = true;
+        void loadMoreExperiments();
+      }
+    }, [loadMoreExperiments]);
+
+  const ensureListCanScroll = useCallback(() => {
+    const container = listContainerRef.current;
+    if (
+      !container ||
+      !nextCursorRef.current ||
+      isFetchingRef.current ||
+      container.scrollHeight > container.clientHeight
+    ) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    void loadMoreExperiments();
+  }, [loadMoreExperiments]);
+
+  useEffect(() => {
+    const container = listContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      ensureListCanScroll();
+    });
+    resizeObserver.observe(container);
+    ensureListCanScroll();
+
+    return () => resizeObserver.disconnect();
+  }, [ensureListCanScroll, experiments.length, loading]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const publishedFilter = filters.published ?? [];
     const modesFilter = filters.modes ?? [];
     const matched = experiments.filter((e) => {
-      if (q && !e.name.toLowerCase().includes(q)) return false;
+      const experimentUser = isAdmin
+        ? getExperimentUserLabel(e).toLowerCase()
+        : "";
+      if (
+        q &&
+        !e.name.toLowerCase().includes(q) &&
+        !experimentUser.includes(q)
+      ) {
+        return false;
+      }
       if (publishedFilter.length > 0) {
         const wantsPub = publishedFilter.includes("published");
         const wantsUnpub = publishedFilter.includes("unpublished");
@@ -341,7 +468,7 @@ export const Experiments: React.FC = () => {
           );
       }
     });
-  }, [experiments, search, filters, sort]);
+  }, [experiments, search, filters, sort, isAdmin]);
 
   const selected = useMemo(
     () => filtered.find((e) => e.id === selectedId) ?? null,
@@ -349,12 +476,17 @@ export const Experiments: React.FC = () => {
   );
 
   return (
-    <AdminLayout title="Experiments" flush>
+    <AdminLayout title={isAdmin ? "All the experiments" : "My experiments"} flush>
       <MasterDetailLayout
         storageKey="adminMD:experiments.width"
         searchPlaceholder="Search experiments..."
         searchValue={search}
         onSearchChange={setSearch}
+        onListScroll={handleListScroll}
+        onListContainerChange={(element) => {
+          listContainerRef.current = element;
+          if (element) ensureListCanScroll();
+        }}
         listHeaderActions={
           <FilterButton
             groups={filterGroups}
@@ -377,14 +509,20 @@ export const Experiments: React.FC = () => {
             ? Array.from({ length: 8 }).map((_, i) => (
                 <ExperimentRowSkeleton key={i} />
               ))
-            : filtered.map((exp) => (
-                <ExperimentRow
-                  key={exp.id}
-                  item={exp}
-                  selected={exp.id === selectedId}
-                  onClick={() => setSelectedId(exp.id)}
-                />
-              ))
+            : (
+                <>
+                  {filtered.map((exp) => (
+                    <ExperimentRow
+                      key={exp.id}
+                      item={exp}
+                      selected={exp.id === selectedId}
+                      onClick={() => setSelectedId(exp.id)}
+                      showUser={isAdmin}
+                    />
+                  ))}
+                  {loadingMore && <ExperimentRowSkeleton />}
+                </>
+              )
         }
         detail={
           loading ? (
@@ -393,6 +531,7 @@ export const Experiments: React.FC = () => {
             <ExperimentDetail
               item={selected}
               onOpen={() => navigate(`/experiments/${selected.id}`)}
+              showUser={isAdmin}
             />
           ) : (
             <MasterDetailEmptyState

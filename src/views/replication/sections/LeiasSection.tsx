@@ -12,16 +12,37 @@ import {
   Stack,
   Switch,
   Typography,
+  IconButton,
 } from "@mui/material";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import PlayCircleFilledWhiteOutlinedIcon from '@mui/icons-material/PlayCircleFilledWhiteOutlined';
+import PauseCircleOutlineOutlinedIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
 import LeiaPreviewDrawer, {
   type ParsedLeia,
 } from "../../../components/admin/LeiaPreview";
+import InfographicViewer, {
+  type InfographicViewerHandle,
+} from "../../../components/InfographicViewer";
+import {
+  buildLeiaInfographicPaths,
+  buildStoredImageCandidateSources,
+} from "../../../lib/avatar";
 import type { ReplicationData, ReplicationLeia } from "../types";
 import type { ApiKey } from "../../../models/ApiKeys";
+import openAiIcon from "../../../assets/providers/openai.svg";
+import geminiIcon from "../../../assets/providers/gemini.svg";
+import ollamaIcon from "../../../assets/providers/ollama.svg";
+
+const providerIcons: Record<string, string> = {
+  openai: openAiIcon,
+  gemini: geminiIcon,
+  ollama: ollamaIcon,
+};
 
 const VOICE_OPTIONS: Array<{ value: string; label: string; gender: string }> = [
   { value: "alloy", label: "Alloy - Female", gender: "female" },
@@ -35,6 +56,22 @@ const VOICE_OPTIONS: Array<{ value: string; label: string; gender: string }> = [
   { value: "shimmer", label: "Shimmer - Female", gender: "female" },
   { value: "verse", label: "Verse - Male", gender: "male" },
 ];
+
+const LUKE_VOICE_PREVIEW_PATHS: Record<string, string> = {
+  alloy: "/audio/previews/alloy-example.mp3",
+  ash: "/audio/previews/ash-example.mp3",
+  ballad: "/audio/previews/ballad-example.mp3",
+  coral: "/audio/previews/coral-example.mp3",
+  echo: "/audio/previews/echo-example.mp3",
+  sage: "/audio/previews/sage-example.mp3",
+  shimmer: "/audio/previews/shimmer-example.mp3",
+  verse: "/audio/previews/verse-example.mp3",
+  Puck: "/audio/previews/puck-example.wav",
+  Charon: "/audio/previews/charon-example.wav",
+  Kore: "/audio/previews/kore-example.wav",
+  Fenrir: "/audio/previews/fenrir-example.wav",
+  Aoede: "/audio/previews/aoede-example.wav",
+};
 
 const getFilteredVoiceOptions = (
   pronoun: string | undefined,
@@ -54,26 +91,6 @@ const getFilteredVoiceOptions = (
   );
 };
 
-const DEFAULT_PROVIDER = "default";
-
-// Models the currently selected API key can serve. When no key is selected we
-// fall back to every model across all providers.
-const getValidModels = (
-  apiKeyId: string | null | undefined,
-  apiKeys: ApiKey[],
-  apiKeyProvidersMapped: Record<string, string[]>
-): string[] => {
-  const allModels = apiKeyProvidersMapped
-    ? Object.values(apiKeyProvidersMapped).flat()
-    : [];
-  if (!apiKeyId) return allModels;
-
-  const apiKey = apiKeys.find((k) => k.id === apiKeyId);
-  if (!apiKey || !apiKey.provider) return allModels;
-
-  return apiKeyProvidersMapped[apiKey.provider] || [];
-};
-
 // API keys whose provider can serve the currently selected model. When no
 // model is selected, every key is valid.
 const getValidApiKeys = (
@@ -81,13 +98,14 @@ const getValidApiKeys = (
   apiKeys: ApiKey[],
   apiKeyProvidersMapped: Record<string, string[]>
 ): ApiKey[] => {
-  if (!modelName) return apiKeys;
+  const activeApiKeys = apiKeys.filter((key) => key.isActive !== false);
+  if (!modelName) return activeApiKeys;
 
   const validProviders = Object.entries(apiKeyProvidersMapped)
     .filter(([, models]) => models.includes(modelName))
     .map(([provider]) => provider);
 
-  return apiKeys.filter((key) => validProviders.includes(key.provider));
+  return activeApiKeys.filter((key) => validProviders.includes(key.provider));
 };
 
 interface LeiasSectionProps {
@@ -99,6 +117,7 @@ interface LeiasSectionProps {
   hasFetchedAvailableModels: boolean;
   apiKeys: ApiKey[];
   apiKeyProvidersMapped: Record<string, string[]>;
+  providerProviderModuleMap: Record<string, string>;
   userRole?: string;
   onLocalLeiaChange: (idx: number, key: string, value: unknown) => void;
   onLocalLeiaReset: (idx: number) => void;
@@ -106,9 +125,10 @@ interface LeiasSectionProps {
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
-    leiaId: string,
+    leiaId: string | null,
     replicationId: string,
-    idx: number
+    idx: number,
+    multiLeia?: boolean,
   ) => void;
   startingSessionLeiaId: string | null;
   // Campos inválidos por Leia (clave: leiaId) devueltos por el backend.
@@ -165,13 +185,52 @@ const FieldRow: React.FC<{
   </Box>
 );
 
+const ImageAvailabilityProbe: React.FC<{
+  sources: string[];
+  onAvailableChange: (available: boolean | null) => void;
+}> = ({ sources, onAvailableChange }) => {
+  const [idx, setIdx] = React.useState(0);
+  const src = sources[idx] || "";
+
+  React.useEffect(() => {
+    setIdx(0);
+    onAvailableChange(sources.length > 0 ? null : false);
+  }, [onAvailableChange, sources]);
+
+  if (!src) return null;
+
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        width: 1,
+        height: 1,
+        opacity: 0,
+        pointerEvents: "none",
+      }}
+      onLoad={() => onAvailableChange(true)}
+      onError={() => {
+        const nextIdx = idx + 1;
+        if (nextIdx < sources.length) {
+          setIdx(nextIdx);
+        } else {
+          onAvailableChange(false);
+        }
+      }}
+    />
+  );
+};
+
 interface LeiaEditorProps {
   idx: number;
   item: ReplicationLeia;
   serverItem: ReplicationLeia;
-  availableModels: string[];
   apiKeys: ApiKey[];
   apiKeyProvidersMapped: Record<string, string[]>;
+  providerProviderModuleMap: Record<string, string>;
   userRole?: string;
   onLocalLeiaChange: (idx: number, key: string, value: unknown) => void;
   onLocalLeiaReset: (idx: number) => void;
@@ -179,12 +238,14 @@ interface LeiaEditorProps {
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
-    leiaId: string,
+    leiaId: string | null,
     replicationId: string,
-    idx: number
+    idx: number,
+    multiLeia?: boolean,
   ) => void;
   replicationId: string;
   startingSessionLeiaId: string | null;
+  pronouns: string | undefined;
   // Campos que el backend marcó como inválidos para esta Leia.
   invalidFields: string[];
 }
@@ -193,9 +254,9 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   idx,
   item,
   serverItem,
-  availableModels,
   apiKeys,
   apiKeyProvidersMapped,
+  providerProviderModuleMap,
   userRole,
   onLocalLeiaChange,
   onLocalLeiaReset,
@@ -205,44 +266,133 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onStartTestSession,
   replicationId,
   startingSessionLeiaId,
+  pronouns,
   invalidFields,
 }) => {
   const [showAllVoices, setShowAllVoices] = useState(false);
   const [contentOpen, setContentOpen] = useState(false);
-
-  const isModelAvailable = (model: string) =>
-    model === DEFAULT_PROVIDER || availableModels.includes(model);
+  const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
+  const [studentInfographicAvailable, setStudentInfographicAvailable] =
+    useState<boolean | null>(null);
+  const [solutionInfographicAvailable, setSolutionInfographicAvailable] =
+    useState<boolean | null>(null);
+  const solutionViewerRef = React.useRef<InfographicViewerHandle | null>(null);
 
   // BYOK: model + API key for this LEIA.
   const currentApiKeyId = item.runnerConfiguration.apiKeyId;
   const currentModelName = item.runnerConfiguration.modelName ?? "";
+  const selectedLukeProvider =
+    item.runnerConfiguration.lukeConfig?.provider || "gemini";
+  const selectedLukeVoice =
+    item.runnerConfiguration.lukeConfig?.voice ||
+    (selectedLukeProvider === "openai" ? "alloy" : "Puck");
+  const problemWidgets = item.leia.spec?.problem?.spec?.widgets;
+  const requiresTools =
+    Array.isArray(problemWidgets) && problemWidgets.length > 0;
+  const toolCapableProviders = React.useMemo(
+    () =>
+      new Set(
+        Object.entries(providerProviderModuleMap)
+          .filter(([, moduleName]) => moduleName === "openai-responses")
+          .map(([provider]) => provider)
+      ),
+    [providerProviderModuleMap]
+  );
 
   const currentApiKeyObj = apiKeys.find((k) => k.id === currentApiKeyId);
+  const handlePreviewLukeVoice = () => {
+    if (audioPreviewPlaying) return;
+    const previewPath =
+      LUKE_VOICE_PREVIEW_PATHS[selectedLukeVoice] ||
+      `/audio/previews/${selectedLukeVoice.toLowerCase()}-example.mp3`;
+    const audio = new Audio(previewPath);
 
-  // Filter models/keys so the two selects stay mutually consistent.
-  const validModelsForLeia = getValidModels(
-    currentApiKeyId,
-    apiKeys,
-    apiKeyProvidersMapped
+    audio.onplay = () => {
+      setAudioPreviewPlaying(true);
+    };
+
+    audio.onended = () => {
+      setAudioPreviewPlaying(false);
+    };
+
+    audio.onerror = () => {
+      setAudioPreviewPlaying(false);
+    };
+
+    audio.play().catch(() => {
+      setAudioPreviewPlaying(false);
+    });
+  };
+
+  const compatibleApiKeys = React.useMemo(
+    () => {
+      const matchingKeys = getValidApiKeys(
+        currentModelName,
+        apiKeys,
+        apiKeyProvidersMapped
+      );
+      return requiresTools
+        ? matchingKeys.filter((key) => toolCapableProviders.has(key.provider))
+        : matchingKeys;
+    },
+    [
+      apiKeyProvidersMapped,
+      apiKeys,
+      currentModelName,
+      requiresTools,
+      toolCapableProviders,
+    ]
   );
-  const validApiKeysForLeia = getValidApiKeys(
+
+  React.useEffect(() => {
+    if (!currentModelName) return;
+
+    const currentKeyStillMatches = compatibleApiKeys.some(
+      (key) => key.id === currentApiKeyId
+    );
+    if (currentKeyStillMatches) return;
+
+    const nextKey =
+      compatibleApiKeys.find((key) => key.isDefault) || compatibleApiKeys[0];
+    const nextApiKeyId = nextKey?.id ?? null;
+    if ((currentApiKeyId ?? null) === nextApiKeyId) return;
+
+    onLocalLeiaChange(
+      idx,
+      "runnerConfiguration.apiKeyId",
+      nextApiKeyId
+    );
+  }, [
+    compatibleApiKeys,
+    currentApiKeyId,
     currentModelName,
-    apiKeys,
-    apiKeyProvidersMapped
+    idx,
+    onLocalLeiaChange,
+  ]);
+
+  const providersWithApiKeys = new Set(
+    apiKeys
+      .filter((key) => key.isActive !== false)
+      .map((key) => key.provider)
+  );
+  const validModelsForLeia = Array.from(
+    new Set(
+      Object.entries(apiKeyProvidersMapped)
+        .filter(
+          ([provider]) =>
+            providersWithApiKeys.has(provider) &&
+            (!requiresTools || toolCapableProviders.has(provider))
+        )
+        .flatMap(([, models]) => models)
+    )
   );
 
   const isCurrentModelValid =
     currentModelName === "" ||
-    currentModelName === DEFAULT_PROVIDER ||
-    isModelAvailable(currentModelName) ||
     validModelsForLeia.includes(currentModelName);
 
   // Marcas de error devueltas por el backend en el último intento de guardar/activar.
   const isModelMissing = invalidFields.includes("modelName");
-  const isApiKeyMissing =
-    invalidFields.includes("apiKeyId") ||
-    invalidFields.includes("apiKeyRequesterId");
-
   const showDashboardLink = Boolean(
     currentApiKeyObj &&
       (!currentApiKeyObj.isSystemApiKey || userRole === "admin") &&
@@ -251,12 +401,62 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
 
   const isStartingAny = Boolean(startingSessionLeiaId);
   const isStartingThis = startingSessionLeiaId === item.id;
+  const leiaResourceId = String(item.leia.id || item.id || "");
+  const infographicSrc =
+    typeof item.leia.spec?.infographic === "string" &&
+    item.leia.spec.infographic.trim()
+      ? item.leia.spec.infographic
+      : "";
+  const infographicFallbackSources = React.useMemo(
+    () => buildLeiaInfographicPaths(leiaResourceId, "infographic"),
+    [leiaResourceId]
+  );
+  const infographicCandidates = React.useMemo(
+    () =>
+      buildStoredImageCandidateSources(
+        infographicSrc,
+        ...infographicFallbackSources
+      ),
+    [infographicFallbackSources, infographicSrc]
+  );
+  const solutionInfographicSrc =
+    typeof item.leia.spec?.infographicSolution === "string" &&
+    item.leia.spec.infographicSolution.trim()
+      ? item.leia.spec.infographicSolution
+      : "";
+  const solutionInfographicFallbackSources = React.useMemo(
+    () => buildLeiaInfographicPaths(leiaResourceId, "infographicSolution"),
+    [leiaResourceId]
+  );
+  const solutionInfographicCandidates = React.useMemo(
+    () =>
+      buildStoredImageCandidateSources(
+        solutionInfographicSrc,
+        ...solutionInfographicFallbackSources
+      ),
+    [solutionInfographicFallbackSources, solutionInfographicSrc]
+  );
+  const hasAnyInfographic =
+    studentInfographicAvailable === true ||
+    solutionInfographicAvailable === true;
+  const infographicConfig = item.runnerConfiguration.infographic || {};
+  const showInfographicToStudent = Boolean(
+    studentInfographicAvailable === true && infographicConfig.showToStudent
+  );
 
   const isDirty =
     JSON.stringify(item) !== JSON.stringify(serverItem);
 
   return (
     <Box>
+      <ImageAvailabilityProbe
+        sources={infographicCandidates}
+        onAvailableChange={setStudentInfographicAvailable}
+      />
+      <ImageAvailabilityProbe
+        sources={solutionInfographicCandidates}
+        onAvailableChange={setSolutionInfographicAvailable}
+      />
       <Stack
         direction="row"
         alignItems="center"
@@ -323,7 +523,120 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         />
       </FieldRow>
 
+      <SectionLabel>Infographics</SectionLabel>
+      {studentInfographicAvailable === null ||
+      solutionInfographicAvailable === null ? (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            bgcolor: "surfaces.subtle",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            px: 2,
+            py: 1.5,
+            mb: 1,
+          }}
+        >
+          Checking generated infographic assets...
+        </Typography>
+      ) : !hasAnyInfographic ? (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            bgcolor: "surfaces.subtle",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            px: 2,
+            py: 1.5,
+            mb: 1,
+          }}
+        >
+          No infographic is available for this LEIA. Open it in Designer and
+          generate the infographic assets before configuring them here.
+        </Typography>
+      ) : null}
+      {studentInfographicAvailable === false && hasAnyInfographic && (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            bgcolor: "surfaces.subtle",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            px: 2,
+            py: 1.5,
+            mb: 1,
+          }}
+        >
+          The student infographic is not available. Open this LEIA in Designer
+          and generate it before enabling student access.
+        </Typography>
+      )}
+      <FieldRow
+        label="Show during exercise"
+        helper="Student can open the infographic during the exercise."
+      >
+        <Switch
+          size="small"
+          checked={showInfographicToStudent}
+          disabled={studentInfographicAvailable !== true}
+          onChange={(_, checked) => {
+            onLocalLeiaChange(
+              idx,
+              "runnerConfiguration.infographic.showToStudent",
+              checked
+            );
+          }}
+        />
+      </FieldRow>
+      <FieldRow
+        label="Instructor solution"
+        helper="Only visible here in the workbench."
+      >
+        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+          <Button
+            size="small"
+            variant="outlined"
+            color="inherit"
+            disabled={solutionInfographicAvailable !== true}
+            startIcon={<ImageOutlinedIcon sx={{ fontSize: 16 }} />}
+            onClick={() => solutionViewerRef.current?.open()}
+            sx={{ borderColor: "divider", color: "text.primary" }}
+          >
+            View solution
+          </Button>
+          {solutionInfographicAvailable === false && (
+            <Typography variant="caption" sx={{ color: "text.disabled" }}>
+              Generate the solution infographic in Designer first.
+            </Typography>
+          )}
+        </Stack>
+      </FieldRow>
+
       <SectionLabel>Runner</SectionLabel>
+      {requiresTools && (
+        <Box
+          sx={{
+            mb: 2,
+            border: "1px solid",
+            borderColor: "warning.light",
+            bgcolor: "warning.50",
+            borderRadius: 1,
+            px: 1.5,
+            py: 1,
+          }}
+        >
+          <Typography variant="caption" sx={{ color: "warning.dark" }}>
+            This activity uses widgets, so its tool functions require a
+            tool-capable provider. Currently, only OpenAI models are available.
+          </Typography>
+        </Box>
+      )}
       <FieldRow
         label="Model"
         helper="Model used by this LEIA's runner."
@@ -332,13 +645,41 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           <Select
             displayEmpty
             value={currentModelName}
-            onChange={(e) =>
+            onChange={(e) => {
+              const modelName = e.target.value;
               onLocalLeiaChange(
                 idx,
                 "runnerConfiguration.modelName",
-                e.target.value
-              )
-            }
+                modelName
+              );
+              const matchingKeys = getValidApiKeys(
+                modelName,
+                apiKeys,
+                apiKeyProvidersMapped
+              ).filter(
+                (key) =>
+                  !requiresTools || toolCapableProviders.has(key.provider)
+              );
+              const currentKeyStillMatches = matchingKeys.some((key) => key.id === currentApiKeyId);
+              if (!currentKeyStillMatches) {
+                const nextKey = matchingKeys.find((key) => key.isDefault) || matchingKeys[0];
+                onLocalLeiaChange(idx, "runnerConfiguration.apiKeyId", nextKey?.id ?? null);
+              }
+            }}
+            renderValue={(selected) => {
+              if (!selected) return <em>-- Select Model --</em>;
+              const provider = Object.entries(apiKeyProvidersMapped).find(([, models]) =>
+                models.includes(selected as string)
+              )?.[0];
+              return (
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  {provider && providerIcons[provider] && (
+                    <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                  )}
+                  <span>{selected as string}</span>
+                </Stack>
+              );
+            }}
             sx={{
               fontSize: 13,
               ...(isCurrentModelValid && !isModelMissing
@@ -352,85 +693,33 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             <MenuItem value="" sx={{ fontSize: 13 }}>
               <em>-- Select Model --</em>
             </MenuItem>
-            {!isCurrentModelValid && currentModelName !== "" && (
-              <MenuItem value={currentModelName} sx={{ fontSize: 13 }}>
-                {`${currentModelName} (no disponible)`}
-              </MenuItem>
-            )}
-            {validModelsForLeia.map((model) => (
-              <MenuItem key={model} value={model} sx={{ fontSize: 13 }}>
+            {!isCurrentModelValid && currentModelName !== "" && (() => {
+              const provider = Object.entries(apiKeyProvidersMapped).find(([, models]) =>
+                models.includes(currentModelName)
+              )?.[0];
+              return (
+                <MenuItem value={currentModelName} disabled sx={{ fontSize: 13, gap: 1 }}>
+                  {provider && providerIcons[provider] && (
+                    <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                  )}
+                  {`${currentModelName} (no disponible)`}
+                </MenuItem>
+              );
+            })()}
+            {validModelsForLeia.map((model) => {
+              const provider = Object.entries(apiKeyProvidersMapped).find(([, models]) => models.includes(model))?.[0];
+              return (
+              <MenuItem key={model} value={model} sx={{ fontSize: 13, gap: 1 }}>
+                {provider && providerIcons[provider] && (
+                  <Box component="img" src={providerIcons[provider]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                )}
                 {model}
               </MenuItem>
-            ))}
+              );
+            })}
           </Select>
         </FormControl>
-      </FieldRow>
-
-      <FieldRow
-        label="API key"
-        helper="Key whose provider serves the selected model."
-      >
-        <Stack
-          direction="row"
-          alignItems="center"
-          gap={1.5}
-          flexWrap="wrap"
-        >
-          <FormControl size="small" sx={{ minWidth: 220 }}>
-            <Select
-              displayEmpty
-              value={currentApiKeyId ?? ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                const newKeyId = value === "" ? null : value;
-                onLocalLeiaChange(
-                  idx,
-                  "runnerConfiguration.apiKeyId",
-                  newKeyId
-                );
-                // Preselect the key's default model when the current one no
-                // longer fits the new key's provider.
-                const key = apiKeys.find((k) => k.id === newKeyId);
-                const validModels = getValidModels(newKeyId, apiKeys, apiKeyProvidersMapped);
-                if (key?.model && validModels.includes(key.model) && !validModels.includes(currentModelName)) {
-                  onLocalLeiaChange(idx, "runnerConfiguration.modelName", key.model);
-                }
-              }}
-              renderValue={(selected) => {
-                if (!selected) {
-                  return (
-                    <Typography
-                      component="span"
-                      sx={{ fontSize: 13, color: "text.disabled" }}
-                    >
-                      Select Key
-                    </Typography>
-                  );
-                }
-                const key = apiKeys.find((k) => k.id === selected);
-                return key?.description || "Select Key";
-              }}
-              sx={{
-                fontSize: 13,
-                ...(isApiKeyMissing
-                  ? {
-                      color: "error.main",
-                      "& fieldset": { borderColor: "error.main" },
-                    }
-                  : {}),
-              }}
-            >
-              <MenuItem value="" sx={{ fontSize: 13, fontStyle: "italic" }}>
-                -- Clear Selection --
-              </MenuItem>
-              {validApiKeysForLeia.map((key) => (
-                <MenuItem key={key.id} value={key.id} sx={{ fontSize: 13 }}>
-                  {key.description}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
+        <Stack direction="row" alignItems="center" gap={1.5}>
           {showDashboardLink && (
             <MuiLink
               href={currentApiKeyObj?.managementUrl}
@@ -468,6 +757,46 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           </MuiLink>
         </Stack>
       </FieldRow>
+
+      {compatibleApiKeys.length > 1 && (
+        <FieldRow
+          label="API key"
+          helper="API key used by this LEIA's runner."
+        >
+          <FormControl size="small" sx={{ minWidth: 240 }}>
+            <Select
+              value={
+                compatibleApiKeys.some((key) => key.id === currentApiKeyId)
+                  ? currentApiKeyId
+                  : ""
+              }
+              displayEmpty
+              onChange={(e) =>
+                onLocalLeiaChange(
+                  idx,
+                  "runnerConfiguration.apiKeyId",
+                  e.target.value
+                )
+              }
+              sx={{ fontSize: 13 }}
+            >
+              <MenuItem value="" disabled sx={{ fontSize: 13 }}>
+                <em>-- Select API key --</em>
+              </MenuItem>
+              {compatibleApiKeys.map((apiKey) => (
+                <MenuItem
+                  key={apiKey.id}
+                  value={apiKey.id}
+                  sx={{ fontSize: 13 }}
+                >
+                  {apiKey.description || apiKey.provider}
+                  {apiKey.isDefault ? " (Default)" : ""}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </FieldRow>
+      )}
 
       <FieldRow label="Audio mode">
         <FormControl size="small" sx={{ minWidth: 220 }}>
@@ -639,59 +968,76 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                     defaultVoice
                   );
                 }}
+                renderValue={(selected) => (
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    {providerIcons[selected as string] && (
+                      <Box component="img" src={providerIcons[selected as string]} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
+                    )}
+                    <span>{selected === "openai" ? "OpenAI" : "Gemini"}</span>
+                  </Stack>
+                )}
                 sx={{ fontSize: 13 }}
               >
-                <MenuItem value="openai" sx={{ fontSize: 13 }}>
+                <MenuItem value="openai" sx={{ fontSize: 13, gap: 1 }}>
+                  <Box component="img" src={providerIcons.openai} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
                   OpenAI
                 </MenuItem>
-                <MenuItem value="gemini" sx={{ fontSize: 13 }}>
+                <MenuItem value="gemini" sx={{ fontSize: 13, gap: 1 }}>
+                  <Box component="img" src={providerIcons.gemini} alt="" sx={{ width: 20, height: 20, objectFit: "contain" }} />
                   Gemini
                 </MenuItem>
               </Select>
             </FormControl>
           </FieldRow>
-          <FieldRow label="Luke voice">
-            <FormControl size="small" sx={{ minWidth: 220 }}>
-              <Select
-                value={
-                  item.runnerConfiguration.lukeConfig?.voice ||
-                  (item.runnerConfiguration.lukeConfig?.provider === "openai"
-                    ? "alloy"
-                    : "Puck")
-                }
-                onChange={(e) =>
-                  onLocalLeiaChange(
-                    idx,
-                    "runnerConfiguration.lukeConfig.voice",
-                    e.target.value
-                  )
-                }
-                sx={{ fontSize: 13 }}
-              >
-                {item.runnerConfiguration.lukeConfig?.provider === "openai" ? (
-                  [
-                    "alloy",
-                    "ash",
-                    "ballad",
-                    "coral",
-                    "echo",
-                    "sage",
-                    "shimmer",
-                    "verse",
-                  ].map((v) => (
-                    <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
-                      {v}
-                    </MenuItem>
-                  ))
-                ) : (
-                  ["Puck", "Charon", "Kore", "Fenrir", "Aoede"].map((v) => (
-                    <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
-                      {v}
-                    </MenuItem>
-                  ))
-                )}
-              </Select>
-            </FormControl>
+          <FieldRow label="Luke voice"
+                    helper={`LEIA's pronouns are: ${pronouns}`}
+>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <Select
+                  value={selectedLukeVoice}
+                  onChange={(e) =>
+                    onLocalLeiaChange(
+                      idx,
+                      "runnerConfiguration.lukeConfig.voice",
+                      e.target.value
+                    )
+                  }
+                  sx={{ fontSize: 13 }}
+                >
+                  {selectedLukeProvider === "openai" ? (
+                    [
+                      "alloy",
+                      "ash",
+                      "ballad",
+                      "coral",
+                      "echo",
+                      "sage",
+                      "shimmer",
+                      "verse",
+                    ].map((v) => (
+                      <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
+                        {v}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    ["Puck", "Charon", "Kore", "Fenrir", "Aoede"].map((v) => (
+                      <MenuItem key={v} value={v} sx={{ fontSize: 13 }}>
+                        {v}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+              </FormControl>
+                <IconButton
+                  aria-label="preview voice"
+                  onClick={handlePreviewLukeVoice}
+                  size="small"
+                  sx={{ flex: "0 0 auto" }}
+                >
+                  {!audioPreviewPlaying ? <PlayCircleFilledWhiteOutlinedIcon /> : <PauseCircleOutlineOutlinedIcon />}
+                </IconButton>
+            </Stack>
           </FieldRow>
         </>
       )}
@@ -736,6 +1082,14 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         leia={contentOpen ? (item.leia as ParsedLeia) : null}
         onClose={() => setContentOpen(false)}
       />
+      {solutionInfographicAvailable === true && (
+        <InfographicViewer
+          ref={solutionViewerRef}
+          candidateSources={solutionInfographicCandidates}
+          title="Solution infographic"
+          hidden
+        />
+      )}
     </Box>
   );
 };
@@ -745,9 +1099,9 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   localReplication,
   activeLeiaId,
   onLeiaSelect,
-  availableModels,
   apiKeys,
   apiKeyProvidersMapped,
+  providerProviderModuleMap,
   userRole,
   onLocalLeiaChange,
   onLocalLeiaReset,
@@ -779,16 +1133,70 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const effectiveIdx = idx === -1 ? 0 : idx;
   const item = leias[effectiveIdx];
   const serverItem = replication.experiment.leias[effectiveIdx];
-
+  const orchestration = localReplication.experiment.orchestration;
+  const isMultiLeia = orchestration?.mode === "multi";
+  const openingLeia = leias.find(
+    (entry) => entry.id === orchestration?.openingLeiaId,
+  );
+  const problemLeia = leias.find(
+    (entry) => entry.id === orchestration?.problemLeiaId,
+  );
+  const pronouns =
+    item.leia.spec?.persona?.spec?.subjectPronoum &&
+    item.leia.spec?.persona?.spec?.objectPronoum
+      ? `${item.leia.spec.persona.spec.subjectPronoum}/${item.leia.spec.persona.spec.objectPronoum}`
+      : undefined;
   return (
     <Box sx={{ maxWidth: 880 }}>
+      {isMultiLeia && (
+        <Box
+          sx={{
+            mb: 3,
+            p: 2,
+            border: "1px solid",
+            borderColor: "primary.light",
+            borderRadius: 1.5,
+            bgcolor: "primary.50",
+          }}
+        >
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ sm: "center" }}
+            spacing={2}
+          >
+            <Stack direction="row" spacing={1.25} alignItems="flex-start">
+              <AccountTreeOutlinedIcon color="primary" />
+              <Box>
+                <Typography fontWeight={600}>MultiLEIA activity</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Preferred first speaker: {openingLeia?.leia.metadata.name || "the first LEIA"}. Shared problem: {problemLeia?.leia.spec?.problem?.metadata?.name || problemLeia?.leia.metadata.name || "activity problem"}. The orchestrator can route one or more LEIAs, up to {orchestration?.maxInternalTurns || 2} messages, before returning to the participant.
+                </Typography>
+              </Box>
+            </Stack>
+            <Button
+              size="small"
+              variant="contained"
+              disabled={Boolean(startingSessionLeiaId)}
+              startIcon={<ScienceOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() =>
+                onStartTestSession(null, replication.id, effectiveIdx, true)
+              }
+            >
+              {startingSessionLeiaId === "multi"
+                ? "Starting..."
+                : "Test MultiLEIA"}
+            </Button>
+          </Stack>
+        </Box>
+      )}
       <LeiaEditor
         idx={effectiveIdx}
         item={item}
         serverItem={serverItem}
-        availableModels={availableModels}
         apiKeys={apiKeys}
         apiKeyProvidersMapped={apiKeyProvidersMapped}
+        providerProviderModuleMap={providerProviderModuleMap}
         userRole={userRole}
         onLocalLeiaChange={onLocalLeiaChange}
         onLocalLeiaReset={onLocalLeiaReset}
@@ -797,6 +1205,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onToggleEvaluateSolution={onToggleEvaluateSolution}
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
+        pronouns= {pronouns}
         startingSessionLeiaId={startingSessionLeiaId}
         invalidFields={invalidLeiaFields[item.id] ?? []}
       />

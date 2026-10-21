@@ -37,7 +37,7 @@ export const TurnstileWidget = ({ onTokenChange }: TurnstileWidgetProps) => {
     let intervalId: number | undefined;
 
     const renderWidget = () => {
-      if (!containerRef.current || !window.turnstile || widgetId) {
+      if (!containerRef.current || !window.turnstile || widgetId || !turnstileSiteKey) {
         return;
       }
 

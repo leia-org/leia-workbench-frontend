@@ -13,7 +13,10 @@
         "deploy:workers": "npm run build && wrangler deploy --config wrangler.workers.jsonc",
         "preview:workers": "npm run build && wrangler dev --config wrangler.workers.jsonc",
         "deploy:pages": "npm run build && wrangler pages deploy",
-        "preview:pages": "npm run build && wrangler pages dev"
+        "preview:pages": "npm run build && wrangler pages dev",
+        "build:pre": "tsc -b && vite build --mode pre",
+        "deploy:preview": "node scripts/cloudflare-preview.mjs",
+        "test:preview": "node --test tests/cloudflare-preview.test.mjs"
     },
     "dependencies": {
         "@emotion/react": "^11.14.0",
@@ -41,6 +44,7 @@
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "react-markdown": "^10.0.0",
+        "react-rnd": "^10.5.3",
         "react-router-dom": "^7.1.5",
         "react-switch": "^7.1.0",
         "react-syntax-highlighter": "^15.6.1",
@@ -49,6 +53,7 @@
         "reactflow": "^11.11.4",
         "socket.io-client": "^4.8.1",
         "tailwind-merge": "^3.0.2",
+        "viewerjs": "^1.11.7",
         "zustand": "^5.0.3"
     },
     "devDependencies": {
