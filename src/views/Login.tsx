@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import { adminTheme } from "../components/admin/theme";
+import { TestAccountLogin } from "../components/TestAccountLogin";
 import "@fontsource-variable/manrope/index.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
 
@@ -100,6 +101,7 @@ export const Login = () => {
     <ThemeProvider theme={adminTheme}>
       <CssBaseline />
       <SplitLoginLayout title="LEIA Workbench">
+        <Box sx={{ width: "100%", maxWidth: 420 }}>
         <AuthForm
           onSubmit={handleSubmit}
           title="Start your session"
@@ -129,6 +131,8 @@ export const Login = () => {
           loading={loading}
           submitLabel="Start session"
         />
+        <TestAccountLogin returnPath="/administration" />
+        </Box>
       </SplitLoginLayout>
     </ThemeProvider>
   );

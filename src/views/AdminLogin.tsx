@@ -23,6 +23,7 @@ import { SplitLoginLayout } from "./Login";
 import { useAuth } from "../context";
 import type { DecodedToken } from "../context";
 import { TurnstileWidget } from "../components/TurnstileWidget";
+import { TestAccountLogin } from "../components/TestAccountLogin";
 import { isTurnstileEnabled } from "../config/turnstile";
 import "@fontsource-variable/manrope/index.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
@@ -269,6 +270,7 @@ export const AdminLogin: React.FC = () => {
                 "Sign in"
               )}
             </Button>
+            <TestAccountLogin returnPath="/administration" />
           </Box>
         </Box>
       </SplitLoginLayout>
