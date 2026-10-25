@@ -30,6 +30,7 @@ import FilterButton, {
   type SortOption,
   type SortState,
 } from "../components/admin/FilterButton";
+import { useDebounce } from "../hooks/useDebounce";
 
 interface Replication {
   id: string;
@@ -346,6 +347,7 @@ export const Administration: React.FC = () => {
   const isAdmin = user?.role === "admin";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 400);
   const [filters, setFilters] = useState<FilterState>({});
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -413,7 +415,7 @@ export const Administration: React.FC = () => {
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
             params: {
-              text: search.trim() || undefined,
+              text: debouncedSearch.trim() || undefined,
             },
             headers: {
               Authorization: `Bearer ${tokenRef.current}`,
@@ -442,7 +444,7 @@ export const Administration: React.FC = () => {
     };
 
     fetchReplications();
-  }, [navigate, tokenRef, isLoading, search]);
+  }, [navigate, tokenRef, isLoading, debouncedSearch]);
 
     const loadMoreReplications = useCallback(async () => {
     setLoadingMore(true);
@@ -455,7 +457,7 @@ export const Administration: React.FC = () => {
           },
           params: {
             lastReplicationId: nextCursorRef.current || undefined,
-            text: search.trim() || undefined,
+            text: debouncedSearch.trim() || undefined,
           },
         }
       );
@@ -472,12 +474,14 @@ export const Administration: React.FC = () => {
       setLoadingMore(false);
       isFetchingRef.current = false;
     }
-    }, [navigate, search]);
+    }, [navigate, debouncedSearch]);
 
   const ensureListCanScroll = useCallback(() => {
     const container = listContainerRef.current;
     if (
       !container ||
+      search.trim() !== debouncedSearch.trim() ||
+      debouncedSearch.trim() ||
       !nextCursorRef.current ||
       isFetchingRef.current ||
       container.scrollHeight > container.clientHeight
@@ -487,7 +491,7 @@ export const Administration: React.FC = () => {
 
     isFetchingRef.current = true;
     void loadMoreReplications();
-  }, [loadMoreReplications]);
+  }, [debouncedSearch, loadMoreReplications, search]);
 
   useEffect(() => {
     const container = listContainerRef.current;
