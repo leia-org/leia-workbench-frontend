@@ -409,9 +409,12 @@ export const Administration: React.FC = () => {
     const fetchReplications = async () => {
       try {
         if (isLoading) return;
-        const response = await axios.get<{ replications: Replication[], nextCursor: string }>(
+        const response = await axios.get<{ replications: Replication[], nextCursor: string | null }>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
+            params: {
+              text: search.trim() || undefined,
+            },
             headers: {
               Authorization: `Bearer ${tokenRef.current}`,
             },
@@ -439,7 +442,7 @@ export const Administration: React.FC = () => {
     };
 
     fetchReplications();
-  }, [navigate, tokenRef, isLoading]);
+  }, [navigate, tokenRef, isLoading, search]);
 
     const loadMoreReplications = useCallback(async () => {
     setLoadingMore(true);
@@ -452,6 +455,7 @@ export const Administration: React.FC = () => {
           },
           params: {
             lastReplicationId: nextCursorRef.current || undefined,
+            text: search.trim() || undefined,
           },
         }
       );
@@ -468,7 +472,7 @@ export const Administration: React.FC = () => {
       setLoadingMore(false);
       isFetchingRef.current = false;
     }
-    }, [navigate]);
+    }, [navigate, search]);
 
   const ensureListCanScroll = useCallback(() => {
     const container = listContainerRef.current;
