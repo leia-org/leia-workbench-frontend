@@ -78,7 +78,8 @@ export const Login = () => {
         const { sessionId } = data;
         setSuccess(true);
         setMessage("Session started successfully!");
-        localStorage.setItem("sessionId", sessionId);
+        sessionStorage.setItem("sessionId", sessionId);
+        localStorage.setItem("lastSessionId", sessionId);
         setTimeout(() => navigate(`/chat/${sessionId}`), 1000);
       } else {
         setSuccess(false);

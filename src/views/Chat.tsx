@@ -607,20 +607,34 @@ export const Chat = () => {
         setTooltipMessage(
           response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
-        localStorage.setItem("sessionId", response.data.session.id);
-        localStorage.setItem(
+        sessionStorage.setItem("sessionId", response.data.session.id);
+        localStorage.setItem("lastSessionId", response.data.session.id);
+        sessionStorage.setItem(
           "exercise",
           JSON.stringify(response.data.leia.leia.spec.problem.spec),
         );
         localStorage.setItem(
+          "lastexercise",
+          JSON.stringify(response.data.leia.leia.spec.problem.spec),
+        );
+        sessionStorage.setItem(
           "configuration",
           JSON.stringify(response.data.leia.configuration),
         );
         localStorage.setItem(
+          "lastconfiguration",
+          JSON.stringify(response.data.leia.configuration),
+        );
+        sessionStorage.setItem(
           "replication",
           JSON.stringify(response.data.replication),
         );
-        localStorage.setItem("session", JSON.stringify(response.data.session));
+        localStorage.setItem(
+          "lastreplication",
+          JSON.stringify(response.data.replication),
+        );
+        sessionStorage.setItem("session", JSON.stringify(response.data.session));
+        localStorage.setItem("lastsession", JSON.stringify(response.data.session));
         console.log("session", response.data.session);
 
         if (response.data.leia?.audioMode === "realtime") {
@@ -1095,7 +1109,8 @@ export const Chat = () => {
         { accepted },
       );
       setSession(response.data.session);
-      localStorage.setItem("session", JSON.stringify(response.data.session));
+      sessionStorage.setItem("session", JSON.stringify(response.data.session));
+      localStorage.setItem("lastsession", JSON.stringify(response.data.session));
     } catch (error: unknown) {
       setLoadError(getRequestErrorMessage(error));
     } finally {
