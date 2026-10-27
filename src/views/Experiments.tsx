@@ -25,6 +25,7 @@ import FilterButton, {
   type SortOption,
   type SortState,
 } from "../components/admin/FilterButton";
+import { useDebounce } from "../hooks/useDebounce";
 
 interface ExperimentLeia {
   configuration: { mode: string };
@@ -273,6 +274,7 @@ export const Experiments: React.FC = () => {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 400);
   const [filters, setFilters] = useState<FilterState>({});
   const [sort, setSort] = useState<SortState>({ by: "updated", dir: "desc" });
   const tokenRef = useRef(token);
@@ -323,6 +325,12 @@ export const Experiments: React.FC = () => {
   }, [experiments]);
 
   useEffect(() => {
+    isFetchingRef.current = true;
+    nextCursorRef.current = null;
+    setNextCursor(null);
+    setExperiments([]);
+    setLoading(true);
+
     const fetchExperiments = async () => {
       try {
         const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
@@ -331,10 +339,14 @@ export const Experiments: React.FC = () => {
             headers: {
               Authorization: `Bearer ${tokenRef.current}`,
             },
+            params: {
+              text: debouncedSearch.trim() || undefined,
+            },
           }
         );
         setExperiments(response.data.experiments);
         setNextCursor(response.data.nextCursor);
+        nextCursorRef.current = response.data.nextCursor;
         if (response.data.experiments.length > 0) {
           setSelectedId(response.data.experiments[0].id);
         }
@@ -345,12 +357,13 @@ export const Experiments: React.FC = () => {
           console.error("Failed to load experiments:", error);
         }
       } finally {
-        setLoading(false);
+          setLoading(false);
+          isFetchingRef.current = false;
       }
     };
 
     fetchExperiments();
-  }, [navigate, tokenRef]);
+  }, [navigate, debouncedSearch, tokenRef]);
 
   const loadMoreExperiments = useCallback(async () => {
     setLoadingMore(true);
@@ -363,6 +376,7 @@ export const Experiments: React.FC = () => {
           },
           params: {
             lastActivityId: nextCursorRef.current || undefined,
+            text: debouncedSearch.trim() || undefined,
           },
         }
       );
@@ -377,9 +391,9 @@ export const Experiments: React.FC = () => {
       }
     } finally {
       setLoadingMore(false);
-      isFetchingRef.current = false;
+        isFetchingRef.current = false;
     }
-    }, [navigate]);
+    }, [navigate, debouncedSearch]);
 
       const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
       if (!nextCursorRef.current || isFetchingRef.current) return;
@@ -395,6 +409,8 @@ export const Experiments: React.FC = () => {
     const container = listContainerRef.current;
     if (
       !container ||
+      search.trim() !== debouncedSearch.trim() ||
+      debouncedSearch.trim() ||
       !nextCursorRef.current ||
       isFetchingRef.current ||
       container.scrollHeight > container.clientHeight
@@ -404,7 +420,7 @@ export const Experiments: React.FC = () => {
 
     isFetchingRef.current = true;
     void loadMoreExperiments();
-  }, [loadMoreExperiments]);
+  }, [debouncedSearch, loadMoreExperiments, search]);
 
   useEffect(() => {
     const container = listContainerRef.current;
