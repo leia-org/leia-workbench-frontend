@@ -49,6 +49,21 @@ interface Replication {
   };
 }
 
+type ReplicationsResponse = Replication[] | {
+  replications: Replication[];
+  nextCursor?: string | null;
+};
+
+const parseReplicationsResponse = (data: ReplicationsResponse) => {
+  if (Array.isArray(data)) {
+    return { replications: data, nextCursor: null };
+  }
+  if (!data || !Array.isArray(data.replications)) {
+    throw new Error("Invalid replications response: expected a replication list");
+  }
+  return { replications: data.replications, nextCursor: data.nextCursor ?? null };
+};
+
 const getReplicationUserLabel = (replication: Replication) => {
   const owner =
     replication.experiment.user;
@@ -411,7 +426,7 @@ export const Administration: React.FC = () => {
     const fetchReplications = async () => {
       try {
         if (isLoading) return;
-        const response = await axios.get<{ replications: Replication[], nextCursor: string | null }>(
+        const response = await axios.get<ReplicationsResponse>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
             params: {
@@ -422,15 +437,17 @@ export const Administration: React.FC = () => {
             },
           }
         );
-        setReplications(response.data.replications);
-        setNextCursor(response.data.nextCursor);
+        const page = parseReplicationsResponse(response.data);
+        setReplications(page.replications);
+        setNextCursor(page.nextCursor);
+        nextCursorRef.current = page.nextCursor;
         // Seed the name cache so deep-linked breadcrumbs render the
         // replication name instantly the next time the user opens one.
-        for (const r of response.data.replications) {
+        for (const r of page.replications) {
           if (r.id && r.name) writeReplicationName(r.id, r.name);
         }
-        if (response.data.replications.length > 0) {
-          setSelectedId(response.data.replications[0].id);
+        if (page.replications.length > 0) {
+          setSelectedId(page.replications[0].id);
         }
       } catch (error: unknown) {
         if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -449,7 +466,7 @@ export const Administration: React.FC = () => {
     const loadMoreReplications = useCallback(async () => {
     setLoadingMore(true);
     try {
-      const response = await axios.get<{ replications: Replication[], nextCursor: string | null }>(
+      const response = await axios.get<ReplicationsResponse>(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
         {
           headers: {
@@ -461,9 +478,10 @@ export const Administration: React.FC = () => {
           },
         }
       );
-      setReplications((prev) => [...prev, ...response.data.replications]);
-      setNextCursor(response.data.nextCursor);
-      nextCursorRef.current = response.data.nextCursor;
+      const page = parseReplicationsResponse(response.data);
+      setReplications((prev) => [...prev, ...page.replications]);
+      setNextCursor(page.nextCursor);
+      nextCursorRef.current = page.nextCursor;
     } catch (error: unknown) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         setTimeout(() => navigate("/login"), 2000);
