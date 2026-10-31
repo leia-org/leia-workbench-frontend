@@ -496,9 +496,7 @@ const SessionRow: React.FC<{
             <Box
                 sx={{
                 px: 0,
-                py: 0,
-                
-                          
+                py: 0,          
                 }}
             >🚩{item.supervisorFlags.length}</Box>
 
