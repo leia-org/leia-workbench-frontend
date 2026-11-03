@@ -416,7 +416,6 @@ export const Edit = () => {
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
-  const previousSessionIdRef = useRef<string | null>(sessionId);
   // Load initial data from sessionStorage or localStorage
   useEffect(() => {
     const savedConfiguration = sessionStorage.getItem("configuration") ? sessionStorage.getItem("configuration") : localStorage.getItem("lastconfiguration");
@@ -455,25 +454,7 @@ export const Edit = () => {
   }, []);
 
   useEffect(() => {
-    if (!sessionId) {
-      setCode(getDefaultCode());
-      return;
-    }
-
-    if (initialSolutions[sessionId] !== undefined) {
-      setCode(initialSolutions[sessionId]);
-      return;
-    }
-
-    setCode(getDefaultCode());
-  }, [sessionId, initialSolutions]);
-
-  useEffect(() => {
     if (!sessionId) return;
-    if (previousSessionIdRef.current !== sessionId) {
-      previousSessionIdRef.current = sessionId;
-      return;
-    }
 
     setInitialSolutions((previous) => ({
       ...previous,
