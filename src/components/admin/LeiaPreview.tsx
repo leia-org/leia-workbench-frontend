@@ -475,7 +475,7 @@ const BehaviourSection: React.FC<{ behaviour: Record<string, unknown> }> = ({
           </Stack>
         </DefRow>
       )}
-      {tooltip && <DefRow label="Tooltip">{tooltip}</DefRow>}
+      {tooltip && <DefRow label="First Message Suggestion">{tooltip}</DefRow>}
       {description && (
         <>
           <Divider sx={{ my: 1.5 }} />
