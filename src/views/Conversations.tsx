@@ -491,6 +491,19 @@ const SessionRow: React.FC<{
           }}
         >
           {item.user?.email || "Anonymous"}
+
+          {item.supervisorFlags && (
+            <Box
+                sx={{
+                px: 0,
+                py: 0,          
+                }}
+            >🚩{item.supervisorFlags.length}</Box>
+
+          )}
+
+          
+
         </Typography>
       </Box>
       <Typography
