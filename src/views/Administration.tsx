@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { useAuth } from "../context/useAuth";
@@ -30,6 +30,7 @@ import FilterButton, {
   type SortOption,
   type SortState,
 } from "../components/admin/FilterButton";
+import { useDebounce } from "../hooks/useDebounce";
 
 interface Replication {
   id: string;
@@ -47,6 +48,21 @@ interface Replication {
     };
   };
 }
+
+type ReplicationsResponse = Replication[] | {
+  replications: Replication[];
+  nextCursor?: string | null;
+};
+
+const parseReplicationsResponse = (data: ReplicationsResponse) => {
+  if (Array.isArray(data)) {
+    return { replications: data, nextCursor: null };
+  }
+  if (!data || !Array.isArray(data.replications)) {
+    throw new Error("Invalid replications response: expected a replication list");
+  }
+  return { replications: data.replications, nextCursor: data.nextCursor ?? null };
+};
 
 const getReplicationUserLabel = (replication: Replication) => {
   const owner =
@@ -346,8 +362,17 @@ export const Administration: React.FC = () => {
   const isAdmin = user?.role === "admin";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 400);
   const [filters, setFilters] = useState<FilterState>({});
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const nextCursorRef = useRef(nextCursor);
+  nextCursorRef.current = nextCursor;
+  const isFetchingRef = useRef(false);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
 
   const handleCopyCode = (rep: Replication) => {
     navigator.clipboard.writeText(rep.code);
@@ -401,22 +426,28 @@ export const Administration: React.FC = () => {
     const fetchReplications = async () => {
       try {
         if (isLoading) return;
-        const response = await axios.get<Replication[]>(
+        const response = await axios.get<ReplicationsResponse>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
           {
+            params: {
+              text: debouncedSearch.trim() || undefined,
+            },
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${tokenRef.current}`,
             },
           }
         );
-        setReplications(response.data);
+        const page = parseReplicationsResponse(response.data);
+        setReplications(page.replications);
+        setNextCursor(page.nextCursor);
+        nextCursorRef.current = page.nextCursor;
         // Seed the name cache so deep-linked breadcrumbs render the
         // replication name instantly the next time the user opens one.
-        for (const r of response.data) {
+        for (const r of page.replications) {
           if (r.id && r.name) writeReplicationName(r.id, r.name);
         }
-        if (response.data.length > 0) {
-          setSelectedId(response.data[0].id);
+        if (page.replications.length > 0) {
+          setSelectedId(page.replications[0].id);
         }
       } catch (error: unknown) {
         if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -430,7 +461,77 @@ export const Administration: React.FC = () => {
     };
 
     fetchReplications();
-  }, [navigate, token, isLoading]);
+  }, [navigate, tokenRef, isLoading, debouncedSearch]);
+
+    const loadMoreReplications = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const response = await axios.get<ReplicationsResponse>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokenRef.current}`,
+          },
+          params: {
+            lastReplicationId: nextCursorRef.current || undefined,
+            text: debouncedSearch.trim() || undefined,
+          },
+        }
+      );
+      const page = parseReplicationsResponse(response.data);
+      setReplications((prev) => [...prev, ...page.replications]);
+      setNextCursor(page.nextCursor);
+      nextCursorRef.current = page.nextCursor;
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setTimeout(() => navigate("/login"), 2000);
+      } else {
+        console.error("Failed to load more replications:", error);
+      }
+    } finally {
+      setLoadingMore(false);
+      isFetchingRef.current = false;
+    }
+    }, [navigate, debouncedSearch]);
+
+  const ensureListCanScroll = useCallback(() => {
+    const container = listContainerRef.current;
+    if (
+      !container ||
+      search.trim() !== debouncedSearch.trim() ||
+      debouncedSearch.trim() ||
+      !nextCursorRef.current ||
+      isFetchingRef.current ||
+      container.scrollHeight > container.clientHeight
+    ) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    void loadMoreReplications();
+  }, [debouncedSearch, loadMoreReplications, search]);
+
+  useEffect(() => {
+    const container = listContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      ensureListCanScroll();
+    });
+    resizeObserver.observe(container);
+    ensureListCanScroll();
+
+    return () => resizeObserver.disconnect();
+  }, [ensureListCanScroll, replications.length, loading]);
+
+  const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (!nextCursorRef.current || isFetchingRef.current) return;  
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if ((scrollTop + clientHeight) / scrollHeight >= 0.8) {
+      isFetchingRef.current = true;
+      void loadMoreReplications();
+      }
+    }, [loadMoreReplications]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -544,6 +645,11 @@ export const Administration: React.FC = () => {
         searchPlaceholder="Search replications..."
         searchValue={search}
         onSearchChange={setSearch}
+        onListScroll={handleListScroll}
+        onListContainerChange={(element) => {
+          listContainerRef.current = element;
+          if (element) ensureListCanScroll();
+        }}
         listHeaderActions={
           <FilterButton
             groups={filterGroups}
@@ -566,7 +672,9 @@ export const Administration: React.FC = () => {
             ? Array.from({ length: 8 }).map((_, i) => (
                 <ReplicationRowSkeleton key={i} />
               ))
-            : filtered.map((rep) => (
+            : (
+                <>
+                {filtered.map((rep) => (
                 <ReplicationRow
                   key={rep.id}
                   item={rep}
@@ -576,8 +684,12 @@ export const Administration: React.FC = () => {
                   copied={copiedCodeId === rep.id}
                   showUser={isAdmin}
                 />
-              ))
+              ))}
+              {loadingMore && <ReplicationRowSkeleton />}
+              </>
+            )
         }
+        
         detail={
           loading ? (
             <ReplicationDetailSkeleton />

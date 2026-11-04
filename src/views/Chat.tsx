@@ -211,7 +211,14 @@ interface SessionDataUsage {
   automatedRemovalApplied: boolean;
 }
 
+interface ConversationDynamicsState {
+  canFinish: boolean;
+  leiaSpeaksFirst?: { enabled: boolean; completed: boolean };
+  stoppingCondition: { enabled: boolean; satisfied: boolean };
+}
+
 interface Session {
+  conversationDynamics?: ConversationDynamicsState;
   id?: string;
   isTest: boolean;
   startedAt: string;
@@ -412,6 +419,35 @@ export const Chat = () => {
     !session?.finishedAt &&
     !session?.isTest;
 
+  const openingPending = session?.conversationDynamics?.leiaSpeaksFirst?.enabled === true &&
+    session.conversationDynamics.leiaSpeaksFirst.completed !== true && !messages.some((message) => message.isLeia);
+  const conversationClosed = session?.conversationDynamics?.stoppingCondition.enabled === true &&
+    session.conversationDynamics.stoppingCondition.satisfied === true;
+  // Luke starts its greeting after the first microphone frame confirms that
+  // client audio is ready. Muting while openingPending would prevent that
+  // frame forever, so openingPending must not mute Luke.
+  const lukeForceMute = showInstructions || dataUsageConsentPending || conversationClosed;
+  const canFinishConversation = session?.conversationDynamics?.canFinish !== false;
+  useEffect(() => {
+    if (!sessionId || !session?.conversationDynamics || session.finishedAt ||
+        (!openingPending && session.conversationDynamics.canFinish)) return;
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const { data } = await axios.get<ConversationDynamicsState>(
+          `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/conversation-dynamics`);
+        if (!disposed && openingPending && data.leiaSpeaksFirst?.completed) {
+          const snapshot = await axios.get(`${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`);
+          if (!disposed && Array.isArray(snapshot.data.messages)) setMessages(snapshot.data.messages);
+        }
+        if (!disposed) setSession((previous) => previous ? { ...previous, conversationDynamics: data } : previous);
+      } catch (error) { console.error("Failed to refresh conversation dynamics:", error); }
+    };
+    const interval = window.setInterval(refresh, 3000);
+    return () => { disposed = true; window.clearInterval(interval); };
+  }, [sessionId, session?.conversationDynamics?.stoppingCondition.enabled,
+      session?.conversationDynamics?.canFinish, session?.finishedAt, openingPending]);
+
   const handleTranscriptComplete = useCallback(
     (
       transcript: string,
@@ -450,7 +486,7 @@ export const Chat = () => {
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
     enabled: audioMode === "audio" && !dataUsageConsentPending,
-    forceMute: showInstructions || dataUsageConsentPending,
+    forceMute: showInstructions || dataUsageConsentPending || conversationClosed,
     onTranscriptComplete: handleTranscriptComplete,
     onError: handleAudioError,
   });
@@ -488,7 +524,7 @@ export const Chat = () => {
 
   // Función para reenviar mensaje fallido
   const retryFailedMessage = async () => {
-    if (!failedMessage || retryingMessage) return;
+    if (!failedMessage || retryingMessage || conversationClosed) return;
 
     setRetryingMessage(true);
 
@@ -927,6 +963,9 @@ export const Chat = () => {
         captureNudge(response);
       }
 
+      if (response.data?.conversationDynamics) {
+        setSession((previous) => previous ? { ...previous, conversationDynamics: response.data.conversationDynamics } : previous);
+      }
       if (Array.isArray(response.data?.messages)) {
         if (response.data?.state) {
           setMultiLeia((previous) =>
@@ -957,7 +996,7 @@ export const Chat = () => {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (dataUsageConsentPending) return;
+    if (dataUsageConsentPending || openingPending || conversationClosed) return;
     if (configuration?.mode === "transcription") return;
     if (sendingMessage || retryingMessage) return;
 
@@ -1006,6 +1045,7 @@ export const Chat = () => {
   };
 
   const handleFinishConversation = async () => {
+    if (!canFinishConversation) return;
     if (dataUsageConsentPending) return;
     if (
       !messages.length &&
@@ -1039,7 +1079,7 @@ export const Chat = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
-    if (dataUsageConsentPending) return;
+    if (dataUsageConsentPending || !canFinishConversation) return;
     setConcluding(true);
     try {
       const response = await axios.post(
@@ -1054,7 +1094,7 @@ export const Chat = () => {
     } finally {
       setConcluding(false);
     }
-  }, [sessionId, dataUsageConsentPending]);
+  }, [sessionId, dataUsageConsentPending, canFinishConversation]);
 
   const handleDataUsageConsentDecision = async (accepted: boolean) => {
     if (dataUsageConsentSubmitting) return;
@@ -1316,7 +1356,9 @@ export const Chat = () => {
           </button>
           <button
             onClick={handleFinishConversation}
+            title={!canFinishConversation ? "LEIA will decide when the conversation ends" : undefined}
             disabled={
+              !canFinishConversation ||
               concluding ||
               dataUsageConsentPending ||
               (!messages.length &&
@@ -1399,7 +1441,7 @@ export const Chat = () => {
                   leiaName={leiaName || undefined}
                   avatarSrc={personaAvatar || undefined}
                   avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
-                  forceMute={showInstructions || dataUsageConsentPending}
+                  forceMute={lukeForceMute}
                   showTranscription={!hideAudioTranscription}
                   mode="inline"
                   onTranscriptComplete={handleTranscriptComplete}
@@ -1418,7 +1460,7 @@ export const Chat = () => {
                         leiaName={leiaName || undefined}
                         avatarSrc={personaAvatar || undefined}
                         avatarFallbackSrc={personaAvatarFallbackSrc || undefined}
-                        forceMute={showInstructions || dataUsageConsentPending}
+                        forceMute={lukeForceMute}
                         showTranscription={!hideAudioTranscription}
                         mode="inline"
                         tools={
@@ -1601,7 +1643,7 @@ export const Chat = () => {
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <button
                           onClick={retryFailedMessage}
-                          disabled={retryingMessage}
+                          disabled={retryingMessage || conversationClosed}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           {retryingMessage ? (
@@ -1825,11 +1867,13 @@ export const Chat = () => {
             >
               <textarea
                 ref={inputRef}
-                value={newMessageText}
+                value={conversationClosed ? "" : newMessageText}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  configuration?.mode === "transcription"
+                  conversationClosed
+                    ? "The conversation has ended"
+                    : configuration?.mode === "transcription"
                     ? "Disabled in transcription exercise"
                     : audioMode === "audio"
                       ? "Audio mode enabled - Use the audio controls to speak"
@@ -1838,6 +1882,8 @@ export const Chat = () => {
                 className="flex-1 px-3 py-2 bg-transparent border-none focus:outline-none text-[15px] min-w-0 resize-none overflow-y-auto"
                 style={{ minHeight: "40px", maxHeight: "150px" }}
                 disabled={
+                  conversationClosed ||
+                  openingPending ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio"
@@ -1847,6 +1893,8 @@ export const Chat = () => {
               <button
                 type="submit"
                 disabled={
+                  conversationClosed ||
+                  openingPending ||
                   dataUsageConsentPending ||
                   configuration?.mode === "transcription" ||
                   audioMode === "audio" ||
