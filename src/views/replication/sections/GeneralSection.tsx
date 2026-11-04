@@ -343,7 +343,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = (props) => {
                 setLanguageOpen(true);
               }}
             >
-              Rename
+              Edit
             </Button>
           )}
         </Stack>

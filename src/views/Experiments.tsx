@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
@@ -25,6 +25,7 @@ import FilterButton, {
   type SortOption,
   type SortState,
 } from "../components/admin/FilterButton";
+import { useDebounce } from "../hooks/useDebounce";
 
 interface ExperimentLeia {
   configuration: { mode: string };
@@ -269,10 +270,19 @@ export const Experiments: React.FC = () => {
   const isAdmin = user?.role === "admin";
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 400);
   const [filters, setFilters] = useState<FilterState>({});
   const [sort, setSort] = useState<SortState>({ by: "updated", dir: "desc" });
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const nextCursorRef = useRef(nextCursor);
+  nextCursorRef.current = nextCursor;
+  const isFetchingRef = useRef(false);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
 
   const sortOptions: SortOption[] = useMemo(
     () => [
@@ -315,19 +325,30 @@ export const Experiments: React.FC = () => {
   }, [experiments]);
 
   useEffect(() => {
+    isFetchingRef.current = true;
+    nextCursorRef.current = null;
+    setNextCursor(null);
+    setExperiments([]);
+    setLoading(true);
+
     const fetchExperiments = async () => {
       try {
-        const response = await axios.get<Experiment[]>(
+        const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${tokenRef.current}`,
+            },
+            params: {
+              text: debouncedSearch.trim() || undefined,
             },
           }
         );
-        setExperiments(response.data);
-        if (response.data.length > 0) {
-          setSelectedId(response.data[0].id);
+        setExperiments(response.data.experiments);
+        setNextCursor(response.data.nextCursor);
+        nextCursorRef.current = response.data.nextCursor;
+        if (response.data.experiments.length > 0) {
+          setSelectedId(response.data.experiments[0].id);
         }
       } catch (error: unknown) {
         if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -336,12 +357,83 @@ export const Experiments: React.FC = () => {
           console.error("Failed to load experiments:", error);
         }
       } finally {
-        setLoading(false);
+          setLoading(false);
+          isFetchingRef.current = false;
       }
     };
 
     fetchExperiments();
-  }, [navigate, token]);
+  }, [navigate, debouncedSearch, tokenRef]);
+
+  const loadMoreExperiments = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/manager/experiments`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokenRef.current}`,
+          },
+          params: {
+            lastActivityId: nextCursorRef.current || undefined,
+            text: debouncedSearch.trim() || undefined,
+          },
+        }
+      );
+      setExperiments((prev) => [...prev, ...response.data.experiments]);
+      setNextCursor(response.data.nextCursor);
+      nextCursorRef.current = response.data.nextCursor;
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setTimeout(() => navigate("/login"), 2000);
+      } else {
+        console.error("Failed to load more experiments:", error);
+      }
+    } finally {
+      setLoadingMore(false);
+        isFetchingRef.current = false;
+    }
+    }, [navigate, debouncedSearch]);
+
+      const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+      if (!nextCursorRef.current || isFetchingRef.current) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      if ((scrollTop + clientHeight) / scrollHeight >= 0.8) {
+        isFetchingRef.current = true;
+        void loadMoreExperiments();
+      }
+    }, [loadMoreExperiments]);
+
+  const ensureListCanScroll = useCallback(() => {
+    const container = listContainerRef.current;
+    if (
+      !container ||
+      search.trim() !== debouncedSearch.trim() ||
+      debouncedSearch.trim() ||
+      !nextCursorRef.current ||
+      isFetchingRef.current ||
+      container.scrollHeight > container.clientHeight
+    ) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    void loadMoreExperiments();
+  }, [debouncedSearch, loadMoreExperiments, search]);
+
+  useEffect(() => {
+    const container = listContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      ensureListCanScroll();
+    });
+    resizeObserver.observe(container);
+    ensureListCanScroll();
+
+    return () => resizeObserver.disconnect();
+  }, [ensureListCanScroll, experiments.length, loading]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -406,6 +498,11 @@ export const Experiments: React.FC = () => {
         searchPlaceholder="Search experiments..."
         searchValue={search}
         onSearchChange={setSearch}
+        onListScroll={handleListScroll}
+        onListContainerChange={(element) => {
+          listContainerRef.current = element;
+          if (element) ensureListCanScroll();
+        }}
         listHeaderActions={
           <FilterButton
             groups={filterGroups}
@@ -428,15 +525,20 @@ export const Experiments: React.FC = () => {
             ? Array.from({ length: 8 }).map((_, i) => (
                 <ExperimentRowSkeleton key={i} />
               ))
-            : filtered.map((exp) => (
-                <ExperimentRow
-                  key={exp.id}
-                  item={exp}
-                  selected={exp.id === selectedId}
-                  onClick={() => setSelectedId(exp.id)}
-                  showUser={isAdmin}
-                />
-              ))
+            : (
+                <>
+                  {filtered.map((exp) => (
+                    <ExperimentRow
+                      key={exp.id}
+                      item={exp}
+                      selected={exp.id === selectedId}
+                      onClick={() => setSelectedId(exp.id)}
+                      showUser={isAdmin}
+                    />
+                  ))}
+                  {loadingMore && <ExperimentRowSkeleton />}
+                </>
+              )
         }
         detail={
           loading ? (
