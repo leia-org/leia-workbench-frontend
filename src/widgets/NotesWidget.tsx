@@ -7,11 +7,12 @@ interface NoteEntry {
 }
 
 const Notes = () => {
-  const [sessionId] = useState(() => localStorage.getItem("sessionId"));
+  const [sessionId] = useState(() => sessionStorage.getItem("sessionId"));
+  
 
   const [text, setText] = useState(() => {
     if (!sessionId) return "";
-    const raw = localStorage.getItem("notes");
+    const raw = sessionStorage.getItem("notes");
     if (!raw) return "";
     try {
       const parsed = JSON.parse(raw);
@@ -23,7 +24,7 @@ const Notes = () => {
   });
 
   function getAllNotes(): NoteEntry[] {
-    const raw = localStorage.getItem("notes");
+    const raw = sessionStorage.getItem("notes");
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw);
@@ -50,7 +51,7 @@ const Notes = () => {
         });
       }
 
-      localStorage.setItem("notes", JSON.stringify(notes));
+      sessionStorage.setItem("notes", JSON.stringify(notes));
     }, 4000);
 
     return () => {

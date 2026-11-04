@@ -27,7 +27,7 @@ export const DiagramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const concludeProblem = async (code: string) => {
     setIsLoading(true);
     try {
-      const sessionId = localStorage.getItem('sessionId');
+      const sessionId = sessionStorage.getItem('sessionId') ? sessionStorage.getItem('sessionId') : localStorage.getItem('lastSessionId');
       const response = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
         {
