@@ -16,6 +16,8 @@ export interface VoiceModeRenderArgs {
 
 interface VoiceModeWithWidgetsProps {
     widgets: WidgetDefinition[];
+    /** See WidgetsContextValue.sessionId — threaded straight through. */
+    sessionId?: string | null;
     children: (args: VoiceModeRenderArgs) => ReactNode;
 }
 
@@ -48,9 +50,9 @@ function InnerBridge({ children }: { children: (args: VoiceModeRenderArgs) => Re
 //       />
 //     )}
 //   </VoiceModeWithWidgets>
-export function VoiceModeWithWidgets({ widgets, children }: VoiceModeWithWidgetsProps) {
+export function VoiceModeWithWidgets({ widgets, sessionId, children }: VoiceModeWithWidgetsProps) {
     return (
-        <WidgetsProvider widgets={widgets}>
+        <WidgetsProvider widgets={widgets} sessionId={sessionId}>
             <InnerBridge>{children}</InnerBridge>
         </WidgetsProvider>
     );
