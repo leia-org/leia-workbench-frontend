@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "@mui/material";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
-import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
+import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
 import AddIcon from "@mui/icons-material/Add";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import { useAuth } from "../context";
@@ -58,13 +58,13 @@ const ActivityOwnershipIcon: React.FC<{ item: Experiment }> = ({ item }) => {
   const { user } = useAuth();
   const ownerId = typeof item.user === "string" ? item.user : item.user?.id;
   const isOwner = Boolean(user?.id && ownerId === user.id);
-  const label = isOwner ? "Your activity" : "Shared activity";
+  const label = isOwner ? "Your activity" : "Public activity";
   return (
     <Tooltip title={label}>
       {isOwner ? (
         <PersonOutlineIcon color="action" role="img" aria-label={label} sx={{ flexShrink: 0 }} />
       ) : (
-        <PeopleOutlineIcon color="action" role="img" aria-label={label} sx={{ flexShrink: 0 }} />
+        <PublicOutlinedIcon color="action" role="img" aria-label={label} sx={{ flexShrink: 0 }} />
       )}
     </Tooltip>
   );
