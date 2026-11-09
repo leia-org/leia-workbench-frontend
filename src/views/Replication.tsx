@@ -836,6 +836,19 @@ export const Replication: React.FC = () => {
     { label: replication.name },
   ];
 
+  const replicationUser = replication.experiment.user;
+  const replicationOwnerId =
+    replicationUser && typeof replicationUser === "object"
+      ? replicationUser._id ?? replicationUser.id
+      : replicationUser;
+  const canManageModel =
+    user?.role === "admin" ||
+    Boolean(
+      user?.id &&
+        replicationOwnerId &&
+        String(user.id) === String(replicationOwnerId)
+    );
+
   const renderSection = () => {
     switch (sectionFromQuery) {
       case "leias":
@@ -851,6 +864,7 @@ export const Replication: React.FC = () => {
             apiKeyProvidersMapped={apiKeyProvidersMapped}
             providerProviderModuleMap={providerProviderModuleMap}
             userRole={user?.role}
+            canManageModel={canManageModel}
             onLocalLeiaChange={handleLocalLeiaChange}
             onLocalLeiaReset={handleLocalLeiaReset}
             onLeiaUpdate={handleLeiaUpdate}
