@@ -27,6 +27,8 @@ import {
 } from "../widgets";
 import type { FrontendTool } from "@leia-org/luke-client";
 import NotesWidget from "../widgets/NotesWidget";
+import { postTestRun } from "../lib/testRuns";
+import type { TestRunReport } from "../widgets/codeEditor/testRunReport";
 
 // Bridge component: registered inside a WidgetsProvider, syncs the live
 // tools registry to a ref owned by the parent so non-hook code (form
@@ -357,6 +359,17 @@ export const Chat = () => {
     toolsRef.current = t;
   }, []);
 
+  // Every execution of the code editor's tests (student button or LEIA tool)
+  // is stored for the instructor. Kept stable so the widget definitions below
+  // are not rebuilt on every render.
+  const handleTestRun = useCallback(
+    (report: TestRunReport) => {
+      if (!sessionId) return;
+      void postTestRun(sessionId, report);
+    },
+    [sessionId],
+  );
+
   // Resolve the configured widgets against the local catalog once per
   // lukeConfig change. Same shape used in luke mode and text mode.
   const widgetDefs = useMemo<WidgetDefinition[]>(() => {
@@ -366,15 +379,18 @@ export const Chat = () => {
         const entry = findCatalogEntry(w.widgetType);
         if (!entry) return null;
         const slot = w.slot === "left" ? "left" : "right";
+        const props: Record<string, unknown> = {};
+        if (w.params) props.params = w.params;
+        if (w.widgetType === "codeEditor") props.onTestRun = handleTestRun;
         return {
           id: `${w.widgetType}-${slot}`,
           slot,
           Component: entry.Component,
-          props: w.params ? { params: w.params } : undefined,
+          props: Object.keys(props).length > 0 ? props : undefined,
         } as WidgetDefinition;
       })
       .filter((w): w is WidgetDefinition => w !== null);
-  }, [lukeConfig]);
+  }, [lukeConfig, handleTestRun]);
 
   // Text mode renders an extra side panel that hosts the same widgets
   // luke mode mounts. The panel is what registers the tool functions in
