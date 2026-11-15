@@ -23,6 +23,7 @@ import { SplitLoginLayout } from "./Login";
 import { useAuth } from "../context";
 import type { DecodedToken } from "../context";
 import { TurnstileWidget } from "../components/TurnstileWidget";
+import { TestAccountLogin } from "../components/TestAccountLogin";
 import { isTurnstileEnabled } from "../config/turnstile";
 import "@fontsource-variable/manrope/index.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
@@ -30,6 +31,7 @@ import "@fontsource-variable/jetbrains-mono/index.css";
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const chooseTestAccount = searchParams.get("testAccount") === "1";
   const { login, token } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -53,7 +55,7 @@ export const AdminLogin: React.FC = () => {
       : "/administration";
       
   useEffect(() => {
-    if (token && !isManualLogin) {
+    if (token && !isManualLogin && !chooseTestAccount) {
       navigate(redirectTo);
       toast.info(
         redirectTo === "/administration"
@@ -61,7 +63,7 @@ export const AdminLogin: React.FC = () => {
           : "You are already logged in, redirecting to the requested page..."
       );
     }
-  }, [token, navigate, isManualLogin, redirectTo]);
+  }, [token, navigate, isManualLogin, redirectTo, chooseTestAccount]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,7 +142,7 @@ export const AdminLogin: React.FC = () => {
     }
   };
 
-  if (token && !isManualLogin) {
+  if (token && !isManualLogin && !chooseTestAccount) {
     return null;
   }
 
@@ -269,6 +271,7 @@ export const AdminLogin: React.FC = () => {
                 "Sign in"
               )}
             </Button>
+            <TestAccountLogin returnPath="/administration" />
           </Box>
         </Box>
       </SplitLoginLayout>

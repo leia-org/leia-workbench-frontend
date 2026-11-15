@@ -9,7 +9,10 @@ import {
   Typography,
   Skeleton,
   Chip,
+  Tooltip,
 } from "@mui/material";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
+import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
 import AddIcon from "@mui/icons-material/Add";
 import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import { useAuth } from "../context";
@@ -25,6 +28,7 @@ import FilterButton, {
   type SortOption,
   type SortState,
 } from "../components/admin/FilterButton";
+import { useDebounce } from "../hooks/useDebounce";
 
 interface ExperimentLeia {
   configuration: { mode: string };
@@ -42,12 +46,28 @@ interface Experiment {
     name?: string;
     email?: string;
     id?: string;
-  } | null;
+  } | string | null;
 }
 
 const getExperimentUserLabel = (experiment: Experiment) => {
   const owner = experiment.user ;
-  return owner?.email ??  "";
+  return typeof owner === "object" ? owner?.email ?? "" : "";
+};
+
+const ActivityOwnershipIcon: React.FC<{ item: Experiment }> = ({ item }) => {
+  const { user } = useAuth();
+  const ownerId = typeof item.user === "string" ? item.user : item.user?.id;
+  const isOwner = Boolean(user?.id && ownerId === user.id);
+  const label = isOwner ? "Your activity" : "Public activity";
+  return (
+    <Tooltip title={label}>
+      {isOwner ? (
+        <PersonOutlineIcon color="action" role="img" aria-label={label} sx={{ flexShrink: 0 }} />
+      ) : (
+        <PublicOutlinedIcon color="action" role="img" aria-label={label} sx={{ flexShrink: 0 }} />
+      )}
+    </Tooltip>
+  );
 };
 
 interface RowProps {
@@ -104,6 +124,7 @@ const ExperimentRow: React.FC<RowProps> = ({
       <Box sx={{ minWidth: 0, flex: 1, pr: 2 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <StatusDot color={item.isPublished ? "success" : "neutral"} />
+          <ActivityOwnershipIcon item={item} />
           <Typography
             variant="subtitle2"
             sx={{
@@ -201,6 +222,8 @@ const ExperimentDetail: React.FC<{
   const userLabel = getExperimentUserLabel(item);
   return (
     <Box sx={{ p: 4, maxWidth: 880 }}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <ActivityOwnershipIcon item={item} />
       <Typography
         sx={{
           fontSize: 24,
@@ -211,6 +234,7 @@ const ExperimentDetail: React.FC<{
       >
         {item.name}
       </Typography>
+      </Stack>
       <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
         <Box
           sx={{
@@ -273,7 +297,10 @@ export const Experiments: React.FC = () => {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 400);
   const [filters, setFilters] = useState<FilterState>({});
+  const ownedOnly = filters.ownership?.includes("mine") ?? false;
+  const activityRequestRef = useRef<AbortController | null>(null);
   const [sort, setSort] = useState<SortState>({ by: "updated", dir: "desc" });
   const tokenRef = useRef(token);
   tokenRef.current = token;
@@ -308,6 +335,11 @@ export const Experiments: React.FC = () => {
     }));
     const groups: FilterGroup[] = [
       {
+        id: "ownership",
+        label: "Ownership",
+        options: [{ value: "mine", label: "My activities only" }],
+      },
+      {
         id: "published",
         label: "Status",
         options: [
@@ -323,6 +355,16 @@ export const Experiments: React.FC = () => {
   }, [experiments]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    activityRequestRef.current = controller;
+    setLoadingMore(false);
+    setSelectedId(null);
+    isFetchingRef.current = true;
+    nextCursorRef.current = null;
+    setNextCursor(null);
+    setExperiments([]);
+    setLoading(true);
+
     const fetchExperiments = async () => {
       try {
         const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
@@ -331,28 +373,42 @@ export const Experiments: React.FC = () => {
             headers: {
               Authorization: `Bearer ${tokenRef.current}`,
             },
+            signal: controller.signal,
+            params: {
+              text: debouncedSearch.trim() || undefined,
+              ownedOnly,
+            },
           }
         );
+        if (controller.signal.aborted) return;
         setExperiments(response.data.experiments);
         setNextCursor(response.data.nextCursor);
+        nextCursorRef.current = response.data.nextCursor;
         if (response.data.experiments.length > 0) {
           setSelectedId(response.data.experiments[0].id);
         }
       } catch (error: unknown) {
+        if (controller.signal.aborted) return;
         if (axios.isAxiosError(error) && error.response?.status === 401) {
           setTimeout(() => navigate("/login"), 2000);
         } else {
           console.error("Failed to load experiments:", error);
         }
       } finally {
-        setLoading(false);
+          if (!controller.signal.aborted) {
+            setLoading(false);
+            isFetchingRef.current = false;
+          }
       }
     };
 
     fetchExperiments();
-  }, [navigate, tokenRef]);
+    return () => controller.abort();
+  }, [navigate, debouncedSearch, tokenRef, ownedOnly, user?.id]);
 
   const loadMoreExperiments = useCallback(async () => {
+    const controller = activityRequestRef.current;
+    if (!controller || controller.signal.aborted) return;
     setLoadingMore(true);
     try {
       const response = await axios.get<{ experiments: Experiment[], nextCursor: string | null }>(
@@ -361,25 +417,32 @@ export const Experiments: React.FC = () => {
           headers: {
             Authorization: `Bearer ${tokenRef.current}`,
           },
+          signal: controller.signal,
           params: {
             lastActivityId: nextCursorRef.current || undefined,
+            text: debouncedSearch.trim() || undefined,
+            ownedOnly,
           },
         }
       );
+      if (controller.signal.aborted) return;
       setExperiments((prev) => [...prev, ...response.data.experiments]);
       setNextCursor(response.data.nextCursor);
       nextCursorRef.current = response.data.nextCursor;
     } catch (error: unknown) {
+      if (controller.signal.aborted) return;
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         setTimeout(() => navigate("/login"), 2000);
       } else {
         console.error("Failed to load more experiments:", error);
       }
     } finally {
-      setLoadingMore(false);
-      isFetchingRef.current = false;
+      if (!controller.signal.aborted) {
+        setLoadingMore(false);
+        isFetchingRef.current = false;
+      }
     }
-    }, [navigate]);
+    }, [navigate, debouncedSearch, ownedOnly]);
 
       const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
       if (!nextCursorRef.current || isFetchingRef.current) return;
@@ -395,6 +458,8 @@ export const Experiments: React.FC = () => {
     const container = listContainerRef.current;
     if (
       !container ||
+      search.trim() !== debouncedSearch.trim() ||
+      debouncedSearch.trim() ||
       !nextCursorRef.current ||
       isFetchingRef.current ||
       container.scrollHeight > container.clientHeight
@@ -404,7 +469,7 @@ export const Experiments: React.FC = () => {
 
     isFetchingRef.current = true;
     void loadMoreExperiments();
-  }, [loadMoreExperiments]);
+  }, [debouncedSearch, loadMoreExperiments, search]);
 
   useEffect(() => {
     const container = listContainerRef.current;
@@ -476,7 +541,7 @@ export const Experiments: React.FC = () => {
   );
 
   return (
-    <AdminLayout title={isAdmin ? "All the experiments" : "My experiments"} flush>
+    <AdminLayout title="Activities" flush>
       <MasterDetailLayout
         storageKey="adminMD:experiments.width"
         searchPlaceholder="Search experiments..."
