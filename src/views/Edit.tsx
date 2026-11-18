@@ -16,39 +16,23 @@ mermaid.initialize({
   securityLevel: "loose",
 });
 
-const fallbackCode = `classDiagram
-    class Person {
-        +String firstName
-        +String lastName
-        +int age
-        +getFullName(): String
-    }
-    class Employee {
-        +int employeeId
-        +calculateSalary(): float
-    }
-    class Client {
-        +int clientId
-        +placeOrder(): void
-    }
-    class Product {
-        +int productId
-        +String description
-        +float price
-    }
-    class Order {
-        +int orderId
-        +Date date
-        +calculateTotal(): float
-    }
+const fallbackCode = ``;
 
-    Person <|-- Employee
-    Person <|-- Client
-    Client "1" --> "*" Order : places
-    Order "1" --> "*" Product : contains`;
+type InitialSolutions = Record<string, string>;
+
+const getInitialSolutions = (): InitialSolutions => {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem("initial_solutions") ?? "{}"
+    );
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
 
 const getDefaultCode = () => {
-  const savedExercise = localStorage.getItem("exercise");
+  const savedExercise = sessionStorage.getItem("exercise") ? sessionStorage.getItem("exercise") : localStorage.getItem("lastexercise");
   if (savedExercise) {
     try {
       const parsedExercise = JSON.parse(savedExercise);
@@ -60,7 +44,7 @@ const getDefaultCode = () => {
         return initialSolution;
       }
     } catch (error) {
-      console.warn("Failed to parse exercise from localStorage:", error);
+      console.warn("Failed to parse exercise from sessionStorage or localStorage:", error);
     }
   }
   return fallbackCode;
@@ -394,12 +378,15 @@ export const Edit = () => {
   const navigate = useNavigate();
   const [formUrl, setFormUrl] = useState<string | null>(null);
   const [solutionFormat, setSolutionFormat] = useState<string>("text");
-  const [code, setCode] = useState(() => {
-    const savedCode = localStorage.getItem("mermaid_code");
-    if (savedCode) {
-      return savedCode;
-    }
-    return getDefaultCode();
+  const [initialSolutions, setInitialSolutions] =
+    useState<InitialSolutions>(getInitialSolutions);
+  const [sessionId, setSessionId] = useState<string | null>(() =>
+    sessionStorage.getItem("sessionId") ? sessionStorage.getItem("sessionId") : localStorage.getItem("lastSessionId")
+  );
+  const [code, setCode] = useState<string>(() => {
+    return sessionId && initialSolutions[sessionId] !== undefined
+      ? initialSolutions[sessionId]
+      : getDefaultCode();
   });
   const [mermaidSvg, setMermaidSvg] = useState<string>("");
   const [lastValidSvg, setLastValidSvg] = useState<string>("");
@@ -421,7 +408,6 @@ export const Edit = () => {
   const [configuration, setConfiguration] = useState<Configuration | null>(
     null
   );
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [spectateUrl, setSpectateUrl] = useState<string | null>(null);
   const [problemSolution, setProblemSolution] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
@@ -430,12 +416,12 @@ export const Edit = () => {
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
-  // Load initial data from localStorage
+  // Load initial data from sessionStorage or localStorage
   useEffect(() => {
-    const savedConfiguration = localStorage.getItem("configuration");
-    const savedReplication = localStorage.getItem("replication");
-    const savedSessionId = localStorage.getItem("sessionId");
-    const savedExercise = localStorage.getItem("exercise");
+    const savedConfiguration = sessionStorage.getItem("configuration") ? sessionStorage.getItem("configuration") : localStorage.getItem("lastconfiguration");
+    const savedReplication = sessionStorage.getItem("replication") ? sessionStorage.getItem("replication") : localStorage.getItem("lastreplication");
+    const savedSessionId = sessionStorage.getItem("sessionId") ? sessionStorage.getItem("sessionId") : localStorage.getItem("lastSessionId");
+    const savedExercise = sessionStorage.getItem("exercise") ? sessionStorage.getItem("exercise") : localStorage.getItem("lastexercise");
 
     if (savedConfiguration) {
       const parsedConfiguration = JSON.parse(savedConfiguration);
@@ -452,7 +438,7 @@ export const Edit = () => {
     if (savedSessionId) {
       setSessionId(savedSessionId);
     }
-    const savedSession = localStorage.getItem("session");
+    const savedSession = sessionStorage.getItem("session") ? sessionStorage.getItem("session") : localStorage.getItem("lastsession");
     if (savedSession) {
       const parsedSession = JSON.parse(savedSession);
       if (parsedSession.startedAt) {
@@ -468,22 +454,30 @@ export const Edit = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("mermaid_code", code);
-  }, [code]);
+    if (!sessionId) return;
+
+    setInitialSolutions((previous) => ({
+      ...previous,
+      [sessionId]: code,
+      }));
+  }, [code, sessionId]);
+
+  useEffect(() => {
+    localStorage.setItem("initial_solutions", JSON.stringify(initialSolutions));
+    }, [initialSolutions]);
 
   useEffect(() => {
     localStorage.setItem("editor_width", String(editorWidth));
-  }, [editorWidth]);
+    }, [editorWidth]);
 
   useEffect(() => {
     return () => {
-      localStorage.removeItem("mermaid_code");
       localStorage.removeItem("editor_width");
     };
   }, []);
 
   const onHome = useCallback(() => {
-    localStorage.clear();
+    sessionStorage.clear();
     navigate("/");
   }, [navigate]);
 
@@ -505,7 +499,7 @@ export const Edit = () => {
         setRedirectingIn((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            localStorage.clear();
+            sessionStorage.clear();
             navigate("/");
             return 0;
           }
@@ -550,7 +544,6 @@ export const Edit = () => {
   const concludeProblem = useCallback(async () => {
     if (concluded) return;
     try {
-      const sessionId = localStorage.getItem("sessionId");
       const response = await axios.post(
         `${
           import.meta.env.VITE_APP_BACKEND
@@ -808,7 +801,7 @@ export const Edit = () => {
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button
-                onClick={() => { setShowSuccessModal(false); localStorage.clear(); navigate("/"); }}
+                onClick={() => { setShowSuccessModal(false); sessionStorage.clear(); navigate("/"); }}
                 className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
