@@ -364,7 +364,9 @@ export const GeneralSection: React.FC<GeneralSectionProps> = (props) => {
         />
       </Field>
 
-      <Field label="Duration" helper="Optional time limit per session.">
+      <Field label="Duration" helper={replication.experiment.stages
+        ? "Optional time limit for each stage."
+        : "Optional time limit per session."}>
         <Stack direction="row" alignItems="center" gap={1}>
           <Typography sx={{ fontSize: 14 }}>
             {formatDuration(replication.duration)}

@@ -12,6 +12,7 @@ import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { ChatMarkdown } from "../components/ChatMarkdown";
+import { ContinueStage, type StageProgress } from "../components/ContinueStage";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import InfographicViewer, {
   type InfographicViewerHandle,
@@ -219,6 +220,7 @@ interface ConversationDynamicsState {
 }
 
 interface Session {
+  stage?: StageProgress;
   conversationDynamics?: ConversationDynamicsState;
   id?: string;
   isTest: boolean;
@@ -309,6 +311,11 @@ function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[]
 }
 
 export const Chat = () => {
+  const { sessionId } = useParams();
+  return <ChatSession key={sessionId} />;
+};
+
+const ChatSession = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -610,6 +617,9 @@ export const Chat = () => {
         setTooltipMessage(
           response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
+        if (response.data.session.stage && localStorage.getItem("sessionId") !== response.data.session.id) {
+          localStorage.removeItem("mermaid_code");
+        }
         localStorage.setItem("sessionId", response.data.session.id);
         localStorage.setItem(
           "exercise",
@@ -1107,7 +1117,7 @@ export const Chat = () => {
   };
 
   useEffect(() => {
-    if (session?.finishedAt && !showSuccessModal) {
+    if (session?.finishedAt && !session.stage?.hasNext && !showSuccessModal) {
       // Start countdown and redirect
       const timer = setInterval(() => {
         setRedirectingIn((prev) => {
@@ -1267,10 +1277,12 @@ export const Chat = () => {
             alt="LEIA Logo"
             className="w-6 h-6"
           />
-          <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
+          <h1 className="text-lg font-semibold text-gray-900">
+            {session?.stage ? `Stage ${session.stage.number} of ${session.stage.total}` : "Chat"}
+          </h1>
         </div>
         <div className="flex gap-2">
-        {!dataUsageConsentPending && sessionTime && session?.startedAt && (
+        {!dataUsageConsentPending && sessionTime && session?.startedAt && !session.finishedAt && (
           <SessionTimer
             durationMinutes={sessionTime}
             sessionStartedAt={session.startedAt}
@@ -1352,12 +1364,12 @@ export const Chat = () => {
                   <span className="hidden sm:inline">
                     {configuration?.askSolution
                       ? askSolutionLabel
-                      : "Finish Session"}
+                      : session?.stage ? "Finish Stage" : "Finish Session"}
                   </span>
                   <span className="sm:hidden">
                     {configuration?.askSolution
                       ? askSolutionLabel
-                      : "Finish Session"}
+                      : session?.stage ? "Finish Stage" : "Finish Session"}
                   </span>
                 </>
               );
@@ -1884,7 +1896,17 @@ export const Chat = () => {
         </div>
       )}
 
-      {showSuccessModal && (
+      {session?.finishedAt && session.stage?.hasNext && sessionId && (
+        <div role="dialog" aria-modal="true" aria-label="Stage completed"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6">
+            <h2 className="mb-4 text-lg font-semibold">Stage {session.stage.number} completed</h2>
+            <ContinueStage sessionId={sessionId} />
+          </div>
+        </div>
+      )}
+
+      {showSuccessModal && !session?.stage?.hasNext && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
             <div className="flex justify-between items-center px-6 py-4 border-b">
@@ -1989,7 +2011,7 @@ export const Chat = () => {
         </div>
       )}
 
-      {session?.finishedAt && !showSuccessModal && (
+      {session?.finishedAt && !session.stage?.hasNext && !showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
             <div className="px-6 py-4">

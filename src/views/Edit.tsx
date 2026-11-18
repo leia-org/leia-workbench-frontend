@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
 import { SessionTimer } from "../components/SessionTimer";
+import { ContinueStage, type StageProgress } from "../components/ContinueStage";
 import NotesWidget from "../widgets/NotesWidget";
 import {
   PencilSquareIcon,
@@ -72,10 +73,11 @@ interface EvaluationModalProps {
   onHome: () => void;
   onOpenForm?: () => void;
   spectateUrl?: string;
+  nextStageSessionId?: string;
 }
 
 const EvaluationModal: React.FC<EvaluationModalProps> = memo(
-  ({ evaluation, onClose, onHome, onOpenForm, spectateUrl }) => {
+  ({ evaluation, onClose, onHome, onOpenForm, spectateUrl, nextStageSessionId }) => {
     const [copied, setCopied] = React.useState(false);
 
     const handleCopyLink = () => {
@@ -201,6 +203,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
                 Open Form
               </button>
             )}
+            {nextStageSessionId && <ContinueStage sessionId={nextStageSessionId} />}
           </div>
         </div>
       </div>
@@ -290,6 +293,7 @@ interface HeaderProps {
   onEvaluate: () => void;
   formUrl: string;
   loadingEvaluation: boolean;
+  submissionDisabled?: boolean;
   onAlert: () => void;
   sessionTime?: number | null;
   sessionStartedAt?: string | null;
@@ -297,7 +301,7 @@ interface HeaderProps {
   onNotesToggle?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisabled, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -333,7 +337,7 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
         </button>
         <button
           onClick={onAlert}
-          disabled={loadingEvaluation}
+          disabled={loadingEvaluation || submissionDisabled}
           className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {loadingEvaluation ? (
@@ -428,6 +432,8 @@ export const Edit = () => {
   const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
+  const [stage, setStage] = useState<StageProgress>();
+  const [stageCompleted, setStageCompleted] = useState(false);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
   // Load initial data from localStorage
@@ -455,6 +461,12 @@ export const Edit = () => {
     const savedSession = localStorage.getItem("session");
     if (savedSession) {
       const parsedSession = JSON.parse(savedSession);
+      setStage(parsedSession.stage);
+      setStageCompleted(Boolean(parsedSession.stage && parsedSession.finishedAt));
+      if (parsedSession.stage && parsedSession.finishedAt && typeof parsedSession.result === "string") {
+        setCode(parsedSession.result);
+        setConcluded(true);
+      }
       if (parsedSession.startedAt) {
         setSessionStartedAt(parsedSession.startedAt);
       }
@@ -489,9 +501,15 @@ export const Edit = () => {
 
   const handleTimerExpire = useCallback(async () => {
     try {
-      await axios.post(
+      const { data } = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
       );
+      if (data.stage) {
+        localStorage.setItem("session", JSON.stringify(data));
+        setStage(data.stage);
+        setStageCompleted(true);
+        if (data.stage.hasNext) return;
+      }
       setSessionFinishedAt(new Date().toISOString());
       setShowSuccessModal(true);
     } catch (error) {
@@ -564,6 +582,11 @@ export const Edit = () => {
         // leave the editor open or cause a second submission on retry.
         setConcluded(true);
         setShowAlert(false);
+        if (response.data.stage) {
+          localStorage.setItem("session", JSON.stringify(response.data));
+          setStage(response.data.stage);
+          setStageCompleted(true);
+        }
         // Capture spectate URL from response
         if (response.data.spectateUrl) {
           setSpectateUrl(response.data.spectateUrl);
@@ -687,13 +710,20 @@ export const Edit = () => {
         onAlert={() =>
           evaluation ? setShowEvaluation(true) : concluded ? void getEvaluation() : setShowAlert(true)
         }
-        formUrl={formUrl || ""}
+        formUrl={stage?.hasNext ? "" : formUrl || ""}
         loadingEvaluation={loadingEvaluation}
-        sessionTime={sessionTime}
+        submissionDisabled={stageCompleted && !concluded}
+        sessionTime={stageCompleted ? null : sessionTime}
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
         onNotesToggle={() => setShowNotes((prev) => !prev)}
       />
+      {stage && (
+        <div className="flex items-center justify-between gap-4 border-b px-4 py-2">
+          <p className="text-sm text-gray-700">Stage {stage.number} of {stage.total}</p>
+          {stageCompleted && stage.hasNext && sessionId && !showEvaluation && <ContinueStage sessionId={sessionId} />}
+        </div>
+      )}
 
       {submissionError && <div role="alert" className="bg-red-50 text-red-700 p-3">{submissionError}</div>}
 
@@ -858,12 +888,13 @@ export const Edit = () => {
           onClose={handleCloseEvaluation}
           onHome={onHome}
           onOpenForm={
-            formUrl &&
+            !stage?.hasNext && formUrl &&
             (formUrl.startsWith("http://") || formUrl.startsWith("https://"))
               ? onOpenForm
               : undefined
           }
           spectateUrl={spectateUrl || undefined}
+          nextStageSessionId={stage?.hasNext && stageCompleted ? sessionId ?? undefined : undefined}
         />
       )}
     </div>

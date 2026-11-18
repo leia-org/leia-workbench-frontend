@@ -226,6 +226,8 @@ const ImageAvailabilityProbe: React.FC<{
 
 interface LeiaEditorProps {
   idx: number;
+  staged: boolean;
+  stageIsMulti: boolean;
   item: ReplicationLeia;
   serverItem: ReplicationLeia;
   apiKeys: ApiKey[];
@@ -252,6 +254,8 @@ interface LeiaEditorProps {
 
 const LeiaEditor: React.FC<LeiaEditorProps> = ({
   idx,
+  staged,
+  stageIsMulti,
   item,
   serverItem,
   apiKeys,
@@ -483,7 +487,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           >
             View content
           </Button>
-          <Button
+          {!staged && <Button
             size="small"
             variant="outlined"
             color="inherit"
@@ -493,7 +497,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             sx={{ borderColor: "divider", color: "text.primary" }}
           >
             {isStartingThis ? "Starting..." : "Test session"}
-          </Button>
+          </Button>}
         </Stack>
       </Stack>
       <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
@@ -869,10 +873,10 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             <MenuItem value="none" sx={{ fontSize: 13 }}>
               None
             </MenuItem>
-            <MenuItem value="realtime" sx={{ fontSize: 13 }}>
+            <MenuItem value="realtime" disabled={stageIsMulti} sx={{ fontSize: 13 }}>
               Legacy (OpenAI Realtime)
             </MenuItem>
-            <MenuItem value="luke" sx={{ fontSize: 13 }}>
+            <MenuItem value="luke" disabled={stageIsMulti} sx={{ fontSize: 13 }}>
               Luke
             </MenuItem>
           </Select>
@@ -1133,7 +1137,9 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const effectiveIdx = idx === -1 ? 0 : idx;
   const item = leias[effectiveIdx];
   const serverItem = replication.experiment.leias[effectiveIdx];
-  const orchestration = localReplication.experiment.orchestration;
+  const stages = localReplication.experiment.stages;
+  const stage = stages?.find(({ id }) => id === item.stageId);
+  const orchestration = stage?.orchestration ?? localReplication.experiment.orchestration;
   const isMultiLeia = orchestration?.mode === "multi";
   const openingLeia = leias.find(
     (entry) => entry.id === orchestration?.openingLeiaId,
@@ -1148,6 +1154,16 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
       : undefined;
   return (
     <Box sx={{ maxWidth: 880 }}>
+      {stage && stages && (
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography fontWeight={600}>Stage {stages.indexOf(stage) + 1} of {stages.length}</Typography>
+          <Button size="small" variant="contained" disabled={Boolean(startingSessionLeiaId)}
+            startIcon={<ScienceOutlinedIcon sx={{ fontSize: 14 }} />}
+            onClick={() => onStartTestSession(null, replication.id, effectiveIdx)}>
+            {startingSessionLeiaId === "staged" ? "Starting..." : "Test activity"}
+          </Button>
+        </Stack>
+      )}
       {isMultiLeia && (
         <Box
           sx={{
@@ -1174,7 +1190,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
                 </Typography>
               </Box>
             </Stack>
-            <Button
+            {!stages && <Button
               size="small"
               variant="contained"
               disabled={Boolean(startingSessionLeiaId)}
@@ -1186,12 +1202,14 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
               {startingSessionLeiaId === "multi"
                 ? "Starting..."
                 : "Test MultiLEIA"}
-            </Button>
+            </Button>}
           </Stack>
         </Box>
       )}
       <LeiaEditor
         idx={effectiveIdx}
+        staged={Boolean(stages)}
+        stageIsMulti={Boolean(stage && isMultiLeia)}
         item={item}
         serverItem={serverItem}
         apiKeys={apiKeys}

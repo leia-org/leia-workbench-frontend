@@ -773,12 +773,13 @@ export const Replication: React.FC = () => {
     replicationId: string,
     multiLeia = false,
   ) => {
-    if (loading || startingSessionLeiaId || (!leiaId && !multiLeia) || !replicationId) return;
-    setStartingSessionLeiaId(multiLeia ? "multi" : leiaId);
+    const staged = Boolean(localReplication?.experiment.stages);
+    if (loading || startingSessionLeiaId || (!leiaId && !multiLeia && !staged) || !replicationId) return;
+    setStartingSessionLeiaId(staged ? "staged" : multiLeia ? "multi" : leiaId);
     try {
       const resp = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/test`,
-        { leiaId, replicationId, multiLeia },
+        { leiaId, replicationId, multiLeia, ...(staged ? { staged: true } : {}) },
         buildRequestConfig()
       );
       const sessionId = resp.data.sessionId;
@@ -802,7 +803,7 @@ export const Replication: React.FC = () => {
   ) => {
     withUnsavedChangesCheck(
       () => executeStartTestSession(leiaId, replicationId, multiLeia),
-      idx
+      localReplication?.experiment.stages ? undefined : idx
     );
   };
 
@@ -830,6 +831,13 @@ export const Replication: React.FC = () => {
 
   const studentLink = buildWorkbenchLink(replication.code);
   const demoLink = buildWorkbenchLink(replication.code, "_test_demo");
+  const { leias, stages } = localReplication.experiment;
+  const sidebarLeias = stages
+    ? stages.flatMap((stage, index) => leias.filter((leia) => leia.stageId === stage.id).map((leia) => ({
+      id: leia.id,
+      name: `Stage ${index + 1} · ${leia.leia.metadata.name}`,
+    })))
+    : leias.map((leia) => ({ id: leia.id, name: leia.leia.metadata.name }));
 
   const breadcrumbs = [
     { label: "Replications", to: "/administration" },
@@ -918,16 +926,13 @@ export const Replication: React.FC = () => {
           activeSection={sectionFromQuery}
           onSectionChange={(section) => {
             if (section === "leias" && !leiaFromQuery) {
-              const firstLeia = localReplication.experiment.leias[0]?.id;
+              const firstLeia = sidebarLeias[0]?.id;
               setSection("leias", firstLeia);
             } else {
               setSection(section);
             }
           }}
-          leias={localReplication.experiment.leias.map((l) => ({
-            id: l.id,
-            name: l.leia.metadata.name,
-          }))}
+          leias={sidebarLeias}
           activeLeiaId={leiaFromQuery}
           onLeiaSelect={(leiaId) => setSection("leias", leiaId)}
         />

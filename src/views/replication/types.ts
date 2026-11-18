@@ -1,6 +1,7 @@
 // Shared types between Replication.tsx and its sections.
 
 export interface ReplicationLeia {
+  stageId?: string;
   configuration: {
     mode: string;
     data?: unknown;
@@ -50,6 +51,14 @@ export interface ReplicationLeia {
   id: string;
 }
 
+interface ActivityOrchestration {
+  mode: "single" | "multi";
+  maxInternalTurns: number;
+  openingLeiaId: string | null;
+  problemLeiaId: string | null;
+  sharedTask: string;
+}
+
 export interface ReplicationData {
   id: string;
   name: string;
@@ -71,12 +80,7 @@ export interface ReplicationData {
   experiment: {
     name: string;
     leias: ReplicationLeia[];
-    orchestration?: {
-      mode: "single" | "multi";
-      maxInternalTurns: number;
-      openingLeiaId: string | null;
-      problemLeiaId: string | null;
-      sharedTask: string;
-    };
+    orchestration?: ActivityOrchestration;
+    stages?: { id: string; previousStageId: string | null; orchestration: ActivityOrchestration }[];
   };
 }
