@@ -11,6 +11,7 @@ import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
+import { ChatMarkdown } from "../components/ChatMarkdown";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import InfographicViewer, {
   type InfographicViewerHandle,
@@ -1585,7 +1586,7 @@ export const Chat = () => {
                   )}
                 </div>
                 <div
-                  className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
+                  className={`min-w-0 max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
                     msg.isLeia
                       ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm"
                       : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
@@ -1596,9 +1597,15 @@ export const Chat = () => {
                       {actorName}
                     </p>
                   )}
-                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
-                    {msg.text}
-                  </p>
+                  {msg.isLeia && audioMode === "text" ? (
+                    <div className="text-[15px] leading-relaxed">
+                      <ChatMarkdown text={msg.text} />
+                    </div>
+                  ) : (
+                    <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                      {msg.text}
+                    </p>
+                  )}
                   {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
                   {msg.isLeia &&
                     index === visibleMessages.length - 1 &&
