@@ -4,6 +4,8 @@ import { useLukeTool } from "./useLukeTool";
 import { DEFAULT_PROBLEM } from "./codeEditor/problem";
 import { runJsTests } from "./codeEditor/jsRunner";
 import { runPyTests } from "./codeEditor/pyRunner";
+import { buildTestRunReport, safeStringify } from "./codeEditor/testRunReport";
+import type { TestRunReport, TestRunTrigger } from "./codeEditor/testRunReport";
 import type { EditorLanguage, ProblemDef, TestRunSummary } from "./codeEditor/types";
 
 // Minimal subset of monaco's IStandaloneCodeEditor that we actually use.
@@ -54,6 +56,11 @@ function applyEdits(current: string, edits: DiffEdit[]): { next: string; errors:
 interface CodeEditorWidgetProps {
     /** Optional per-activity problem definition. Overrides DEFAULT_PROBLEM. */
     params?: Partial<ProblemDef>;
+    /** Called after every execution of the test suite — the student's button
+     *  or LEIA's tool — with a JSON-safe report (code at that moment, outcome
+     *  per test). The host decides what to do with it (the workbench stores
+     *  it); the widget itself does no network I/O. */
+    onTestRun?: (report: TestRunReport) => void;
 }
 
 function mergeProblem(p?: Partial<ProblemDef>): ProblemDef {
@@ -81,8 +88,9 @@ const starterFor = (problem: ProblemDef, lang: EditorLanguage): string =>
 //
 // The language is fixed by the instructor (problem.language) — the student
 // cannot switch it. "text" mode is a plain editor with no tests/execution.
-// Code execution is intentionally LEIA-only: there is no Run button.
-export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
+// The tests can be started by the student ("Run tests" button) or by LEIA
+// (codeEditor_runTests); both go through runTests and are reported to the host.
+export function CodeEditorWidget({ params, onTestRun }: CodeEditorWidgetProps = {}) {
     const problem = useMemo(() => mergeProblem(params), [params]);
     const language: EditorLanguage = problem.language ?? "javascript";
     // Tests only make sense for an executable language with a suite defined.
@@ -92,9 +100,29 @@ export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
     const [running, setRunning] = useState(false);
     const [lastRun, setLastRun] = useState<TestRunSummary | null>(null);
     const draftRef = useRef<string>(starterFor(problem, language));
+    // Latest callback without re-registering tools (tool identity must stay
+    // stable: in voice mode a change of the tool set forces a reconnect).
+    const onTestRunRef = useRef(onTestRun);
+    onTestRunRef.current = onTestRun;
+    // Runs are serialised: Pyodide shares its globals between runs, so a
+    // student click must not overlap a run LEIA started (or the other way).
+    const runQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
-    async function runTests(): Promise<TestRunSummary> {
+    // Hands the finished run to the host. Called imperatively from the run
+    // itself (not from an effect, which StrictMode would fire twice) and never
+    // allowed to affect the run or the tool result.
+    function reportRun(trigger: TestRunTrigger, code: string, summary: TestRunSummary, startedAt: Date) {
+        const handler = onTestRunRef.current;
+        if (!handler || language === "text") return;
+        try {
+            handler(buildTestRunReport({ trigger, language, fnName: problem.fnName, code, summary, startedAt }));
+        } catch { /* reporting is best effort */ }
+    }
+
+    async function executeTests(trigger: TestRunTrigger): Promise<TestRunSummary> {
+        // The code under test is whatever is in the editor when the run starts.
         const code = editorRef.current?.getValue() ?? draftRef.current;
+        const startedAt = new Date();
         const start = performance.now();
         setRunning(true);
         try {
@@ -103,9 +131,16 @@ export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
                 setLastRun(summary);
                 return summary;
             }
-            const out = language === "python"
-                ? await runPyTests(code, problem.fnName, problem.tests)
-                : await runJsTests(code, problem.fnName, problem.tests);
+            let out: Awaited<ReturnType<typeof runJsTests>>;
+            try {
+                out = language === "python"
+                    ? await runPyTests(code, problem.fnName, problem.tests)
+                    : await runJsTests(code, problem.fnName, problem.tests);
+            } catch (err) {
+                // The runner itself failed (e.g. the Python runtime could not
+                // load): show and record it as a suite error.
+                out = { error: err instanceof Error ? err.message : String(err) };
+            }
             const durationMs = Math.round(performance.now() - start);
             const results = out.results ?? [];
             const passed = results.filter((r) => r.ok).length;
@@ -118,18 +153,25 @@ export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
                 durationMs,
             };
             setLastRun(summary);
+            reportRun(trigger, code, summary, startedAt);
             return summary;
         } finally {
             setRunning(false);
         }
     }
 
+    function runTests(trigger: TestRunTrigger): Promise<TestRunSummary> {
+        const run = runQueueRef.current.then(() => executeTests(trigger));
+        runQueueRef.current = run.catch(() => undefined);
+        return run;
+    }
+
     useLukeTool(
         "codeEditor_runTests",
-        "Runs the test suite against the user's current code in the editor and returns whether each test passed. Call this when the user asks you to check / run / verify their solution, or when they say things like 'I think I got it' / 'try it'. Returns { passed, failed, total, language, results: [{name, ok, error?, expected?, actual?}], error? }.",
+        "Runs the test suite against the user's current code in the editor and returns whether each test passed. Call this when the user asks you to check / run / verify their solution, or when they say things like 'I think I got it' / 'try it'. The user can also run the tests themself with the editor's \"Run tests\" button, so call this whenever you need the current results rather than relying on earlier ones. Returns { passed, failed, total, language, results: [{name, ok, error?, expected?, actual?}], error? }.",
         { type: "object", properties: {} },
         async () => {
-            const summary = await runTests();
+            const summary = await runTests("leia");
             return { ...summary, language, fnName: problem.fnName };
         },
     );
@@ -242,8 +284,28 @@ export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
                             </span>
                         )}
                         {!running && !lastRun && (
-                            <span style={{ color: "#94a3b8" }}>not run yet — ask LEIA to check your code</span>
+                            <span style={{ color: "#94a3b8" }}>not run yet</span>
                         )}
+                        <button
+                            type="button"
+                            onClick={() => { runTests("student").catch(() => undefined); }}
+                            disabled={running}
+                            style={{
+                                marginLeft: "auto",
+                                padding: "3px 12px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                lineHeight: 1.5,
+                                borderRadius: 6,
+                                border: "1px solid rgba(255,255,255,0.25)",
+                                background: running ? "rgba(255,255,255,0.08)" : "#2563eb",
+                                color: "#fff",
+                                cursor: running ? "default" : "pointer",
+                                opacity: running ? 0.6 : 1,
+                            }}
+                        >
+                            {running ? "Running…" : "Run tests"}
+                        </button>
                     </div>
                     {lastRun?.error && (
                         <pre style={{ marginTop: 6, fontSize: 12, color: "#fca5a5", whiteSpace: "pre-wrap" }}>{lastRun.error}</pre>
@@ -259,7 +321,7 @@ export function CodeEditorWidget({ params }: CodeEditorWidgetProps = {}) {
                                     )}
                                     {!r.ok && !r.error && (
                                         <div style={{ marginLeft: 18, color: "#94a3b8", opacity: 0.85 }}>
-                                            expected {JSON.stringify(r.expected)}, got {JSON.stringify(r.actual)}
+                                            expected {safeStringify(r.expected)}, got {safeStringify(r.actual)}
                                         </div>
                                     )}
                                 </li>
