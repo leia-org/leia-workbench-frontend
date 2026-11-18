@@ -74,10 +74,11 @@ interface EvaluationModalProps {
   onOpenForm?: () => void;
   spectateUrl?: string;
   nextStageSessionId?: string;
+  hasNextStage: boolean;
 }
 
 const EvaluationModal: React.FC<EvaluationModalProps> = memo(
-  ({ evaluation, onClose, onHome, onOpenForm, spectateUrl, nextStageSessionId }) => {
+  ({ evaluation, onClose, onHome, onOpenForm, spectateUrl, nextStageSessionId, hasNextStage }) => {
     const [copied, setCopied] = React.useState(false);
 
     const handleCopyLink = () => {
@@ -175,7 +176,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
           )}
 
           <div className="px-6 py-4 border-t flex justify-end gap-2">
-            <button
+            {!hasNextStage && <button
               onClick={onHome}
               className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-600 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
             >
@@ -193,7 +194,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
                 />
               </svg>
               Home
-            </button>
+            </button>}
 
             {onOpenForm && (
               <button
@@ -895,6 +896,7 @@ export const Edit = () => {
           }
           spectateUrl={spectateUrl || undefined}
           nextStageSessionId={stage?.hasNext && stageCompleted ? sessionId ?? undefined : undefined}
+          hasNextStage={Boolean(stage?.hasNext)}
         />
       )}
     </div>
