@@ -70,6 +70,14 @@ export interface ReplicationData {
   } | null;
   experiment: {
     name: string;
+    user?:
+      | {
+          id?: string;
+          _id?: string;
+          email?: string;
+        }
+      | string
+      | null;
     leias: ReplicationLeia[];
     orchestration?: {
       mode: "single" | "multi";
