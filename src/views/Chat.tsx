@@ -221,6 +221,7 @@ interface ConversationDynamicsState {
 
 interface Session {
   stage?: StageProgress;
+  runId?: string;
   conversationDynamics?: ConversationDynamicsState;
   id?: string;
   isTest: boolean;
@@ -349,6 +350,8 @@ const ChatSession = () => {
     string | null
   >(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
+  const [requiresConversationForNextStage, setRequiresConversationForNextStage] =
+    useState(false);
   const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
     useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -621,6 +624,18 @@ const ChatSession = () => {
           localStorage.removeItem("mermaid_code");
         }
         localStorage.setItem("sessionId", response.data.session.id);
+        if (response.data.session.runId) {
+          localStorage.setItem("runId", response.data.session.runId);
+        } else {
+          localStorage.removeItem("runId");
+        }
+        localStorage.setItem(
+          "showReferenceSolution",
+          JSON.stringify(response.data.leia?.showReferenceSolution ?? true),
+        );
+        setRequiresConversationForNextStage(
+          Boolean(response.data.leia?.requiresConversationForNextStage),
+        );
         localStorage.setItem(
           "exercise",
           JSON.stringify(response.data.leia.leia.spec.problem.spec),
@@ -1052,9 +1067,10 @@ const ChatSession = () => {
     if (dataUsageConsentPending) return;
     if (
       !messages.length &&
-      configuration?.mode !== "transcription" &&
-      audioMode !== "luke" &&
-      audioMode !== "audio"
+      (requiresConversationForNextStage ||
+        (configuration?.mode !== "transcription" &&
+          audioMode !== "luke" &&
+          audioMode !== "audio"))
     )
       return;
     setConcluding(true);
@@ -1082,7 +1098,7 @@ const ChatSession = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
-    if (dataUsageConsentPending || !canFinishConversation) return;
+    if (dataUsageConsentPending) return;
     setConcluding(true);
     try {
       const response = await axios.post(
@@ -1097,7 +1113,7 @@ const ChatSession = () => {
     } finally {
       setConcluding(false);
     }
-  }, [sessionId, dataUsageConsentPending, canFinishConversation]);
+  }, [sessionId, dataUsageConsentPending]);
 
   const handleDataUsageConsentDecision = async (accepted: boolean) => {
     if (dataUsageConsentSubmitting) return;
@@ -1335,15 +1351,22 @@ const ChatSession = () => {
           </button>
           <button
             onClick={handleFinishConversation}
-            title={!canFinishConversation ? "LEIA will decide when the conversation ends" : undefined}
+            title={
+              !canFinishConversation
+                ? "LEIA will decide when the conversation ends"
+                : requiresConversationForNextStage && !messages.length
+                  ? "Have a conversation before finishing because a later stage uses it"
+                  : undefined
+            }
             disabled={
               !canFinishConversation ||
               concluding ||
               dataUsageConsentPending ||
               (!messages.length &&
-                configuration?.mode !== "transcription" &&
-                audioMode !== "luke" &&
-                audioMode !== "audio")
+                (requiresConversationForNextStage ||
+                  (configuration?.mode !== "transcription" &&
+                    audioMode !== "luke" &&
+                    audioMode !== "audio")))
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >

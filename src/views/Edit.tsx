@@ -48,6 +48,20 @@ const fallbackCode = `classDiagram
     Client "1" --> "*" Order : places
     Order "1" --> "*" Product : contains`;
 
+const clearStudentSessionStorage = () => {
+  [
+    "sessionId",
+    "runId",
+    "session",
+    "exercise",
+    "configuration",
+    "replication",
+    "mermaid_code",
+    "editor_width",
+    "showReferenceSolution",
+  ].forEach((key) => localStorage.removeItem(key));
+};
+
 const getDefaultCode = () => {
   const savedExercise = localStorage.getItem("exercise");
   if (savedExercise) {
@@ -435,14 +449,29 @@ export const Edit = () => {
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [stage, setStage] = useState<StageProgress>();
   const [stageCompleted, setStageCompleted] = useState(false);
+  const [timerExpiredStageModal, setTimerExpiredStageModal] = useState(false);
+  const [showReferenceSolution, setShowReferenceSolution] = useState(true);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
+  const codeRef = useRef(code);
+  codeRef.current = code;
+  const concludedRef = useRef(concluded);
+  concludedRef.current = concluded;
   // Load initial data from localStorage
   useEffect(() => {
     const savedConfiguration = localStorage.getItem("configuration");
     const savedReplication = localStorage.getItem("replication");
     const savedSessionId = localStorage.getItem("sessionId");
     const savedExercise = localStorage.getItem("exercise");
+    const savedShowReferenceSolution = localStorage.getItem("showReferenceSolution");
+
+    if (savedShowReferenceSolution !== null) {
+      try {
+        setShowReferenceSolution(Boolean(JSON.parse(savedShowReferenceSolution)));
+      } catch {
+        setShowReferenceSolution(true);
+      }
+    }
 
     if (savedConfiguration) {
       const parsedConfiguration = JSON.parse(savedConfiguration);
@@ -496,20 +525,34 @@ export const Edit = () => {
   }, []);
 
   const onHome = useCallback(() => {
-    localStorage.clear();
+    clearStudentSessionStorage();
     navigate("/");
   }, [navigate]);
 
   const handleTimerExpire = useCallback(async () => {
+    if (!sessionId) return;
     try {
-      const { data } = await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
-      );
+      const { data } = concludedRef.current
+        ? await axios.post(
+            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+          )
+        : await axios.post(
+            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
+            { result: codeRef.current },
+          );
+      setConcluded(true);
+      setShowAlert(false);
+      if (data.spectateUrl) {
+        setSpectateUrl(data.spectateUrl);
+      }
       if (data.stage) {
         localStorage.setItem("session", JSON.stringify(data));
         setStage(data.stage);
         setStageCompleted(true);
-        if (data.stage.hasNext) return;
+        if (data.stage.hasNext) {
+          setTimerExpiredStageModal(true);
+          return;
+        }
       }
       setSessionFinishedAt(new Date().toISOString());
       setShowSuccessModal(true);
@@ -524,7 +567,7 @@ export const Edit = () => {
         setRedirectingIn((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            localStorage.clear();
+            clearStudentSessionStorage();
             navigate("/");
             return 0;
           }
@@ -593,26 +636,28 @@ export const Edit = () => {
           setSpectateUrl(response.data.spectateUrl);
         }
 
-        try {
-          const { data } = await axios.get(
-            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/solution`
-          );
-          setProblemSolution(data.solution);
-          setSolutionFormat(data.solutionFormat || "text");
-          if (data.solutionFormat === "mermaid") {
-            const svg = await mermaid.render("mermaid2-diagram", data.solution);
-            setConcludedSvg(svg.svg);
+        if (showReferenceSolution) {
+          try {
+            const { data } = await axios.get(
+              `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/solution`
+            );
+            setProblemSolution(data.solution);
+            setSolutionFormat(data.solutionFormat || "text");
+            if (data.solutionFormat === "mermaid") {
+              const svg = await mermaid.render("mermaid2-diagram", data.solution);
+              setConcludedSvg(svg.svg);
+            }
+          } catch (previewError) {
+            console.error("Failed to display the reference solution:", previewError);
+            setSolutionError("Your solution was submitted, but the reference solution could not be displayed.");
           }
-        } catch (previewError) {
-          console.error("Failed to display the reference solution:", previewError);
-          setSolutionError("Your solution was submitted, but the reference solution could not be displayed.");
         }
       }
     } catch (error) {
       console.error("Failed to conclude the problem:", error);
       throw error;
     }
-  }, [code, concluded]);
+  }, [code, concluded, showReferenceSolution]);
 
   const getEvaluation = useCallback(async () => {
     if (submissionPendingRef.current) return;
@@ -778,13 +823,19 @@ export const Edit = () => {
         ) : (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
             <h2 className="text-gray-500 px-4 py-2">Problem Solution</h2>
-            <FormatPreview
-              code={problemSolution || ""}
-              format={solutionFormat}
-              mermaidSvg={concludedSvg}
-              error={solutionError}
-              renderControls={(utils) => <DiagramControls {...utils} />}
-            />
+            {showReferenceSolution ? (
+              <FormatPreview
+                code={problemSolution || ""}
+                format={solutionFormat}
+                mermaidSvg={concludedSvg}
+                error={solutionError}
+                renderControls={(utils) => <DiagramControls {...utils} />}
+              />
+            ) : (
+              <div className="px-4 py-6 text-sm text-gray-600">
+                Your solution has been submitted. The reference solution is not shown for this stage.
+              </div>
+            )}
           </div>
         )}
 
@@ -810,6 +861,23 @@ export const Edit = () => {
           />
         </div>
       </main>
+
+      {timerExpiredStageModal && stage?.hasNext && sessionId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Stage time expired"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-6">
+            <h2 className="mb-2 text-lg font-semibold">Stage {stage.number} completed</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              Time is up. Your current solution has been submitted automatically.
+            </p>
+            <ContinueStage sessionId={sessionId} />
+          </div>
+        </div>
+      )}
 
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -839,7 +907,7 @@ export const Edit = () => {
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button
-                onClick={() => { setShowSuccessModal(false); localStorage.clear(); navigate("/"); }}
+                onClick={() => { setShowSuccessModal(false); clearStudentSessionStorage(); navigate("/"); }}
                 className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

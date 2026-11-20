@@ -229,6 +229,8 @@ interface LeiaEditorProps {
   idx: number;
   staged: boolean;
   stageIsMulti: boolean;
+  isSecondaryMultiActor: boolean;
+  problemLeiaName?: string;
   item: ReplicationLeia;
   serverItem: ReplicationLeia;
   apiKeys: ApiKey[];
@@ -258,6 +260,8 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   idx,
   staged,
   stageIsMulti,
+  isSecondaryMultiActor,
+  problemLeiaName,
   item,
   serverItem,
   apiKeys,
@@ -517,15 +521,24 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           <Switch
             size="small"
             checked={item.configuration.askSolution}
-            disabled={solutionRequiredByStages.length > 0 && item.configuration.askSolution}
+            disabled={
+              isSecondaryMultiActor ||
+              (solutionRequiredByStages.length > 0 && item.configuration.askSolution)
+            }
             onChange={() => onToggleAskSolution(idx)}
           />
-          {solutionRequiredByStages.length > 0 && (
+          {isSecondaryMultiActor ? (
             <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              {item.configuration.askSolution ? "Locked" : "Required"} because{" "}
-              {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
-              {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution.
+              Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
             </Typography>
+          ) : (
+            solutionRequiredByStages.length > 0 && (
+              <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                {item.configuration.askSolution ? "Locked" : "Required"} because{" "}
+                {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
+                {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution.
+              </Typography>
+            )
           )}
         </Stack>
       </FieldRow>
@@ -533,11 +546,36 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         label="Automatic evaluation"
         helper="Run automatic evaluation against the solution."
       >
-        <Switch
-          size="small"
-          checked={item.configuration.evaluateSolution}
-          onChange={() => onToggleEvaluateSolution(idx)}
-        />
+        {(() => {
+          const hasReferenceSolution = Boolean(
+            typeof item.leia.spec?.problem?.spec?.solution === "string" &&
+              item.leia.spec.problem.spec.solution.trim()
+          );
+          return (
+            <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+              <Switch
+                size="small"
+                checked={item.configuration.evaluateSolution}
+                disabled={
+                  isSecondaryMultiActor ||
+                  (!hasReferenceSolution && !item.configuration.evaluateSolution)
+                }
+                onChange={() => onToggleEvaluateSolution(idx)}
+              />
+              {isSecondaryMultiActor ? (
+                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                  Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
+                </Typography>
+              ) : (
+                !hasReferenceSolution && (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Add a reference solution in Designer to enable automatic evaluation.
+                  </Typography>
+                )
+              )}
+            </Stack>
+          );
+        })()}
       </FieldRow>
 
       <SectionLabel>Infographics</SectionLabel>
@@ -598,18 +636,25 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         label="Show during exercise"
         helper="Student can open the infographic during the exercise."
       >
-        <Switch
-          size="small"
-          checked={showInfographicToStudent}
-          disabled={studentInfographicAvailable !== true}
-          onChange={(_, checked) => {
-            onLocalLeiaChange(
-              idx,
-              "runnerConfiguration.infographic.showToStudent",
-              checked
-            );
-          }}
-        />
+        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+          <Switch
+            size="small"
+            checked={showInfographicToStudent}
+            disabled={isSecondaryMultiActor || studentInfographicAvailable !== true}
+            onChange={(_, checked) => {
+              onLocalLeiaChange(
+                idx,
+                "runnerConfiguration.infographic.showToStudent",
+                checked
+              );
+            }}
+          />
+          {isSecondaryMultiActor && (
+            <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
+            </Typography>
+          )}
+        </Stack>
       </FieldRow>
       <FieldRow
         label="Instructor solution"
@@ -1160,6 +1205,14 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const problemLeia = leias.find(
     (entry) => entry.id === orchestration?.problemLeiaId,
   );
+  const stageEntries = stage
+    ? leias.filter((entry) => entry.stageId === stage.id)
+    : leias;
+  const effectiveProblemLeia =
+    problemLeia || openingLeia || stageEntries[0];
+  const isSecondaryMultiActor = Boolean(
+    stage && isMultiLeia && effectiveProblemLeia && item.id !== effectiveProblemLeia.id,
+  );
   const solutionRequiredByStages = getDependentStagesForSubmittedSolution(
     localReplication.experiment,
     item.stageId,
@@ -1227,6 +1280,8 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         idx={effectiveIdx}
         staged={Boolean(stages)}
         stageIsMulti={Boolean(stage && isMultiLeia)}
+        isSecondaryMultiActor={isSecondaryMultiActor}
+        problemLeiaName={effectiveProblemLeia?.leia.metadata.name}
         item={item}
         serverItem={serverItem}
         apiKeys={apiKeys}
