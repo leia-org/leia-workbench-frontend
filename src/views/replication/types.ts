@@ -59,6 +59,13 @@ interface ActivityOrchestration {
   sharedTask: string;
 }
 
+export type StageOutput = "conversation" | "submitedSolution";
+
+export interface StageOutputSources {
+  conversation?: string | null;
+  submitedSolution?: string | null;
+}
+
 export interface ReplicationData {
   id: string;
   name: string;
@@ -81,6 +88,10 @@ export interface ReplicationData {
     name: string;
     leias: ReplicationLeia[];
     orchestration?: ActivityOrchestration;
-    stages?: { id: string; previousStageId: string | null; orchestration: ActivityOrchestration }[];
+    stages?: {
+      id: string;
+      outputSources?: StageOutputSources;
+      orchestration: ActivityOrchestration;
+    }[];
   };
 }

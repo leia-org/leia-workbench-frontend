@@ -33,6 +33,7 @@ import {
   buildStoredImageCandidateSources,
 } from "../../../lib/avatar";
 import type { ReplicationData, ReplicationLeia } from "../types";
+import { getDependentStagesForSubmittedSolution } from "../stageOutputs";
 import type { ApiKey } from "../../../models/ApiKeys";
 import openAiIcon from "../../../assets/providers/openai.svg";
 import geminiIcon from "../../../assets/providers/gemini.svg";
@@ -248,6 +249,7 @@ interface LeiaEditorProps {
   replicationId: string;
   startingSessionLeiaId: string | null;
   pronouns: string | undefined;
+  solutionRequiredByStages: number[];
   // Campos que el backend marcó como inválidos para esta Leia.
   invalidFields: string[];
 }
@@ -271,6 +273,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   replicationId,
   startingSessionLeiaId,
   pronouns,
+  solutionRequiredByStages,
   invalidFields,
 }) => {
   const [showAllVoices, setShowAllVoices] = useState(false);
@@ -510,11 +513,21 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         label="Ask for student solution"
         helper="Student writes a solution at the end."
       >
-        <Switch
-          size="small"
-          checked={item.configuration.askSolution}
-          onChange={() => onToggleAskSolution(idx)}
-        />
+        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+          <Switch
+            size="small"
+            checked={item.configuration.askSolution}
+            disabled={solutionRequiredByStages.length > 0 && item.configuration.askSolution}
+            onChange={() => onToggleAskSolution(idx)}
+          />
+          {solutionRequiredByStages.length > 0 && (
+            <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              {item.configuration.askSolution ? "Locked" : "Required"} because{" "}
+              {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
+              {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution.
+            </Typography>
+          )}
+        </Stack>
       </FieldRow>
       <FieldRow
         label="Automatic evaluation"
@@ -1147,6 +1160,10 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const problemLeia = leias.find(
     (entry) => entry.id === orchestration?.problemLeiaId,
   );
+  const solutionRequiredByStages = getDependentStagesForSubmittedSolution(
+    localReplication.experiment,
+    item.stageId,
+  );
   const pronouns =
     item.leia.spec?.persona?.spec?.subjectPronoum &&
     item.leia.spec?.persona?.spec?.objectPronoum
@@ -1224,6 +1241,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
         pronouns= {pronouns}
+        solutionRequiredByStages={solutionRequiredByStages}
         startingSessionLeiaId={startingSessionLeiaId}
         invalidFields={invalidLeiaFields[item.id] ?? []}
       />
