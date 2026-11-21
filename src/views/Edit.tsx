@@ -403,6 +403,7 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  showSolution?: boolean;
   data: {
     messages?: unknown[];
     link?: string;
@@ -666,7 +667,8 @@ export const Edit = () => {
     setLoadingEvaluation(true);
     try {
       await concludeProblem();
-      if (configuration?.evaluateSolution) {
+      const showResultsToStudent = configuration?.showSolution !== false;
+      if (configuration?.evaluateSolution && showResultsToStudent) {
         const response = await axios.get(
           `${
             import.meta.env.VITE_APP_BACKEND
@@ -833,7 +835,7 @@ export const Edit = () => {
               />
             ) : (
               <div className="px-4 py-6 text-sm text-gray-600">
-                Your solution has been submitted. The reference solution is not shown for this stage.
+                Your solution has been submitted. The reference solution and evaluation are not shown for this stage.
               </div>
             )}
           </div>

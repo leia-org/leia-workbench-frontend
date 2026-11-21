@@ -185,6 +185,7 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  showSolution?: boolean;
   data: {
     messages?: Message[];
     link?: string;

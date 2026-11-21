@@ -125,6 +125,7 @@ interface LeiasSectionProps {
   onLeiaUpdate: (idx: number) => Promise<boolean>;
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
+  onToggleShowSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
     replicationId: string,
@@ -242,6 +243,7 @@ interface LeiaEditorProps {
   onLeiaUpdate: (idx: number) => Promise<boolean>;
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
+  onToggleShowSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
     replicationId: string,
@@ -273,6 +275,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onLeiaUpdate,
   onToggleAskSolution,
   onToggleEvaluateSolution,
+  onToggleShowSolution,
   onStartTestSession,
   replicationId,
   startingSessionLeiaId,
@@ -570,6 +573,55 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                 !hasReferenceSolution && (
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
                     Add a reference solution in Designer to enable automatic evaluation.
+                  </Typography>
+                )
+              )}
+            </Stack>
+          );
+        })()}
+      </FieldRow>
+
+      <FieldRow
+        label="Show solution & evaluation"
+        helper="Show the reference solution and evaluation feedback to the student after submitting."
+      >
+        {(() => {
+          const hasReferenceSolution = Boolean(
+            typeof item.leia.spec?.problem?.spec?.solution === "string" &&
+              item.leia.spec.problem.spec.solution.trim()
+          );
+          const showSolutionChecked =
+            hasReferenceSolution &&
+            Boolean(item.configuration.askSolution) &&
+            item.configuration.showSolution !== false;
+          return (
+            <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+              <Switch
+                size="small"
+                checked={showSolutionChecked}
+                disabled={
+                  isSecondaryMultiActor ||
+                  (!hasReferenceSolution && !showSolutionChecked)
+                }
+                onChange={() => onToggleShowSolution(idx)}
+              />
+              {isSecondaryMultiActor ? (
+                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                  Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
+                </Typography>
+              ) : !hasReferenceSolution ? (
+                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                  Add a reference solution in Designer to show results to students.
+                </Typography>
+              ) : !showSolutionChecked && item.configuration.evaluateSolution ? (
+                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                  Automatic evaluation will still run and be saved for instructors, hidden from students.
+                </Typography>
+              ) : (
+                solutionRequiredByStages.length > 0 && showSolutionChecked && (
+                  <Typography variant="caption" sx={{ color: "warning.main" }}>
+                    {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
+                    {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution; showing the reference solution or evaluation may reveal the answer early.
                   </Typography>
                 )
               )}
@@ -1170,6 +1222,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   onLeiaUpdate,
   onToggleAskSolution,
   onToggleEvaluateSolution,
+  onToggleShowSolution,
   onStartTestSession,
   startingSessionLeiaId,
   invalidLeiaFields,
@@ -1293,6 +1346,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onLeiaUpdate={onLeiaUpdate}
         onToggleAskSolution={onToggleAskSolution}
         onToggleEvaluateSolution={onToggleEvaluateSolution}
+        onToggleShowSolution={onToggleShowSolution}
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
         pronouns= {pronouns}

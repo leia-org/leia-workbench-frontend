@@ -7,6 +7,7 @@ export interface ReplicationLeia {
     data?: unknown;
     askSolution: boolean;
     evaluateSolution: boolean;
+    showSolution?: boolean;
   };
   leia: {
     id: unknown;

@@ -639,6 +639,33 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const toggleShowSolution = async (idx: number) => {
+    if (!replication) return;
+    const leiaId = replication.experiment.leias[idx].id;
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/leia/${leiaId}/toggle-show-solution`,
+        {},
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      toast.success("Leia configuration updated", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, "Error toggling show reference solution state"),
+        {
+          position: "bottom-right",
+          autoClose: 5000,
+        }
+      );
+      console.error("Update error:", err);
+    }
+  };
+
   const handleLocalLeiaChange = (idx: number, key: string, value: unknown) => {
     setLocalReplication((prev) => {
       if (!prev) return prev;
@@ -864,6 +891,7 @@ export const Replication: React.FC = () => {
             onLeiaUpdate={handleLeiaUpdate}
             onToggleAskSolution={toggleAskSolution}
             onToggleEvaluateSolution={toggleEvaluateSolution}
+            onToggleShowSolution={toggleShowSolution}
             onStartTestSession={startTestSession}
             startingSessionLeiaId={startingSessionLeiaId}
             invalidLeiaFields={invalidLeiaFields}
