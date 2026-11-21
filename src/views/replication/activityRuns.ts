@@ -42,6 +42,7 @@ export function groupSessionsByRun<T extends StageSessionLike>(
   sessions: T[],
   fallbackStageTotal: number | null = null,
 ): ActivityRunGroup<T>[] {
+  if (!Array.isArray(sessions) || sessions.length === 0) return [];
   const buckets = new Map<string, { runId: string | null; items: T[] }>();
 
   for (const session of sessions) {

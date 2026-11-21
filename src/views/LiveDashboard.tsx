@@ -241,7 +241,7 @@ export const LiveDashboard = () => {
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/spectator/replications/${replicationId}/sessions`,
         buildRequestConfig()
       );
-      setSessions(response.data.sessions);
+      setSessions(Array.isArray(response.data?.sessions) ? response.data.sessions : []);
       setLoading(false);
     } catch (err: unknown) {
       if (axios.isAxiosError(err) && err.response?.status === 403) {
@@ -278,7 +278,9 @@ export const LiveDashboard = () => {
         const expLeias: Array<{
           id?: string;
           leia: ParsedLeia & { _id?: string };
-        }> = response.data?.experiment?.leias ?? [];
+        }> = Array.isArray(response.data?.experiment?.leias)
+          ? response.data.experiment.leias
+          : [];
         const map: Record<string, ParsedLeia> = {};
         for (const entry of expLeias) {
           const l = entry?.leia;
