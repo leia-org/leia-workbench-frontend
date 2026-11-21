@@ -33,6 +33,12 @@ import StatusDot from "../components/admin/StatusDot";
 import { formatTimeAgo } from "../components/admin/RelativeTime";
 import { writeReplicationName } from "../lib/replicationNames";
 import { useAuth } from "../context";
+import {
+  groupSessionsByRun,
+  resolveSolutionFormatForLeia,
+  type ActivityRunGroup,
+  type LeiaDisplayInfo,
+} from "./replication/activityRuns";
 
 interface Message {
   id: string;
@@ -51,6 +57,13 @@ interface SupervisorFlag {
 
 interface Session {
   id: string;
+  leia?: string | null;
+  run?: string | null;
+  runId?: string | null;
+  stageId?: string | null;
+  stageIndex?: number | null;
+  stageNumber?: number | null;
+  stageTotal?: number | null;
   startedAt: string;
   finishedAt: string | null;
   result: string | null;
@@ -143,8 +156,11 @@ export const Conversations: React.FC = () => {
   const [conversations, setConversations] = useState<Session[]>([]);
   const [replicationName, setReplicationName] = useState<string>("");
   const [solutionFormat, setSolutionFormat] = useState<string | null>(null);
+  const [leiaInfoById, setLeiaInfoById] = useState<Record<string, LeiaDisplayInfo>>({});
+  const [stageTotal, setStageTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editingScore, setEditingScore] = useState(false);
   const [scoreValue, setScoreValue] = useState<string>("");
@@ -193,11 +209,30 @@ export const Conversations: React.FC = () => {
         );
         setReplicationName(repResp.data.name);
         if (id && repResp.data.name) writeReplicationName(id, repResp.data.name);
-        // Solution format lives on each LEIA's problem spec. We pick
-        // the first leia's format — single-LEIA replications are the
-        // common case, and on multi-LEIA replications all leias
-        // typically share a format.
-        const firstLeia = repResp.data?.experiment?.leias?.[0]?.leia;
+        const expLeias: Array<{
+          id?: string;
+          leia?: {
+            id?: string;
+            _id?: string;
+            metadata?: { name?: string };
+            spec?: { problem?: { spec?: { solutionFormat?: string } } };
+          };
+        }> = repResp.data?.experiment?.leias ?? [];
+        const infoMap: Record<string, LeiaDisplayInfo> = {};
+        for (const entry of expLeias) {
+          const fmt = entry?.leia?.spec?.problem?.spec?.solutionFormat;
+          const info: LeiaDisplayInfo = {
+            name: entry?.leia?.metadata?.name || String(entry?.id || "LEIA"),
+            solutionFormat: typeof fmt === "string" && fmt.length > 0 ? fmt : null,
+          };
+          if (entry?.id) infoMap[String(entry.id)] = info;
+          const docId = entry?.leia?.id || entry?.leia?._id;
+          if (docId) infoMap[String(docId)] = info;
+        }
+        setLeiaInfoById(infoMap);
+        const stages = repResp.data?.experiment?.stages;
+        setStageTotal(Array.isArray(stages) && stages.length > 0 ? stages.length : null);
+        const firstLeia = expLeias[0]?.leia;
         const fmt = firstLeia?.spec?.problem?.spec?.solutionFormat;
         if (typeof fmt === "string" && fmt.length > 0) {
           setSolutionFormat(fmt);
@@ -270,52 +305,67 @@ export const Conversations: React.FC = () => {
 
   const formatDate = (s: string) => new Date(s).toLocaleString();
 
-  // KPI strip stats — same numbers the old card-based view showed at
-  // the top of the page.
+  const runGroups = useMemo(
+    () => groupSessionsByRun(conversations, stageTotal),
+    [conversations, stageTotal]
+  );
+
+  // KPI strip stats — grouped per activity run when staged, or per session in legacy replications.
   const stats = useMemo(() => {
-    const completed = conversations.filter((c) => c.finishedAt).length;
-    const scored = conversations.filter((c) => c.score !== null);
+    const completed = runGroups.filter((g) => g.isCompleted).length;
+    const scored = conversations.filter((c) => c.score !== null && c.score !== undefined);
     const avg =
       scored.length > 0
         ? scored.reduce((acc, c) => acc + (c.score ?? 0), 0) / scored.length
         : null;
-    return { total: conversations.length, completed, avg };
-  }, [conversations]);
+    return { total: runGroups.length, completed, avg };
+  }, [runGroups, conversations]);
 
-  // Apply search; completed sessions surface their score in the secondary
-  // line so users can scan scores from the list alone.
-  const filteredSessions = useMemo(() => {
+  const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return conversations.filter((c) => {
+    return runGroups.filter((g) => {
       if (!q) return true;
-      const email = c.user?.email?.toLowerCase() ?? "";
+      const email = g.user?.email?.toLowerCase() ?? "";
       return email.includes(q);
     });
-  }, [conversations, search]);
+  }, [runGroups, search]);
 
-  const selected = useMemo(
-    () => filteredSessions.find((c) => c.id === selectedId) ?? null,
-    [filteredSessions, selectedId]
+  const selectedGroup = useMemo(
+    () => filteredGroups.find((g) => g.key === selectedRunKey) ?? null,
+    [filteredGroups, selectedRunKey]
   );
+
+  const selected = useMemo(() => {
+    if (!selectedGroup) return null;
+    return (
+      selectedGroup.sessions.find((s) => s.id === selectedSessionId) ??
+      selectedGroup.currentSession
+    );
+  }, [selectedGroup, selectedSessionId]);
 
   // Auto-select the first row whenever the list changes and current
   // selection drops out.
   useEffect(() => {
-    if (filteredSessions.length === 0) {
-      if (selectedId !== null) setSelectedId(null);
+    if (filteredGroups.length === 0) {
+      if (selectedRunKey !== null) setSelectedRunKey(null);
+      if (selectedSessionId !== null) setSelectedSessionId(null);
       return;
     }
-    if (!filteredSessions.some((s) => s.id === selectedId)) {
-      setSelectedId(filteredSessions[0].id);
+    const activeGroup = filteredGroups.find((g) => g.key === selectedRunKey);
+    if (!activeGroup) {
+      setSelectedRunKey(filteredGroups[0].key);
+      setSelectedSessionId(filteredGroups[0].currentSession.id);
+    } else if (!activeGroup.sessions.some((s) => s.id === selectedSessionId)) {
+      setSelectedSessionId(activeGroup.currentSession.id);
     }
-  }, [filteredSessions, selectedId]);
+  }, [filteredGroups, selectedRunKey, selectedSessionId]);
 
   // Closing the editor when switching session keeps the inline-edit UI
   // from leaking across rows.
   useEffect(() => {
     setEditingScore(false);
     setScoreValue("");
-  }, [selectedId]);
+  }, [selected?.id]);
 
   const headerActions = (
     <Stack direction="row" gap={1}>
@@ -367,7 +417,7 @@ export const Conversations: React.FC = () => {
         }}
       >
         <KpiCard
-          label="Total sessions"
+          label={stageTotal && stageTotal > 1 ? "Total attempts" : "Total sessions"}
           value={loading ? null : stats.total}
         />
         <KpiCard
@@ -385,7 +435,7 @@ export const Conversations: React.FC = () => {
         searchPlaceholder="Search by email..."
         searchValue={search}
         onSearchChange={setSearch}
-        isListEmpty={!loading && filteredSessions.length === 0}
+        isListEmpty={!loading && filteredGroups.length === 0}
         emptyListMessage={
           conversations.length === 0
             ? "No conversations yet."
@@ -396,23 +446,33 @@ export const Conversations: React.FC = () => {
             ? Array.from({ length: 6 }).map((_, i) => (
                 <SessionRowSkeleton key={i} />
               ))
-            : filteredSessions.map((s) => (
+            : filteredGroups.map((g) => (
                 <SessionRow
-                  key={s.id}
-                  item={s}
-                  selected={s.id === selectedId}
-                  onClick={() => setSelectedId(s.id)}
+                  key={g.key}
+                  group={g}
+                  selected={g.key === selectedRunKey}
+                  onClick={() => {
+                    setSelectedRunKey(g.key);
+                    setSelectedSessionId(g.currentSession.id);
+                  }}
                 />
               ))
         }
         detail={
           loading ? (
             <SessionDetailSkeleton />
-          ) : selected ? (
+          ) : selected && selectedGroup ? (
             <SessionDetail
+              group={selectedGroup}
               session={selected}
+              leiaInfoById={leiaInfoById}
+              onSelectStageSession={(sessionId) => setSelectedSessionId(sessionId)}
               isAdmin={isAdmin}
-              solutionFormat={solutionFormat}
+              solutionFormat={resolveSolutionFormatForLeia(
+                selected.leia,
+                leiaInfoById,
+                solutionFormat
+              )}
               editingScore={editingScore}
               scoreValue={scoreValue}
               onStartEditScore={() => {
@@ -442,90 +502,109 @@ export const Conversations: React.FC = () => {
 // — list row -----------------------------------------------------------
 
 const SessionRow: React.FC<{
-  item: Session;
+  group: ActivityRunGroup<Session>;
   selected: boolean;
   onClick: () => void;
-}> = ({ item, selected, onClick }) => (
-  <ButtonBase
-    onClick={onClick}
-    aria-current={selected ? "page" : undefined}
-    sx={{
-      width: "100%",
-      minHeight: 68,
-      px: 2,
-      py: 1.5,
-      textAlign: "left",
-      display: "flex",
-      alignItems: "stretch",
-      justifyContent: "space-between",
-      borderBottom: "1px solid",
-      borderColor: "divider",
-      position: "relative",
-      bgcolor: selected ? "surfaces.selected" : "transparent",
-      "&:hover": {
-        bgcolor: selected ? "surfaces.selected" : "surfaces.hover",
-      },
-      "&::before": selected
-        ? {
-            content: '""',
-            position: "absolute",
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 2,
-            backgroundColor: "primary.main",
-          }
-        : {},
-    }}
-  >
-    <Box sx={{ minWidth: 0, flex: 1, pr: 2 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <StatusDot color={item.finishedAt ? "success" : "warning"} />
+}> = ({ group, selected, onClick }) => {
+  const totalMessages = group.sessions.reduce((sum, s) => sum + s.messages.length, 0);
+  const scoredStages = group.sessions.filter((s) => s.score != null);
+  const scoreSummary =
+    scoredStages.length === 1
+      ? `Score ${scoredStages[0].score}`
+      : scoredStages.length > 1
+        ? `Avg ${(
+            scoredStages.reduce((sum, s) => sum + (s.score ?? 0), 0) /
+            scoredStages.length
+          ).toFixed(1)}`
+        : null;
+  const stageBadge =
+    group.isStaged && group.stageTotal && group.stageTotal > 1
+      ? `Stage ${group.currentSession.stageNumber ?? group.sessions.length}/${group.stageTotal}`
+      : null;
+
+  return (
+    <ButtonBase
+      onClick={onClick}
+      aria-current={selected ? "page" : undefined}
+      sx={{
+        width: "100%",
+        minHeight: 68,
+        px: 2,
+        py: 1.5,
+        textAlign: "left",
+        display: "flex",
+        alignItems: "stretch",
+        justifyContent: "space-between",
+        borderBottom: "1px solid",
+        borderColor: "divider",
+        position: "relative",
+        bgcolor: selected ? "surfaces.selected" : "transparent",
+        "&:hover": {
+          bgcolor: selected ? "surfaces.selected" : "surfaces.hover",
+        },
+        "&::before": selected
+          ? {
+              content: '""',
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 2,
+              backgroundColor: "primary.main",
+            }
+          : {},
+      }}
+    >
+      <Box sx={{ minWidth: 0, flex: 1, pr: 2 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <StatusDot color={group.isCompleted ? "success" : "warning"} />
+          <Typography
+            variant="subtitle2"
+            sx={{
+              color: selected ? "primary.dark" : "text.primary",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {group.user?.email || "Anonymous"}
+          </Typography>
+        </Box>
         <Typography
-          variant="subtitle2"
+          variant="caption"
           sx={{
-            color: selected ? "primary.dark" : "text.primary",
+            display: "block",
+            color: "text.secondary",
+            mt: 0.5,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
           }}
         >
-          {item.user?.email || "Anonymous"}
+          {group.isCompleted ? "Completed" : stageBadge ? `${stageBadge} · In progress` : "In progress"}
+          {group.isCompleted && stageBadge ? ` · ${stageBadge}` : ""}
+          {" · "}
+          {totalMessages} msg
+          {scoreSummary ? ` · ${scoreSummary}` : ""}
         </Typography>
       </Box>
-      <Typography
-        variant="caption"
+      <Box
         sx={{
-          display: "block",
-          color: "text.secondary",
-          mt: 0.5,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          flexShrink: 0,
+          gap: 0.5,
         }}
       >
-        {item.finishedAt ? "Completed" : "In progress"}
-        {" · "}
-        {item.messages.length} msg
-        {item.score != null ? ` · Score ${item.score}` : ""}
-      </Typography>
-    </Box>
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        flexShrink: 0,
-        gap: 0.5,
-      }}
-    >
-      <Typography variant="caption" sx={{ color: "text.disabled" }}>
-        {formatTimeAgo(item.startedAt)}
-      </Typography>
-    </Box>
-  </ButtonBase>
-);
+        <Typography variant="caption" sx={{ color: "text.disabled" }}>
+          {formatTimeAgo(group.startedAt)}
+        </Typography>
+      </Box>
+    </ButtonBase>
+  );
+};
 
 const SessionRowSkeleton: React.FC = () => (
   <Box
@@ -545,7 +624,10 @@ const SessionRowSkeleton: React.FC = () => (
 // — detail panel -------------------------------------------------------
 
 const SessionDetail: React.FC<{
+  group: ActivityRunGroup<Session>;
   session: Session;
+  leiaInfoById: Record<string, LeiaDisplayInfo>;
+  onSelectStageSession: (sessionId: string) => void;
   isAdmin: boolean;
   solutionFormat: string | null;
   editingScore: boolean;
@@ -556,7 +638,10 @@ const SessionDetail: React.FC<{
   onCancelEditScore: () => void;
   formatDate: (s: string) => string;
 }> = ({
+  group,
   session,
+  leiaInfoById,
+  onSelectStageSession,
   isAdmin,
   solutionFormat,
   editingScore,
@@ -572,6 +657,8 @@ const SessionDetail: React.FC<{
     Boolean(session.result) &&
     (solutionFormat === "mermaid" || looksLikeMermaid(session.result ?? ""));
   const conversationWasRemoved = hasConversationAutomatedRemoval(session);
+  const showStageSelector =
+    group.sessions.length > 1 || (group.stageTotal !== null && group.stageTotal > 1);
 
   useEffect(() => {
     setDetailView("conversation");
@@ -601,7 +688,37 @@ const SessionDetail: React.FC<{
         Started {formatDate(session.startedAt)}
         {session.finishedAt &&
           ` · Finished ${formatDate(session.finishedAt)}`}
+        {session.leia && leiaInfoById[session.leia]?.name
+          ? ` · ${leiaInfoById[session.leia].name}`
+          : ""}
       </Typography>
+
+      {showStageSelector && (
+        <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 2.5 }}>
+          {group.sessions.map((stageSession, idx) => {
+            const stageNum = stageSession.stageNumber ?? idx + 1;
+            const leiaName =
+              (stageSession.leia && leiaInfoById[stageSession.leia]?.name) || null;
+            const active = stageSession.id === session.id;
+            return (
+              <Chip
+                key={stageSession.id}
+                size="small"
+                variant={active ? "filled" : "outlined"}
+                color={active ? "primary" : "default"}
+                onClick={() => onSelectStageSession(stageSession.id)}
+                label={`Stage ${stageNum}${leiaName ? ` · ${leiaName}` : ""}`}
+                icon={
+                  <Box sx={{ pl: 0.75, display: "inline-flex" }}>
+                    <StatusDot color={stageSession.finishedAt ? "success" : "warning"} />
+                  </Box>
+                }
+                sx={{ cursor: "pointer", fontWeight: active ? 600 : 500 }}
+              />
+            );
+          })}
+        </Stack>
+      )}
 
       <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 4 }}>
         <Button
