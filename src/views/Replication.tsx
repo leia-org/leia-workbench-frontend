@@ -795,18 +795,13 @@ export const Replication: React.FC = () => {
     withUnsavedChangesCheck(executeToggleActive);
   };
 
-  const executeStartTestSession = async (
-    leiaId: string | null,
-    replicationId: string,
-    multiLeia = false,
-  ) => {
-    const staged = Boolean(localReplication?.experiment.stages);
-    if (loading || startingSessionLeiaId || (!leiaId && !multiLeia && !staged) || !replicationId) return;
-    setStartingSessionLeiaId(staged ? "staged" : multiLeia ? "multi" : leiaId);
+  const executeStartTestSession = async (replicationId: string) => {
+    if (loading || startingSessionLeiaId || !replicationId) return;
+    setStartingSessionLeiaId("staged");
     try {
       const resp = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/test`,
-        { leiaId, replicationId, multiLeia, ...(staged ? { staged: true } : {}) },
+        { replicationId },
         buildRequestConfig()
       );
       const sessionId = resp.data.sessionId;
@@ -822,16 +817,8 @@ export const Replication: React.FC = () => {
     }
   };
 
-  const startTestSession = (
-    leiaId: string | null,
-    replicationId: string,
-    idx: number,
-    multiLeia = false,
-  ) => {
-    withUnsavedChangesCheck(
-      () => executeStartTestSession(leiaId, replicationId, multiLeia),
-      localReplication?.experiment.stages ? undefined : idx
-    );
+  const startTestSession = (replicationId: string) => {
+    withUnsavedChangesCheck(() => executeStartTestSession(replicationId));
   };
 
   if (loading || !replication || !localReplication) {
@@ -859,12 +846,14 @@ export const Replication: React.FC = () => {
   const studentLink = buildWorkbenchLink(replication.code);
   const demoLink = buildWorkbenchLink(replication.code, "_test_demo");
   const { leias, stages } = localReplication.experiment;
-  const sidebarLeias = stages
-    ? stages.flatMap((stage, index) => leias.filter((leia) => leia.stageId === stage.id).map((leia) => ({
-      id: leia.id,
-      name: `Stage ${index + 1} · ${leia.leia.metadata.name}`,
-    })))
-    : leias.map((leia) => ({ id: leia.id, name: leia.leia.metadata.name }));
+  const sidebarLeias = stages.flatMap((stage, index) =>
+    leias
+      .filter((leia) => leia.stageId === stage.id)
+      .map((leia) => ({
+        id: leia.id,
+        name: `Stage ${index + 1} · ${leia.leia.metadata.name}`,
+      }))
+  );
 
   const breadcrumbs = [
     { label: "Replications", to: "/administration" },

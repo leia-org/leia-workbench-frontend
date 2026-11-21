@@ -126,12 +126,7 @@ interface LeiasSectionProps {
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onToggleShowSolution: (idx: number) => Promise<void>;
-  onStartTestSession: (
-    leiaId: string | null,
-    replicationId: string,
-    idx: number,
-    multiLeia?: boolean,
-  ) => void;
+  onStartTestSession: (replicationId: string) => void;
   startingSessionLeiaId: string | null;
   // Campos inválidos por Leia (clave: leiaId) devueltos por el backend.
   invalidLeiaFields: Record<string, string[]>;
@@ -228,7 +223,6 @@ const ImageAvailabilityProbe: React.FC<{
 
 interface LeiaEditorProps {
   idx: number;
-  staged: boolean;
   stageIsMulti: boolean;
   isSecondaryMultiActor: boolean;
   problemLeiaName?: string;
@@ -244,14 +238,6 @@ interface LeiaEditorProps {
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onToggleShowSolution: (idx: number) => Promise<void>;
-  onStartTestSession: (
-    leiaId: string | null,
-    replicationId: string,
-    idx: number,
-    multiLeia?: boolean,
-  ) => void;
-  replicationId: string;
-  startingSessionLeiaId: string | null;
   pronouns: string | undefined;
   solutionRequiredByStages: number[];
   // Campos que el backend marcó como inválidos para esta Leia.
@@ -260,7 +246,6 @@ interface LeiaEditorProps {
 
 const LeiaEditor: React.FC<LeiaEditorProps> = ({
   idx,
-  staged,
   stageIsMulti,
   isSecondaryMultiActor,
   problemLeiaName,
@@ -276,9 +261,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onToggleAskSolution,
   onToggleEvaluateSolution,
   onToggleShowSolution,
-  onStartTestSession,
-  replicationId,
-  startingSessionLeiaId,
   pronouns,
   solutionRequiredByStages,
   invalidFields,
@@ -413,8 +395,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
       currentApiKeyObj.managementUrl
   );
 
-  const isStartingAny = Boolean(startingSessionLeiaId);
-  const isStartingThis = startingSessionLeiaId === item.id;
   const leiaResourceId = String(item.leia.id || item.id || "");
   const infographicSrc =
     typeof item.leia.spec?.infographic === "string" &&
@@ -497,17 +477,6 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
           >
             View content
           </Button>
-          {!staged && <Button
-            size="small"
-            variant="outlined"
-            color="inherit"
-            disabled={isStartingAny}
-            startIcon={<ScienceOutlinedIcon sx={{ fontSize: 14 }} />}
-            onClick={() => onStartTestSession(item.id, replicationId, idx)}
-            sx={{ borderColor: "divider", color: "text.primary" }}
-          >
-            {isStartingThis ? "Starting..." : "Test session"}
-          </Button>}
         </Stack>
       </Stack>
       <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
@@ -1249,8 +1218,8 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const item = leias[effectiveIdx];
   const serverItem = replication.experiment.leias[effectiveIdx];
   const stages = localReplication.experiment.stages;
-  const stage = stages?.find(({ id }) => id === item.stageId);
-  const orchestration = stage?.orchestration ?? localReplication.experiment.orchestration;
+  const stage = stages.find(({ id }) => id === item.stageId);
+  const orchestration = stage?.orchestration;
   const isMultiLeia = orchestration?.mode === "multi";
   const openingLeia = leias.find(
     (entry) => entry.id === orchestration?.openingLeiaId,
@@ -1260,7 +1229,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   );
   const stageEntries = stage
     ? leias.filter((entry) => entry.stageId === stage.id)
-    : leias;
+    : [];
   const effectiveProblemLeia =
     problemLeia || openingLeia || stageEntries[0];
   const isSecondaryMultiActor = Boolean(
@@ -1277,12 +1246,12 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
       : undefined;
   return (
     <Box sx={{ maxWidth: 880 }}>
-      {stage && stages && (
+      {stage && (
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
           <Typography fontWeight={600}>Stage {stages.indexOf(stage) + 1} of {stages.length}</Typography>
           <Button size="small" variant="contained" disabled={Boolean(startingSessionLeiaId)}
             startIcon={<ScienceOutlinedIcon sx={{ fontSize: 14 }} />}
-            onClick={() => onStartTestSession(null, replication.id, effectiveIdx)}>
+            onClick={() => onStartTestSession(replication.id)}>
             {startingSessionLeiaId === "staged" ? "Starting..." : "Test activity"}
           </Button>
         </Stack>
@@ -1313,25 +1282,11 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
                 </Typography>
               </Box>
             </Stack>
-            {!stages && <Button
-              size="small"
-              variant="contained"
-              disabled={Boolean(startingSessionLeiaId)}
-              startIcon={<ScienceOutlinedIcon sx={{ fontSize: 14 }} />}
-              onClick={() =>
-                onStartTestSession(null, replication.id, effectiveIdx, true)
-              }
-            >
-              {startingSessionLeiaId === "multi"
-                ? "Starting..."
-                : "Test MultiLEIA"}
-            </Button>}
           </Stack>
         </Box>
       )}
       <LeiaEditor
         idx={effectiveIdx}
-        staged={Boolean(stages)}
         stageIsMulti={Boolean(stage && isMultiLeia)}
         isSecondaryMultiActor={isSecondaryMultiActor}
         problemLeiaName={effectiveProblemLeia?.leia.metadata.name}
@@ -1347,11 +1302,8 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onToggleAskSolution={onToggleAskSolution}
         onToggleEvaluateSolution={onToggleEvaluateSolution}
         onToggleShowSolution={onToggleShowSolution}
-        onStartTestSession={onStartTestSession}
-        replicationId={replication.id}
         pronouns= {pronouns}
         solutionRequiredByStages={solutionRequiredByStages}
-        startingSessionLeiaId={startingSessionLeiaId}
         invalidFields={invalidLeiaFields[item.id] ?? []}
       />
     </Box>

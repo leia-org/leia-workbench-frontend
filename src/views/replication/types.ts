@@ -1,7 +1,7 @@
 // Shared types between Replication.tsx and its sections.
 
 export interface ReplicationLeia {
-  stageId?: string;
+  stageId: string;
   configuration: {
     mode: string;
     data?: unknown;
@@ -88,8 +88,7 @@ export interface ReplicationData {
   experiment: {
     name: string;
     leias: ReplicationLeia[];
-    orchestration?: ActivityOrchestration;
-    stages?: {
+    stages: {
       id: string;
       outputSources?: StageOutputSources;
       orchestration: ActivityOrchestration;
