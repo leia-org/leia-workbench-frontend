@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
 import { io } from "socket.io-client";
@@ -19,9 +19,16 @@ interface Session {
   result: string | null;
   evaluation: string | null;
   score: number | null;
+  runId?: string;
+  stage?: {
+    number: number;
+    total: number;
+    hasNext: boolean;
+  };
 }
 
 export const SpectatorView = () => {
+  const navigate = useNavigate();
   const { sessionId } = useParams();
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
@@ -137,6 +144,14 @@ export const SpectatorView = () => {
       setIsActive(false);
     });
 
+    newSocket.on("run:stageChanged", (payload: { nextSessionId?: string }) => {
+      if (payload?.nextSessionId && payload.nextSessionId !== sessionId) {
+        navigate(`/spectate/${payload.nextSessionId}?token=${encodeURIComponent(token)}`, {
+          replace: true,
+        });
+      }
+    });
+
     newSocket.on("disconnect", () => {
       console.log("Spectator WebSocket disconnected");
     });
@@ -145,7 +160,7 @@ export const SpectatorView = () => {
       newSocket.emit("spectate:leave", sessionId);
       newSocket.disconnect();
     };
-  }, [sessionId, token, scrollToBottom]);
+  }, [sessionId, token, scrollToBottom, navigate]);
 
   const getElapsedTime = () => {
     if (!session) return "0m";
@@ -221,6 +236,11 @@ export const SpectatorView = () => {
             >
               {mode}
             </span>
+            {session?.stage && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                Stage {session.stage.number}/{session.stage.total}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">

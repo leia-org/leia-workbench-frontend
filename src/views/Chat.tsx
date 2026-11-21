@@ -12,6 +12,7 @@ import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { ChatMarkdown } from "../components/ChatMarkdown";
+import { ContinueStage, type StageProgress } from "../components/ContinueStage";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import InfographicViewer, {
   type InfographicViewerHandle,
@@ -184,6 +185,7 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  showSolution?: boolean;
   data: {
     messages?: Message[];
     link?: string;
@@ -219,6 +221,8 @@ interface ConversationDynamicsState {
 }
 
 interface Session {
+  stage?: StageProgress;
+  runId?: string;
   conversationDynamics?: ConversationDynamicsState;
   id?: string;
   isTest: boolean;
@@ -309,6 +313,11 @@ function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[]
 }
 
 export const Chat = () => {
+  const { sessionId } = useParams();
+  return <ChatSession key={sessionId} />;
+};
+
+const ChatSession = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -342,6 +351,8 @@ export const Chat = () => {
     string | null
   >(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
+  const [requiresConversationForNextStage, setRequiresConversationForNextStage] =
+    useState(false);
   const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
     useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -610,7 +621,22 @@ export const Chat = () => {
         setTooltipMessage(
           response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
+        if (response.data.session.stage && localStorage.getItem("sessionId") !== response.data.session.id) {
+          localStorage.removeItem("mermaid_code");
+        }
         localStorage.setItem("sessionId", response.data.session.id);
+        if (response.data.session.runId) {
+          localStorage.setItem("runId", response.data.session.runId);
+        } else {
+          localStorage.removeItem("runId");
+        }
+        localStorage.setItem(
+          "showReferenceSolution",
+          JSON.stringify(response.data.leia?.showReferenceSolution ?? true),
+        );
+        setRequiresConversationForNextStage(
+          Boolean(response.data.leia?.requiresConversationForNextStage),
+        );
         localStorage.setItem(
           "exercise",
           JSON.stringify(response.data.leia.leia.spec.problem.spec),
@@ -1042,9 +1068,10 @@ export const Chat = () => {
     if (dataUsageConsentPending) return;
     if (
       !messages.length &&
-      configuration?.mode !== "transcription" &&
-      audioMode !== "luke" &&
-      audioMode !== "audio"
+      (requiresConversationForNextStage ||
+        (configuration?.mode !== "transcription" &&
+          audioMode !== "luke" &&
+          audioMode !== "audio"))
     )
       return;
     setConcluding(true);
@@ -1072,7 +1099,7 @@ export const Chat = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
-    if (dataUsageConsentPending || !canFinishConversation) return;
+    if (dataUsageConsentPending) return;
     setConcluding(true);
     try {
       const response = await axios.post(
@@ -1087,7 +1114,7 @@ export const Chat = () => {
     } finally {
       setConcluding(false);
     }
-  }, [sessionId, dataUsageConsentPending, canFinishConversation]);
+  }, [sessionId, dataUsageConsentPending]);
 
   const handleDataUsageConsentDecision = async (accepted: boolean) => {
     if (dataUsageConsentSubmitting) return;
@@ -1107,7 +1134,7 @@ export const Chat = () => {
   };
 
   useEffect(() => {
-    if (session?.finishedAt && !showSuccessModal) {
+    if (session?.finishedAt && !session.stage?.hasNext && !showSuccessModal) {
       // Start countdown and redirect
       const timer = setInterval(() => {
         setRedirectingIn((prev) => {
@@ -1267,10 +1294,12 @@ export const Chat = () => {
             alt="LEIA Logo"
             className="w-6 h-6"
           />
-          <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
+          <h1 className="text-lg font-semibold text-gray-900">
+            {session?.stage ? `Stage ${session.stage.number} of ${session.stage.total}` : "Chat"}
+          </h1>
         </div>
         <div className="flex gap-2">
-        {!dataUsageConsentPending && sessionTime && session?.startedAt && (
+        {!dataUsageConsentPending && sessionTime && session?.startedAt && !session.finishedAt && (
           <SessionTimer
             durationMinutes={sessionTime}
             sessionStartedAt={session.startedAt}
@@ -1323,15 +1352,22 @@ export const Chat = () => {
           </button>
           <button
             onClick={handleFinishConversation}
-            title={!canFinishConversation ? "LEIA will decide when the conversation ends" : undefined}
+            title={
+              !canFinishConversation
+                ? "LEIA will decide when the conversation ends"
+                : requiresConversationForNextStage && !messages.length
+                  ? "Have a conversation before finishing because a later stage uses it"
+                  : undefined
+            }
             disabled={
               !canFinishConversation ||
               concluding ||
               dataUsageConsentPending ||
               (!messages.length &&
-                configuration?.mode !== "transcription" &&
-                audioMode !== "luke" &&
-                audioMode !== "audio")
+                (requiresConversationForNextStage ||
+                  (configuration?.mode !== "transcription" &&
+                    audioMode !== "luke" &&
+                    audioMode !== "audio")))
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
@@ -1352,12 +1388,12 @@ export const Chat = () => {
                   <span className="hidden sm:inline">
                     {configuration?.askSolution
                       ? askSolutionLabel
-                      : "Finish Session"}
+                      : session?.stage ? "Finish Stage" : "Finish Session"}
                   </span>
                   <span className="sm:hidden">
                     {configuration?.askSolution
                       ? askSolutionLabel
-                      : "Finish Session"}
+                      : session?.stage ? "Finish Stage" : "Finish Session"}
                   </span>
                 </>
               );
@@ -1884,7 +1920,17 @@ export const Chat = () => {
         </div>
       )}
 
-      {showSuccessModal && (
+      {session?.finishedAt && session.stage?.hasNext && sessionId && (
+        <div role="dialog" aria-modal="true" aria-label="Stage completed"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6">
+            <h2 className="mb-4 text-lg font-semibold">Stage {session.stage.number} completed</h2>
+            <ContinueStage sessionId={sessionId} />
+          </div>
+        </div>
+      )}
+
+      {showSuccessModal && !session?.stage?.hasNext && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
             <div className="flex justify-between items-center px-6 py-4 border-b">
@@ -1989,7 +2035,7 @@ export const Chat = () => {
         </div>
       )}
 
-      {session?.finishedAt && !showSuccessModal && (
+      {session?.finishedAt && !session.stage?.hasNext && !showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
             <div className="px-6 py-4">
