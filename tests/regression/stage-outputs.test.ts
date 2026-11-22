@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { getDependentStagesForSubmittedSolution } from '../../src/views/replication/stageOutputs';
+import {
+  getDependentStagesForSubmittedSolution,
+  rubricRequiresSubmittedSolution,
+} from '../../src/views/replication/stageOutputs';
 import type { ReplicationData } from '../../src/views/replication/types';
 
 const orchestration = {
@@ -61,5 +64,65 @@ describe('getDependentStagesForSubmittedSolution', () => {
 
     expect(getDependentStagesForSubmittedSolution(experiment, 's1')).toEqual([]);
     expect(getDependentStagesForSubmittedSolution(experiment, 's2')).toEqual([3]);
+  });
+
+  test('locks a stage when a later stage rubric evaluationPrompt references previousStage.outputs.submitedSolution', () => {
+    const experiment: ReplicationData['experiment'] = {
+      name: 'Rubric staged activity',
+      stages: [
+        { id: 's1', outputSources: { conversation: null, submitedSolution: null }, orchestration },
+        { id: 's2', outputSources: { conversation: 's1', submitedSolution: 's1' }, orchestration },
+      ],
+      leias: [
+        makeLeia('l1', 's1', 'Stage 1'),
+        {
+          ...makeLeia('l2', 's2', 'Only conversation in behaviour'),
+          leia: {
+            id: 'l2',
+            metadata: { name: 'l2' },
+            spec: {
+              behaviour: { spec: { description: 'Only conversation in behaviour' } },
+              rubric: {
+                spec: {
+                  evaluationPrompt: 'Compare against {{previousStage.outputs.submitedSolution}}',
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    expect(getDependentStagesForSubmittedSolution(experiment, 's1')).toEqual([2]);
+  });
+
+  test('detects when rubric evaluationPrompt requires currentStage.outputs.submitedSolution', () => {
+    expect(
+      rubricRequiresSubmittedSolution({
+        id: 'l1',
+        metadata: { name: 'l1' },
+        spec: {
+          rubric: {
+            spec: {
+              evaluationPrompt: 'Grade {{currentStage.outputs.submitedSolution}}',
+            },
+          },
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      rubricRequiresSubmittedSolution({
+        id: 'l2',
+        metadata: { name: 'l2' },
+        spec: {
+          rubric: {
+            spec: {
+              evaluationPrompt: 'Grade {{currentStage.outputs.conversation}}',
+            },
+          },
+        },
+      }),
+    ).toBe(false);
   });
 });

@@ -1,5 +1,7 @@
 // Shared types between Replication.tsx and its sections.
 
+export type EvaluationMode = "none" | "classic" | "rubric";
+
 export interface ReplicationLeia {
   stageId?: string;
   configuration: {
@@ -7,6 +9,7 @@ export interface ReplicationLeia {
     data?: unknown;
     askSolution: boolean;
     evaluateSolution: boolean;
+    evaluationMode?: EvaluationMode;
     showSolution?: boolean;
   };
   leia: {

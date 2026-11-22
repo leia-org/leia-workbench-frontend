@@ -16,6 +16,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import TheaterComedyOutlinedIcon from "@mui/icons-material/TheaterComedyOutlined";
 import ExtensionOutlinedIcon from "@mui/icons-material/ExtensionOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { docco } from "react-syntax-highlighter/dist/esm/styles/hljs";
 
@@ -76,6 +77,20 @@ export const LeiaPreviewDrawer: React.FC<LeiaPreviewDrawerProps> = ({
     | undefined;
   const problem = leia?.spec?.problem?.spec as
     | Record<string, unknown>
+    | undefined;
+  const rubric = leia?.spec?.rubric as
+    | {
+        metadata?: { name?: string };
+        spec?: {
+          evaluationPrompt?: string;
+          sections?: Array<{
+            title: string;
+            weight: number;
+            levels: string[];
+            criteria: Array<{ name: string }>;
+          }>;
+        };
+      }
     | undefined;
 
   const displayName = useMemo(() => {
@@ -256,6 +271,54 @@ export const LeiaPreviewDrawer: React.FC<LeiaPreviewDrawerProps> = ({
                     }
                   >
                     <ProblemSection problem={problem} />
+                  </SectionCard>
+                )}
+
+                {rubric?.spec?.sections && rubric.spec.sections.length > 0 && (
+                  <SectionCard
+                    icon={<FactCheckOutlinedIcon sx={{ fontSize: 18 }} />}
+                    accent="#D97706"
+                    title="Rubric"
+                    subtitle={rubric.metadata?.name || undefined}
+                  >
+                    <Stack spacing={1.5}>
+                      {rubric.spec.evaluationPrompt && (
+                        <DefRow label="Evaluation prompt" full>
+                          <Typography sx={{ fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+                            {rubric.spec.evaluationPrompt}
+                          </Typography>
+                        </DefRow>
+                      )}
+                      {rubric.spec.sections.map((section, idx) => (
+                        <Box
+                          key={`${section.title}-${idx}`}
+                          sx={{
+                            p: 1.5,
+                            borderRadius: 1.5,
+                            bgcolor: "surfaces.subtle",
+                            border: "1px solid",
+                            borderColor: "divider",
+                          }}
+                        >
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
+                            <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+                              {section.title}
+                            </Typography>
+                            <Chip size="small" label={`${section.weight}%`} sx={{ height: 20, fontSize: 11 }} />
+                          </Stack>
+                          <Typography sx={{ fontSize: 11, color: "text.secondary", mb: 0.5 }}>
+                            Levels: {section.levels.join(" → ")}
+                          </Typography>
+                          <Stack spacing={0.25}>
+                            {section.criteria.map((c, cIdx) => (
+                              <Typography key={`${c.name}-${cIdx}`} sx={{ fontSize: 12, color: "text.primary" }}>
+                                • {c.name}
+                              </Typography>
+                            ))}
+                          </Stack>
+                        </Box>
+                      ))}
+                    </Stack>
                   </SectionCard>
                 )}
 
