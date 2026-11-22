@@ -11,6 +11,8 @@ import {
   Select,
   Stack,
   Switch,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
   IconButton,
 } from "@mui/material";
@@ -32,8 +34,15 @@ import {
   buildLeiaInfographicPaths,
   buildStoredImageCandidateSources,
 } from "../../../lib/avatar";
-import type { ReplicationData, ReplicationLeia } from "../types";
-import { getDependentStagesForSubmittedSolution } from "../stageOutputs";
+import type {
+  EvaluationMode,
+  ReplicationData,
+  ReplicationLeia,
+} from "../types";
+import {
+  getDependentStagesForSubmittedSolution,
+  rubricRequiresSubmittedSolution,
+} from "../stageOutputs";
 import type { ApiKey } from "../../../models/ApiKeys";
 import openAiIcon from "../../../assets/providers/openai.svg";
 import geminiIcon from "../../../assets/providers/gemini.svg";
@@ -125,6 +134,7 @@ interface LeiasSectionProps {
   onLeiaUpdate: (idx: number) => Promise<boolean>;
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
+  onUpdateEvaluationMode?: (idx: number, mode: EvaluationMode) => Promise<void>;
   onToggleShowSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
@@ -243,6 +253,7 @@ interface LeiaEditorProps {
   onLeiaUpdate: (idx: number) => Promise<boolean>;
   onToggleAskSolution: (idx: number) => Promise<void>;
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
+  onUpdateEvaluationMode?: (idx: number, mode: EvaluationMode) => Promise<void>;
   onToggleShowSolution: (idx: number) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
@@ -275,6 +286,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onLeiaUpdate,
   onToggleAskSolution,
   onToggleEvaluateSolution,
+  onUpdateEvaluationMode,
   onToggleShowSolution,
   onStartTestSession,
   replicationId,
@@ -516,119 +528,199 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
       </Typography>
 
       <SectionLabel>Conversation</SectionLabel>
-      <FieldRow
-        label="Ask for student solution"
-        helper="Student writes a solution at the end."
-      >
-        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
-          <Switch
-            size="small"
-            checked={item.configuration.askSolution}
-            disabled={
-              isSecondaryMultiActor ||
-              (solutionRequiredByStages.length > 0 && item.configuration.askSolution)
-            }
-            onChange={() => onToggleAskSolution(idx)}
-          />
-          {isSecondaryMultiActor ? (
-            <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
-            </Typography>
-          ) : (
-            solutionRequiredByStages.length > 0 && (
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                {item.configuration.askSolution ? "Locked" : "Required"} because{" "}
-                {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
-                {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution.
-              </Typography>
-            )
-          )}
-        </Stack>
-      </FieldRow>
-      <FieldRow
-        label="Automatic evaluation"
-        helper="Run automatic evaluation against the solution."
-      >
-        {(() => {
-          const hasReferenceSolution = Boolean(
-            typeof item.leia.spec?.problem?.spec?.solution === "string" &&
-              item.leia.spec.problem.spec.solution.trim()
-          );
-          return (
-            <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
-              <Switch
-                size="small"
-                checked={item.configuration.evaluateSolution}
-                disabled={
-                  isSecondaryMultiActor ||
-                  (!hasReferenceSolution && !item.configuration.evaluateSolution)
-                }
-                onChange={() => onToggleEvaluateSolution(idx)}
-              />
-              {isSecondaryMultiActor ? (
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
-                </Typography>
-              ) : (
-                !hasReferenceSolution && (
-                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    Add a reference solution in Designer to enable automatic evaluation.
-                  </Typography>
-                )
-              )}
-            </Stack>
-          );
-        })()}
-      </FieldRow>
+      {(() => {
+        const hasReferenceSolution = Boolean(
+          typeof item.leia.spec?.problem?.spec?.solution === "string" &&
+            item.leia.spec.problem.spec.solution.trim()
+        );
+        const hasRubric = Boolean(
+          Array.isArray(item.leia.spec?.rubric?.spec?.sections) &&
+            item.leia.spec.rubric.spec.sections.length > 0
+        );
+        const evaluationMode: EvaluationMode =
+          item.configuration.evaluationMode ??
+          (item.configuration.evaluateSolution ? "classic" : "none");
+        const rubricNeedsSolution = rubricRequiresSubmittedSolution(item.leia);
+        const askSolutionLockedByRubric =
+          evaluationMode === "rubric" &&
+          rubricNeedsSolution &&
+          Boolean(item.configuration.askSolution);
+        const canShowResults =
+          hasReferenceSolution || evaluationMode === "rubric";
+        const showEvaluationOnly =
+          evaluationMode === "rubric" && !item.configuration.askSolution;
+        const showSolutionChecked =
+          canShowResults &&
+          (Boolean(item.configuration.askSolution) ||
+            evaluationMode === "rubric") &&
+          item.configuration.showSolution !== false;
 
-      <FieldRow
-        label="Show solution & evaluation"
-        helper="Show the reference solution and evaluation feedback to the student after submitting."
-      >
-        {(() => {
-          const hasReferenceSolution = Boolean(
-            typeof item.leia.spec?.problem?.spec?.solution === "string" &&
-              item.leia.spec.problem.spec.solution.trim()
-          );
-          const showSolutionChecked =
-            hasReferenceSolution &&
-            Boolean(item.configuration.askSolution) &&
-            item.configuration.showSolution !== false;
-          return (
-            <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
-              <Switch
-                size="small"
-                checked={showSolutionChecked}
-                disabled={
-                  isSecondaryMultiActor ||
-                  (!hasReferenceSolution && !showSolutionChecked)
-                }
-                onChange={() => onToggleShowSolution(idx)}
-              />
-              {isSecondaryMultiActor ? (
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
-                </Typography>
-              ) : !hasReferenceSolution ? (
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  Add a reference solution in Designer to show results to students.
-                </Typography>
-              ) : !showSolutionChecked && item.configuration.evaluateSolution ? (
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  Automatic evaluation will still run and be saved for instructors, hidden from students.
-                </Typography>
-              ) : (
-                solutionRequiredByStages.length > 0 && showSolutionChecked && (
-                  <Typography variant="caption" sx={{ color: "warning.main" }}>
-                    {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
-                    {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution; showing the reference solution or evaluation may reveal the answer early.
+        return (
+          <>
+            <FieldRow
+              label="Ask for student solution"
+              helper="Student writes a solution at the end."
+            >
+              <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+                <Switch
+                  size="small"
+                  checked={item.configuration.askSolution}
+                  disabled={
+                    isSecondaryMultiActor ||
+                    (solutionRequiredByStages.length > 0 &&
+                      item.configuration.askSolution) ||
+                    askSolutionLockedByRubric
+                  }
+                  onChange={() => onToggleAskSolution(idx)}
+                />
+                {isSecondaryMultiActor ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
                   </Typography>
-                )
-              )}
-            </Stack>
-          );
-        })()}
-      </FieldRow>
+                ) : solutionRequiredByStages.length > 0 ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    {item.configuration.askSolution ? "Locked" : "Required"} because{" "}
+                    {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
+                    {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution.
+                  </Typography>
+                ) : (
+                  askSolutionLockedByRubric && (
+                    <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                      Locked because the rubric evaluation prompt references{" "}
+                      {"{{currentStage.outputs.submitedSolution}}"}.
+                    </Typography>
+                  )
+                )}
+              </Stack>
+            </FieldRow>
+
+            <FieldRow
+              label="Automatic evaluation"
+              helper="Choose whether to evaluate automatically using the reference solution (Classic) or the structured Rubric."
+            >
+              <Stack direction="column" alignItems="flex-start" gap={0.75}>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={evaluationMode}
+                  aria-label="Automatic evaluation mode"
+                  onChange={(_, nextMode: EvaluationMode | null) => {
+                    if (!nextMode || nextMode === evaluationMode) return;
+                    if (onUpdateEvaluationMode) {
+                      void onUpdateEvaluationMode(idx, nextMode);
+                    } else if (nextMode === "classic" || nextMode === "none") {
+                      void onToggleEvaluateSolution(idx);
+                    }
+                  }}
+                >
+                  <ToggleButton
+                    value="none"
+                    disabled={isSecondaryMultiActor}
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Off
+                  </ToggleButton>
+                  <ToggleButton
+                    value="classic"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      (!hasReferenceSolution && evaluationMode !== "classic")
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Classic
+                  </ToggleButton>
+                  <ToggleButton
+                    value="rubric"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      (!hasRubric && evaluationMode !== "rubric")
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Rubric
+                  </ToggleButton>
+                </ToggleButtonGroup>
+                {isSecondaryMultiActor ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
+                  </Typography>
+                ) : !hasReferenceSolution && !hasRubric ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Add a reference solution or evaluation rubric in Designer to enable automatic evaluation.
+                  </Typography>
+                ) : (
+                  <Stack spacing={0.25}>
+                    {!hasReferenceSolution && (
+                      <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                        Classic evaluation requires a reference solution in Designer.
+                      </Typography>
+                    )}
+                    {!hasRubric && (
+                      <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                        Rubric evaluation requires an evaluation rubric in Designer.
+                      </Typography>
+                    )}
+                    {evaluationMode === "rubric" &&
+                      !item.configuration.askSolution &&
+                      !rubricNeedsSolution && (
+                        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                          Evaluates the conversation using the rubric when the student finishes.
+                        </Typography>
+                      )}
+                  </Stack>
+                )}
+              </Stack>
+            </FieldRow>
+
+            <FieldRow
+              label={
+                showEvaluationOnly
+                  ? "Show evaluation"
+                  : "Show solution & evaluation"
+              }
+              helper={
+                showEvaluationOnly
+                  ? "Show the rubric evaluation feedback to the student after finishing."
+                  : "Show the reference solution and evaluation feedback to the student after submitting."
+              }
+            >
+              <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+                <Switch
+                  size="small"
+                  checked={showSolutionChecked}
+                  disabled={
+                    isSecondaryMultiActor ||
+                    (!canShowResults && !showSolutionChecked)
+                  }
+                  onChange={() => onToggleShowSolution(idx)}
+                />
+                {isSecondaryMultiActor ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Managed on the shared problem LEIA{problemLeiaName ? ` (${problemLeiaName})` : ""}.
+                  </Typography>
+                ) : !canShowResults ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Add a reference solution or enable rubric evaluation to show results to students.
+                  </Typography>
+                ) : !showSolutionChecked && evaluationMode !== "none" ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Automatic evaluation will still run and be saved for instructors, hidden from students.
+                  </Typography>
+                ) : (
+                  solutionRequiredByStages.length > 0 &&
+                  showSolutionChecked && (
+                    <Typography variant="caption" sx={{ color: "warning.main" }}>
+                      {solutionRequiredByStages.map((n) => `Stage ${n}`).join(", ")}{" "}
+                      {solutionRequiredByStages.length === 1 ? "uses" : "use"} this stage&apos;s submitted solution; showing the reference solution or evaluation may reveal the answer early.
+                    </Typography>
+                  )
+                )}
+              </Stack>
+            </FieldRow>
+          </>
+        );
+      })()}
 
       <SectionLabel>Infographics</SectionLabel>
       {studentInfographicAvailable === null ||
@@ -1222,6 +1314,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   onLeiaUpdate,
   onToggleAskSolution,
   onToggleEvaluateSolution,
+  onUpdateEvaluationMode,
   onToggleShowSolution,
   onStartTestSession,
   startingSessionLeiaId,
@@ -1346,6 +1439,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onLeiaUpdate={onLeiaUpdate}
         onToggleAskSolution={onToggleAskSolution}
         onToggleEvaluateSolution={onToggleEvaluateSolution}
+        onUpdateEvaluationMode={onUpdateEvaluationMode}
         onToggleShowSolution={onToggleShowSolution}
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}

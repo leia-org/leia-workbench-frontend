@@ -7,7 +7,11 @@ import {
   PhotoIcon,
 } from "@heroicons/react/24/outline";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
+import RubricEvaluationView, {
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
@@ -185,6 +189,7 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  evaluationMode?: "none" | "classic" | "rubric";
   showSolution?: boolean;
   data: {
     messages?: Message[];
@@ -231,6 +236,8 @@ interface Session {
   isRunnerInitialized: boolean;
   result: string | null | undefined;
   evaluation: string | null | undefined;
+  evaluationMode?: "none" | "classic" | "rubric" | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   score: number | null | undefined;
   dataUsage?: SessionDataUsage | null;
 }
@@ -333,6 +340,10 @@ const ChatSession = () => {
   const [replication, setReplication] = useState<Replication | null>(null);
   const [showInstructions, setShowInstructions] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [chatEvaluation, setChatEvaluation] = useState<{
+    evaluation?: string | null;
+    rubricEvaluation?: RubricEvaluationResult | null;
+  } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showTooltip, setShowTooltip] = useState(true);
@@ -1063,6 +1074,33 @@ const ChatSession = () => {
     }
   };
 
+  const loadChatEvaluationIfEnabled = useCallback(async () => {
+    const hasAutomaticEvaluation = configuration?.evaluationMode
+      ? configuration.evaluationMode !== "none"
+      : Boolean(configuration?.evaluateSolution);
+    const shouldShowChatEvaluation =
+      !configuration?.askSolution &&
+      configuration?.showSolution !== false &&
+      hasAutomaticEvaluation;
+    if (!shouldShowChatEvaluation || !sessionId) {
+      setChatEvaluation(null);
+      return;
+    }
+    try {
+      const evalResponse = await axios.get(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/evaluation/`,
+      );
+      if (evalResponse.status === 200) {
+        setChatEvaluation({
+          evaluation: evalResponse.data?.evaluation ?? null,
+          rubricEvaluation: evalResponse.data?.rubricEvaluation ?? null,
+        });
+      }
+    } catch (evalError) {
+      console.error("Failed to fetch evaluation after finishing chat:", evalError);
+    }
+  }, [configuration, sessionId]);
+
   const handleFinishConversation = async () => {
     if (!canFinishConversation) return;
     if (dataUsageConsentPending) return;
@@ -1087,6 +1125,7 @@ const ChatSession = () => {
 
         if (response.status === 200) {
           const updatedSession = response.data;
+          await loadChatEvaluationIfEnabled();
           setSession(updatedSession);
           setShowSuccessModal(true);
         }
@@ -1106,6 +1145,7 @@ const ChatSession = () => {
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
       );
       if (response.status === 200) {
+        await loadChatEvaluationIfEnabled();
         setSession(response.data);
         setShowSuccessModal(true);
       }
@@ -1114,7 +1154,7 @@ const ChatSession = () => {
     } finally {
       setConcluding(false);
     }
-  }, [sessionId, dataUsageConsentPending]);
+  }, [sessionId, dataUsageConsentPending, loadChatEvaluationIfEnabled]);
 
   const handleDataUsageConsentDecision = async (accepted: boolean) => {
     if (dataUsageConsentSubmitting) return;
@@ -1923,8 +1963,19 @@ const ChatSession = () => {
       {session?.finishedAt && session.stage?.hasNext && sessionId && (
         <div role="dialog" aria-modal="true" aria-label="Stage completed"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6">
+          <div className={`w-full ${chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation ? "max-w-3xl" : "max-w-md"} rounded-xl bg-white p-6`}>
             <h2 className="mb-4 text-lg font-semibold">Stage {session.stage.number} completed</h2>
+            {(chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation) && (
+              <div className="mb-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-lg p-4">
+                {chatEvaluation.rubricEvaluation ? (
+                  <RubricEvaluationView rubricEvaluation={chatEvaluation.rubricEvaluation} />
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown>{chatEvaluation.evaluation || ""}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            )}
             <ContinueStage sessionId={sessionId} />
           </div>
         </div>
@@ -1932,7 +1983,7 @@ const ChatSession = () => {
 
       {showSuccessModal && !session?.stage?.hasNext && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
+          <div className={`bg-white rounded-2xl ${chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation ? "max-w-3xl" : "max-w-lg"} w-full mx-4 shadow-xl`}>
             <div className="flex justify-between items-center px-6 py-4 border-b">
               <h2 className="text-xl font-semibold text-gray-900">
                 Session Completed
@@ -1956,33 +2007,43 @@ const ChatSession = () => {
                 </svg>
               </button>
             </div>
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-10 w-10 text-green-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
+            <div className="px-6 py-4 max-h-[65vh] overflow-y-auto">
+              {chatEvaluation?.rubricEvaluation ? (
+                <RubricEvaluationView rubricEvaluation={chatEvaluation.rubricEvaluation} />
+              ) : chatEvaluation?.evaluation ? (
+                <div className="prose prose-sm max-w-none">
+                  <ReactMarkdown>{chatEvaluation.evaluation}</ReactMarkdown>
                 </div>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
-                Success!
-              </h3>
-              <p className="text-gray-600 text-center mb-4">
-                {replication?.form
-                  ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
-                  : "Your session has been successfully completed."}
-              </p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-10 w-10 text-green-600"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
+                    Success!
+                  </h3>
+                  <p className="text-gray-600 text-center mb-4">
+                    {replication?.form
+                      ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
+                      : "Your session has been successfully completed."}
+                  </p>
+                </>
+              )}
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button

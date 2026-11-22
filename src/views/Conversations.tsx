@@ -39,6 +39,10 @@ import {
   type ActivityRunGroup,
   type LeiaDisplayInfo,
 } from "./replication/activityRuns";
+import {
+  RubricEvaluationView,
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 
 interface Message {
   id: string;
@@ -69,6 +73,8 @@ interface Session {
   result: string | null;
   evaluation: string | null;
   score: number | null;
+  evaluationMode?: "classic" | "rubric" | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   messages: Message[];
   user: { email: string } | null;
   supervisorFlags?: SupervisorFlag[] | null;
@@ -883,104 +889,137 @@ const SessionDetail: React.FC<{
         )}
       </Paper>
 
-      {session.evaluation && (
+      {(session.rubricEvaluation || session.evaluation) && (
         <>
-          <Typography
-            variant="overline"
-            sx={{ display: "block", mb: 1.5, color: "text.disabled" }}
-          >
-            Evaluation
-          </Typography>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              bgcolor: "surfaces.accent",
-              borderColor: "primary.main",
-              borderStyle: "solid",
-              borderWidth: 1,
-              "& p": { fontSize: 14, lineHeight: 1.6, my: 1.25 },
-              "& p:first-of-type": { mt: 0 },
-              "& p:last-of-type": { mb: 0 },
-              "& h1, & h2, & h3, & h4": {
-                fontWeight: 600,
-                letterSpacing: "-0.01em",
-                color: "text.primary",
-                mt: 2,
-                mb: 1,
-              },
-              "& h1": { fontSize: 20 },
-              "& h2": { fontSize: 17 },
-              "& h3": { fontSize: 15 },
-              "& h4": { fontSize: 14 },
-              "& ul, & ol": { pl: 3, my: 1.25 },
-              "& li": { fontSize: 14, lineHeight: 1.6, mb: 0.5 },
-              "& code": {
-                fontFamily:
-                  "'JetBrains Mono Variable', ui-monospace, monospace",
-                fontSize: 12,
-                bgcolor: "surfaces.subtle",
-                px: 0.6,
-                py: 0.2,
-                borderRadius: 0.75,
-                color: "text.primary",
-              },
-              "& pre": {
-                bgcolor: "surfaces.subtle",
-                border: "1px solid",
-                borderColor: "divider",
-                p: 1.5,
-                borderRadius: 1.5,
-                overflowX: "auto",
-                my: 1.5,
-              },
-              "& pre code": {
-                bgcolor: "transparent",
-                p: 0,
-                borderRadius: 0,
-                fontSize: 12,
-              },
-              "& blockquote": {
-                borderLeft: "3px solid",
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+            <Typography
+              variant="overline"
+              sx={{ display: "block", color: "text.disabled" }}
+            >
+              Evaluation
+            </Typography>
+            {session.evaluationMode && (
+              <Chip
+                size="small"
+                label={session.evaluationMode === "rubric" ? "Rubric" : "Classic"}
+                sx={{
+                  height: 18,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  bgcolor:
+                    session.evaluationMode === "rubric"
+                      ? "rgba(217, 119, 6, 0.12)"
+                      : "surfaces.subtle",
+                  color:
+                    session.evaluationMode === "rubric" ? "#B45309" : "text.secondary",
+                }}
+              />
+            )}
+          </Stack>
+          {session.rubricEvaluation ? (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 3,
+                borderRadius: 2,
+                bgcolor: "background.paper",
                 borderColor: "primary.main",
-                pl: 2,
-                py: 0.25,
-                my: 1.5,
-                color: "text.secondary",
-                fontStyle: "italic",
-              },
-              "& a": {
-                color: "primary.main",
-                textDecoration: "underline",
-              },
-              "& hr": {
-                border: "none",
-                borderTop: "1px solid",
-                borderColor: "divider",
-                my: 2,
-              },
-              "& table": {
-                width: "100%",
-                borderCollapse: "collapse",
-                my: 1.5,
-                fontSize: 13,
-              },
-              "& th, & td": {
-                border: "1px solid",
-                borderColor: "divider",
-                px: 1,
-                py: 0.5,
-                textAlign: "left",
-              },
-              "& th": {
-                bgcolor: "surfaces.subtle",
-                fontWeight: 600,
-              },
-            }}
-          >
-            <ReactMarkdown>{session.evaluation}</ReactMarkdown>
-          </Paper>
+              }}
+            >
+              <RubricEvaluationView rubricEvaluation={session.rubricEvaluation} />
+            </Paper>
+          ) : (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 3,
+                borderRadius: 2,
+                bgcolor: "surfaces.accent",
+                borderColor: "primary.main",
+                borderStyle: "solid",
+                borderWidth: 1,
+                "& p": { fontSize: 14, lineHeight: 1.6, my: 1.25 },
+                "& p:first-of-type": { mt: 0 },
+                "& p:last-of-type": { mb: 0 },
+                "& h1, & h2, & h3, & h4": {
+                  fontWeight: 600,
+                  letterSpacing: "-0.01em",
+                  color: "text.primary",
+                  mt: 2,
+                  mb: 1,
+                },
+                "& h1": { fontSize: 20 },
+                "& h2": { fontSize: 17 },
+                "& h3": { fontSize: 15 },
+                "& h4": { fontSize: 14 },
+                "& ul, & ol": { pl: 3, my: 1.25 },
+                "& li": { fontSize: 14, lineHeight: 1.6, mb: 0.5 },
+                "& code": {
+                  fontFamily:
+                    "'JetBrains Mono Variable', ui-monospace, monospace",
+                  fontSize: 12,
+                  bgcolor: "surfaces.subtle",
+                  px: 0.6,
+                  py: 0.2,
+                  borderRadius: 0.75,
+                  color: "text.primary",
+                },
+                "& pre": {
+                  bgcolor: "surfaces.subtle",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  overflowX: "auto",
+                  my: 1.5,
+                },
+                "& pre code": {
+                  bgcolor: "transparent",
+                  p: 0,
+                  borderRadius: 0,
+                  fontSize: 12,
+                },
+                "& blockquote": {
+                  borderLeft: "3px solid",
+                  borderColor: "primary.main",
+                  pl: 2,
+                  py: 0.25,
+                  my: 1.5,
+                  color: "text.secondary",
+                  fontStyle: "italic",
+                },
+                "& a": {
+                  color: "primary.main",
+                  textDecoration: "underline",
+                },
+                "& hr": {
+                  border: "none",
+                  borderTop: "1px solid",
+                  borderColor: "divider",
+                  my: 2,
+                },
+                "& table": {
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  my: 1.5,
+                  fontSize: 13,
+                },
+                "& th, & td": {
+                  border: "1px solid",
+                  borderColor: "divider",
+                  px: 1,
+                  py: 0.5,
+                  textAlign: "left",
+                },
+                "& th": {
+                  bgcolor: "surfaces.subtle",
+                  fontWeight: 600,
+                },
+              }}
+            >
+              <ReactMarkdown>{session.evaluation || ""}</ReactMarkdown>
+            </Paper>
+          )}
         </>
       )}
 
@@ -1313,6 +1352,13 @@ const getReplicationConfigSections = (config: unknown): ConfigSection[] => {
         { label: "Mode", value: asDisplayValue(selectedConfiguration.mode) },
         { label: "Ask solution", value: selectedConfiguration.askSolution ? "Yes" : "No" },
         { label: "Evaluate solution", value: selectedConfiguration.evaluateSolution ? "Yes" : "No" },
+        {
+          label: "Evaluation mode",
+          value: asDisplayValue(
+            selectedConfiguration.evaluationMode ??
+              (selectedConfiguration.evaluateSolution ? "classic" : "none"),
+          ),
+        },
         { label: "Solution format", value: asDisplayValue(activity.solutionFormat) },
       ],
     },

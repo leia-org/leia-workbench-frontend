@@ -7,6 +7,9 @@ import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
 import { SessionTimer } from "../components/SessionTimer";
 import { ContinueStage, type StageProgress } from "../components/ContinueStage";
+import RubricEvaluationView, {
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 import NotesWidget from "../widgets/NotesWidget";
 import {
   PencilSquareIcon,
@@ -83,6 +86,7 @@ const getDefaultCode = () => {
 
 interface EvaluationModalProps {
   evaluation: string;
+  rubricEvaluation?: RubricEvaluationResult | null;
   onClose: () => void;
   onHome: () => void;
   onOpenForm?: () => void;
@@ -92,7 +96,7 @@ interface EvaluationModalProps {
 }
 
 const EvaluationModal: React.FC<EvaluationModalProps> = memo(
-  ({ evaluation, onClose, onHome, onOpenForm, spectateUrl, nextStageSessionId, hasNextStage }) => {
+  ({ evaluation, rubricEvaluation, onClose, onHome, onOpenForm, spectateUrl, nextStageSessionId, hasNextStage }) => {
     const [copied, setCopied] = React.useState(false);
 
     const handleCopyLink = () => {
@@ -105,7 +109,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
+        <div className={`bg-white rounded-2xl ${rubricEvaluation ? "max-w-3xl" : "max-w-2xl"} w-full mx-4 shadow-xl`}>
           <div className="flex justify-between items-center px-6 py-4 border-b">
             <h2 className="text-xl font-semibold text-gray-900">
               Solution Submitted
@@ -129,8 +133,12 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
               </svg>
             </button>
           </div>
-          <div className="px-6 py-4 max-h-[60vh] overflow-y-auto prose prose-blue">
-            <ReactMarkdown>{evaluation}</ReactMarkdown>
+          <div className={`px-6 py-4 max-h-[65vh] overflow-y-auto ${rubricEvaluation ? "" : "prose prose-blue"}`}>
+            {rubricEvaluation ? (
+              <RubricEvaluationView rubricEvaluation={rubricEvaluation} />
+            ) : (
+              <ReactMarkdown>{evaluation}</ReactMarkdown>
+            )}
           </div>
 
           {spectateUrl && (
@@ -403,6 +411,7 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  evaluationMode?: "none" | "classic" | "rubric";
   showSolution?: boolean;
   data: {
     messages?: unknown[];
@@ -431,6 +440,7 @@ export const Edit = () => {
   });
   const [loadingEvaluation, setLoadingEvaluation] = useState(false);
   const [evaluation, setEvaluation] = useState<string | null>(null);
+  const [rubricEvaluation, setRubricEvaluation] = useState<RubricEvaluationResult | null>(null);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [concluded, setConcluded] = useState(false);
@@ -668,17 +678,22 @@ export const Edit = () => {
     try {
       await concludeProblem();
       const showResultsToStudent = configuration?.showSolution !== false;
-      if (configuration?.evaluateSolution && showResultsToStudent) {
+      const hasAutomaticEvaluation = configuration?.evaluationMode
+        ? configuration.evaluationMode !== "none"
+        : Boolean(configuration?.evaluateSolution);
+      if (hasAutomaticEvaluation && showResultsToStudent) {
         const response = await axios.get(
           `${
             import.meta.env.VITE_APP_BACKEND
           }/api/v1/interactions/${sessionId}/evaluation/`
         );
         if (response.status === 200) {
-          setEvaluation(response.data.evaluation);
+          setEvaluation(response.data.evaluation ?? "");
+          setRubricEvaluation(response.data.rubricEvaluation ?? null);
           setShowEvaluation(true);
         }
       } else {
+        setRubricEvaluation(null);
         setEvaluation("Solution submitted successfully.");
         setShowEvaluation(true);
       }
@@ -756,7 +771,11 @@ export const Edit = () => {
         onOpenForm={handleOpenForm}
         onEvaluate={getEvaluation}
         onAlert={() =>
-          evaluation ? setShowEvaluation(true) : concluded ? void getEvaluation() : setShowAlert(true)
+          evaluation || rubricEvaluation
+            ? setShowEvaluation(true)
+            : concluded
+              ? void getEvaluation()
+              : setShowAlert(true)
         }
         formUrl={stage?.hasNext ? "" : formUrl || ""}
         loadingEvaluation={loadingEvaluation}
@@ -953,9 +972,10 @@ export const Edit = () => {
         </div>
       )}
 
-      {showEvaluation && evaluation && (
+      {showEvaluation && (evaluation || rubricEvaluation) && (
         <EvaluationModal
-          evaluation={evaluation}
+          evaluation={evaluation || ""}
+          rubricEvaluation={rubricEvaluation}
           onClose={handleCloseEvaluation}
           onHome={onHome}
           onOpenForm={

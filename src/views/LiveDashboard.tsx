@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
+import ReactMarkdown from "react-markdown";
 import { io } from "socket.io-client";
 import {
   Box,
@@ -40,6 +41,10 @@ import {
   groupSessionsByRun,
   type ActivityRunGroup,
 } from "./replication/activityRuns";
+import {
+  RubricEvaluationView,
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 
 interface SupervisorFlag {
   category: string;
@@ -60,6 +65,10 @@ interface LiveSession {
   startedAt: string;
   finishedAt?: string | null;
   isActive: boolean;
+  score?: number | null;
+  evaluationMode?: "classic" | "rubric" | null;
+  evaluation?: string | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   messageCount: number;
   lastMessage?: {
     text: string;
@@ -354,6 +363,30 @@ export const LiveDashboard = () => {
           prev.map((s) =>
             s.id === data.sessionId
               ? { ...s, finishedAt: data.finishedAt, isActive: false }
+              : s
+          )
+        );
+      }
+    );
+    newSocket.on(
+      "session:evaluated",
+      (data: {
+        sessionId: string;
+        score?: number | null;
+        evaluationMode?: "classic" | "rubric" | null;
+        evaluation?: string | null;
+        rubricEvaluation?: RubricEvaluationResult | null;
+      }) => {
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === data.sessionId
+              ? {
+                  ...s,
+                  score: data.score ?? s.score ?? null,
+                  evaluationMode: data.evaluationMode ?? s.evaluationMode ?? null,
+                  evaluation: data.evaluation ?? s.evaluation ?? null,
+                  rubricEvaluation: data.rubricEvaluation ?? s.rubricEvaluation ?? null,
+                }
               : s
           )
         );
@@ -746,20 +779,38 @@ const SessionRow: React.FC<{
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
           {formatTimeAgo(group.startedAt)}
         </Typography>
-        {totalFlags ? (
-          <Chip
-            size="small"
-            label={`⚑ ${totalFlags}`}
-            sx={{
-              height: 20,
-              fontSize: 11,
-              fontWeight: 600,
-              mt: 0.5,
-              bgcolor: "rgba(211,47,47,0.08)",
-              color: "error.main",
-            }}
-          />
-        ) : null}
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.5 }}>
+          {item.score !== null && item.score !== undefined && (
+            <Chip
+              size="small"
+              label={`${item.score}/10${item.evaluationMode === "rubric" ? " · Rubric" : ""}`}
+              sx={{
+                height: 20,
+                fontSize: 10,
+                fontWeight: 600,
+                bgcolor:
+                  item.evaluationMode === "rubric"
+                    ? "rgba(217, 119, 6, 0.12)"
+                    : "surfaces.accent",
+                color:
+                  item.evaluationMode === "rubric" ? "#B45309" : "primary.dark",
+              }}
+            />
+          )}
+          {totalFlags ? (
+            <Chip
+              size="small"
+              label={`⚑ ${totalFlags}`}
+              sx={{
+                height: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                bgcolor: "rgba(211,47,47,0.08)",
+                color: "error.main",
+              }}
+            />
+          ) : null}
+        </Stack>
       </Box>
     </ButtonBase>
   );
@@ -964,6 +1015,32 @@ const SessionDetail: React.FC<{
         )}
         <DetailRow label="Duration">{duration}</DetailRow>
         <DetailRow label="Messages">{item.messageCount}</DetailRow>
+        {item.score !== null && item.score !== undefined && (
+          <DetailRow label="Score">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography sx={{ fontSize: 14, fontWeight: 700 }}>
+                {item.score} / 10
+              </Typography>
+              {item.evaluationMode && (
+                <Chip
+                  size="small"
+                  label={item.evaluationMode === "rubric" ? "Rubric" : "Classic"}
+                  sx={{
+                    height: 20,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    bgcolor:
+                      item.evaluationMode === "rubric"
+                        ? "rgba(217, 119, 6, 0.12)"
+                        : "surfaces.subtle",
+                    color:
+                      item.evaluationMode === "rubric" ? "#B45309" : "text.secondary",
+                  }}
+                />
+              )}
+            </Stack>
+          </DetailRow>
+        )}
         <DetailRow label="LEIA">
           {leia ? (
             <ButtonBase
@@ -997,6 +1074,33 @@ const SessionDetail: React.FC<{
           )}
         </DetailRow>
       </Box>
+
+      {(item.rubricEvaluation || item.evaluation) && (
+        <Paper
+          variant="outlined"
+          sx={{ p: 2.5, borderRadius: 2, mb: 3, borderColor: "primary.light" }}
+        >
+          <Typography
+            variant="overline"
+            sx={{ display: "block", color: "text.disabled", mb: 1.5 }}
+          >
+            Evaluation
+          </Typography>
+          {item.rubricEvaluation ? (
+            <RubricEvaluationView rubricEvaluation={item.rubricEvaluation} compact />
+          ) : (
+            <Box
+              sx={{
+                "& p": { fontSize: 13, lineHeight: 1.55, my: 0.75 },
+                "& p:first-of-type": { mt: 0 },
+                "& p:last-of-type": { mb: 0 },
+              }}
+            >
+              <ReactMarkdown>{item.evaluation || ""}</ReactMarkdown>
+            </Box>
+          )}
+        </Paper>
+      )}
 
       <Stack direction="row" gap={1}>
         <Button

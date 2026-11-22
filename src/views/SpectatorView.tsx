@@ -2,7 +2,11 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { UserCircleIcon } from "@heroicons/react/24/solid";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 import { io } from "socket.io-client";
+import RubricEvaluationView, {
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 
 interface Message {
   text: string;
@@ -18,6 +22,8 @@ interface Session {
   isRunnerInitialized: boolean;
   result: string | null;
   evaluation: string | null;
+  evaluationMode?: "none" | "classic" | "rubric" | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   score: number | null;
   runId?: string;
   stage?: {
@@ -143,6 +149,29 @@ export const SpectatorView = () => {
     newSocket.on("session:finished", () => {
       setIsActive(false);
     });
+
+    newSocket.on(
+      "session:evaluated",
+      (payload: {
+        evaluation?: string | null;
+        score?: number | null;
+        evaluationMode?: "none" | "classic" | "rubric" | null;
+        rubricEvaluation?: RubricEvaluationResult | null;
+      }) => {
+        setSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                evaluation: payload.evaluation ?? prev.evaluation,
+                score: payload.score ?? prev.score,
+                evaluationMode: payload.evaluationMode ?? prev.evaluationMode,
+                rubricEvaluation:
+                  payload.rubricEvaluation ?? prev.rubricEvaluation,
+              }
+            : prev
+        );
+      }
+    );
 
     newSocket.on("run:stageChanged", (payload: { nextSessionId?: string }) => {
       if (payload?.nextSessionId && payload.nextSessionId !== sessionId) {
@@ -311,6 +340,29 @@ export const SpectatorView = () => {
                 </div>
               </div>
             ))
+          )}
+          {!isActive && (session?.rubricEvaluation || session?.evaluation) && (
+            <div className="mt-6 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-semibold text-gray-900">
+                  Evaluation
+                </h2>
+                {!session.rubricEvaluation &&
+                  session.score !== null &&
+                  session.score !== undefined && (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                      {session.score} / 10
+                    </span>
+                  )}
+              </div>
+              {session.rubricEvaluation ? (
+                <RubricEvaluationView rubricEvaluation={session.rubricEvaluation} />
+              ) : (
+                <div className="prose prose-sm max-w-none text-gray-800">
+                  <ReactMarkdown>{session.evaluation || ""}</ReactMarkdown>
+                </div>
+              )}
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>
