@@ -7,10 +7,16 @@ import {
   PhotoIcon,
 } from "@heroicons/react/24/outline";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
+import RubricEvaluationView, {
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
+import { ChatMarkdown } from "../components/ChatMarkdown";
+import { ContinueStage, type StageProgress } from "../components/ContinueStage";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import InfographicViewer, {
   type InfographicViewerHandle,
@@ -185,6 +191,8 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  evaluationMode?: "none" | "classic" | "rubric";
+  showSolution?: boolean;
   data: {
     messages?: Message[];
     link?: string;
@@ -220,6 +228,8 @@ interface ConversationDynamicsState {
 }
 
 interface Session {
+  stage?: StageProgress;
+  runId?: string;
   conversationDynamics?: ConversationDynamicsState;
   id?: string;
   isTest: boolean;
@@ -228,6 +238,8 @@ interface Session {
   isRunnerInitialized: boolean;
   result: string | null | undefined;
   evaluation: string | null | undefined;
+  evaluationMode?: "none" | "classic" | "rubric" | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   score: number | null | undefined;
   dataUsage?: SessionDataUsage | null;
 }
@@ -281,6 +293,7 @@ type MultiLeiaPayload = {
 };
 
 type LeiaSessionPayload = {
+  testRunsEnabled?: boolean;
   lukeConfig?: Partial<ChatLukeConfig> | null;
   infographic?: StudentInfographic | null;
   leia?: {
@@ -310,6 +323,11 @@ function getProblemWidgets(leia: LeiaSessionPayload | undefined): WidgetConfig[]
 }
 
 export const Chat = () => {
+  const { sessionId } = useParams();
+  return <ChatSession key={sessionId} />;
+};
+
+const ChatSession = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -325,6 +343,10 @@ export const Chat = () => {
   const [replication, setReplication] = useState<Replication | null>(null);
   const [showInstructions, setShowInstructions] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [chatEvaluation, setChatEvaluation] = useState<{
+    evaluation?: string | null;
+    rubricEvaluation?: RubricEvaluationResult | null;
+  } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showTooltip, setShowTooltip] = useState(true);
@@ -333,6 +355,7 @@ export const Chat = () => {
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
+  const [testRunsEnabled, setTestRunsEnabled] = useState(false);
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [studentInfographic, setStudentInfographic] =
     useState<StudentInfographic | null>(null);
@@ -343,6 +366,8 @@ export const Chat = () => {
     string | null
   >(null);
   const [hideAudioTranscription, setHideAudioTranscription] = useState(false);
+  const [requiresConversationForNextStage, setRequiresConversationForNextStage] =
+    useState(false);
   const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
     useState(false);
   const [showNotes, setShowNotes] = useState(false);
@@ -381,7 +406,7 @@ export const Chat = () => {
         const slot = w.slot === "left" ? "left" : "right";
         const props: Record<string, unknown> = {};
         if (w.params) props.params = w.params;
-        if (w.widgetType === "codeEditor") props.onTestRun = handleTestRun;
+        if (testRunsEnabled && w.widgetType === "codeEditor") props.onTestRun = handleTestRun;
         return {
           id: `${w.widgetType}-${slot}`,
           slot,
@@ -390,7 +415,7 @@ export const Chat = () => {
         } as WidgetDefinition;
       })
       .filter((w): w is WidgetDefinition => w !== null);
-  }, [lukeConfig, handleTestRun]);
+  }, [lukeConfig, handleTestRun, testRunsEnabled]);
 
   // Text mode renders an extra side panel that hosts the same widgets
   // luke mode mounts. The panel is what registers the tool functions in
@@ -625,7 +650,22 @@ export const Chat = () => {
         setTooltipMessage(
           response.data.leia.leia.spec.behaviour.spec.tooltip || null,
         );
+        if (response.data.session.stage && localStorage.getItem("sessionId") !== response.data.session.id) {
+          localStorage.removeItem("mermaid_code");
+        }
         localStorage.setItem("sessionId", response.data.session.id);
+        if (response.data.session.runId) {
+          localStorage.setItem("runId", response.data.session.runId);
+        } else {
+          localStorage.removeItem("runId");
+        }
+        localStorage.setItem(
+          "showReferenceSolution",
+          JSON.stringify(response.data.leia?.showReferenceSolution ?? true),
+        );
+        setRequiresConversationForNextStage(
+          Boolean(response.data.leia?.requiresConversationForNextStage),
+        );
         localStorage.setItem(
           "exercise",
           JSON.stringify(response.data.leia.leia.spec.problem.spec),
@@ -668,6 +708,7 @@ export const Chat = () => {
             : null,
         );
         const problemWidgets = getProblemWidgets(responseLeia);
+        setTestRunsEnabled(responseLeia?.testRunsEnabled === true);
         const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
         const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
           ? runnerLukeConfig.widgets
@@ -1052,14 +1093,42 @@ export const Chat = () => {
     }
   };
 
+  const loadChatEvaluationIfEnabled = useCallback(async () => {
+    const hasAutomaticEvaluation = configuration?.evaluationMode
+      ? configuration.evaluationMode !== "none"
+      : Boolean(configuration?.evaluateSolution);
+    const shouldShowChatEvaluation =
+      !configuration?.askSolution &&
+      configuration?.showSolution !== false &&
+      hasAutomaticEvaluation;
+    if (!shouldShowChatEvaluation || !sessionId) {
+      setChatEvaluation(null);
+      return;
+    }
+    try {
+      const evalResponse = await axios.get(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/evaluation/`,
+      );
+      if (evalResponse.status === 200) {
+        setChatEvaluation({
+          evaluation: evalResponse.data?.evaluation ?? null,
+          rubricEvaluation: evalResponse.data?.rubricEvaluation ?? null,
+        });
+      }
+    } catch (evalError) {
+      console.error("Failed to fetch evaluation after finishing chat:", evalError);
+    }
+  }, [configuration, sessionId]);
+
   const handleFinishConversation = async () => {
     if (!canFinishConversation) return;
     if (dataUsageConsentPending) return;
     if (
       !messages.length &&
-      configuration?.mode !== "transcription" &&
-      audioMode !== "luke" &&
-      audioMode !== "audio"
+      (requiresConversationForNextStage ||
+        (configuration?.mode !== "transcription" &&
+          audioMode !== "luke" &&
+          audioMode !== "audio"))
     )
       return;
     setConcluding(true);
@@ -1075,6 +1144,7 @@ export const Chat = () => {
 
         if (response.status === 200) {
           const updatedSession = response.data;
+          await loadChatEvaluationIfEnabled();
           setSession(updatedSession);
           setShowSuccessModal(true);
         }
@@ -1087,13 +1157,14 @@ export const Chat = () => {
   };
 
   const handleTimerExpire = useCallback(async () => {
-    if (dataUsageConsentPending || !canFinishConversation) return;
+    if (dataUsageConsentPending) return;
     setConcluding(true);
     try {
       const response = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
       );
       if (response.status === 200) {
+        await loadChatEvaluationIfEnabled();
         setSession(response.data);
         setShowSuccessModal(true);
       }
@@ -1102,7 +1173,7 @@ export const Chat = () => {
     } finally {
       setConcluding(false);
     }
-  }, [sessionId, dataUsageConsentPending, canFinishConversation]);
+  }, [sessionId, dataUsageConsentPending, loadChatEvaluationIfEnabled]);
 
   const handleDataUsageConsentDecision = async (accepted: boolean) => {
     if (dataUsageConsentSubmitting) return;
@@ -1122,7 +1193,7 @@ export const Chat = () => {
   };
 
   useEffect(() => {
-    if (session?.finishedAt && !showSuccessModal) {
+    if (session?.finishedAt && !session.stage?.hasNext && !showSuccessModal) {
       // Start countdown and redirect
       const timer = setInterval(() => {
         setRedirectingIn((prev) => {
@@ -1282,10 +1353,12 @@ export const Chat = () => {
             alt="LEIA Logo"
             className="w-6 h-6"
           />
-          <h1 className="text-lg font-semibold text-gray-900">Chat</h1>
+          <h1 className="text-lg font-semibold text-gray-900">
+            {session?.stage ? `Stage ${session.stage.number} of ${session.stage.total}` : "Chat"}
+          </h1>
         </div>
         <div className="flex gap-2">
-        {!dataUsageConsentPending && sessionTime && session?.startedAt && (
+        {!dataUsageConsentPending && sessionTime && session?.startedAt && !session.finishedAt && (
           <SessionTimer
             durationMinutes={sessionTime}
             sessionStartedAt={session.startedAt}
@@ -1338,15 +1411,22 @@ export const Chat = () => {
           </button>
           <button
             onClick={handleFinishConversation}
-            title={!canFinishConversation ? "LEIA will decide when the conversation ends" : undefined}
+            title={
+              !canFinishConversation
+                ? "LEIA will decide when the conversation ends"
+                : requiresConversationForNextStage && !messages.length
+                  ? "Have a conversation before finishing because a later stage uses it"
+                  : undefined
+            }
             disabled={
               !canFinishConversation ||
               concluding ||
               dataUsageConsentPending ||
               (!messages.length &&
-                configuration?.mode !== "transcription" &&
-                audioMode !== "luke" &&
-                audioMode !== "audio")
+                (requiresConversationForNextStage ||
+                  (configuration?.mode !== "transcription" &&
+                    audioMode !== "luke" &&
+                    audioMode !== "audio")))
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
@@ -1367,12 +1447,12 @@ export const Chat = () => {
                   <span className="hidden sm:inline">
                     {configuration?.askSolution
                       ? askSolutionLabel
-                      : "Finish Session"}
+                      : session?.stage ? "Finish Stage" : "Finish Session"}
                   </span>
                   <span className="sm:hidden">
                     {configuration?.askSolution
                       ? askSolutionLabel
-                      : "Finish Session"}
+                      : session?.stage ? "Finish Stage" : "Finish Session"}
                   </span>
                 </>
               );
@@ -1601,7 +1681,7 @@ export const Chat = () => {
                   )}
                 </div>
                 <div
-                  className={`max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
+                  className={`min-w-0 max-w-[85%] sm:max-w-[80%] px-4 py-2 break-words ${
                     msg.isLeia
                       ? "bg-white border border-gray-200 text-gray-900 rounded-t-2xl rounded-r-2xl rounded-bl-md shadow-sm"
                       : "bg-blue-600 text-white rounded-t-2xl rounded-l-2xl rounded-br-md shadow-sm"
@@ -1612,9 +1692,15 @@ export const Chat = () => {
                       {actorName}
                     </p>
                   )}
-                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
-                    {msg.text}
-                  </p>
+                  {msg.isLeia && audioMode === "text" ? (
+                    <div className="text-[15px] leading-relaxed">
+                      <ChatMarkdown text={msg.text} />
+                    </div>
+                  ) : (
+                    <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                      {msg.text}
+                    </p>
+                  )}
                   {/* Mostrar botón de reintento si es el último mensaje, es de LEIA, hay un mensaje fallido y contiene el texto de error */}
                   {msg.isLeia &&
                     index === visibleMessages.length - 1 &&
@@ -1893,9 +1979,30 @@ export const Chat = () => {
         </div>
       )}
 
-      {showSuccessModal && (
+      {session?.finishedAt && session.stage?.hasNext && sessionId && (
+        <div role="dialog" aria-modal="true" aria-label="Stage completed"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className={`w-full ${chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation ? "max-w-3xl" : "max-w-md"} rounded-xl bg-white p-6`}>
+            <h2 className="mb-4 text-lg font-semibold">Stage {session.stage.number} completed</h2>
+            {(chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation) && (
+              <div className="mb-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-lg p-4">
+                {chatEvaluation.rubricEvaluation ? (
+                  <RubricEvaluationView rubricEvaluation={chatEvaluation.rubricEvaluation} />
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown>{chatEvaluation.evaluation || ""}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            )}
+            <ContinueStage sessionId={sessionId} />
+          </div>
+        </div>
+      )}
+
+      {showSuccessModal && !session?.stage?.hasNext && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
+          <div className={`bg-white rounded-2xl ${chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation ? "max-w-3xl" : "max-w-lg"} w-full mx-4 shadow-xl`}>
             <div className="flex justify-between items-center px-6 py-4 border-b">
               <h2 className="text-xl font-semibold text-gray-900">
                 Session Completed
@@ -1919,33 +2026,43 @@ export const Chat = () => {
                 </svg>
               </button>
             </div>
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-10 w-10 text-green-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
+            <div className="px-6 py-4 max-h-[65vh] overflow-y-auto">
+              {chatEvaluation?.rubricEvaluation ? (
+                <RubricEvaluationView rubricEvaluation={chatEvaluation.rubricEvaluation} />
+              ) : chatEvaluation?.evaluation ? (
+                <div className="prose prose-sm max-w-none">
+                  <ReactMarkdown>{chatEvaluation.evaluation}</ReactMarkdown>
                 </div>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
-                Success!
-              </h3>
-              <p className="text-gray-600 text-center mb-4">
-                {replication?.form
-                  ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
-                  : "Your session has been successfully completed."}
-              </p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-10 w-10 text-green-600"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
+                    Success!
+                  </h3>
+                  <p className="text-gray-600 text-center mb-4">
+                    {replication?.form
+                      ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
+                      : "Your session has been successfully completed."}
+                  </p>
+                </>
+              )}
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button
@@ -1998,7 +2115,7 @@ export const Chat = () => {
         </div>
       )}
 
-      {session?.finishedAt && !showSuccessModal && (
+      {session?.finishedAt && !session.stage?.hasNext && !showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
             <div className="px-6 py-4">

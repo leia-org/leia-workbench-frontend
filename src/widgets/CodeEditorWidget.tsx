@@ -284,28 +284,30 @@ export function CodeEditorWidget({ params, onTestRun }: CodeEditorWidgetProps = 
                             </span>
                         )}
                         {!running && !lastRun && (
-                            <span style={{ color: "#94a3b8" }}>not run yet</span>
+                            <span style={{ color: "#94a3b8" }}>{onTestRun ? "not run yet" : "not run yet — ask LEIA to check your code"}</span>
                         )}
-                        <button
-                            type="button"
-                            onClick={() => { runTests("student").catch(() => undefined); }}
-                            disabled={running}
-                            style={{
-                                marginLeft: "auto",
-                                padding: "3px 12px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                lineHeight: 1.5,
-                                borderRadius: 6,
-                                border: "1px solid rgba(255,255,255,0.25)",
-                                background: running ? "rgba(255,255,255,0.08)" : "#2563eb",
-                                color: "#fff",
-                                cursor: running ? "default" : "pointer",
-                                opacity: running ? 0.6 : 1,
-                            }}
-                        >
-                            {running ? "Running…" : "Run tests"}
-                        </button>
+                        {onTestRun && (
+                            <button
+                                type="button"
+                                onClick={() => { runTests("student").catch(() => undefined); }}
+                                disabled={running}
+                                style={{
+                                    marginLeft: "auto",
+                                    padding: "3px 12px",
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    lineHeight: 1.5,
+                                    borderRadius: 6,
+                                    border: "1px solid rgba(255,255,255,0.25)",
+                                    background: running ? "rgba(255,255,255,0.08)" : "#2563eb",
+                                    color: "#fff",
+                                    cursor: running ? "default" : "pointer",
+                                    opacity: running ? 0.6 : 1,
+                                }}
+                            >
+                                {running ? "Running…" : "Run tests"}
+                            </button>
+                        )}
                     </div>
                     {lastRun?.error && (
                         <pre style={{ marginTop: 6, fontSize: 12, color: "#fca5a5", whiteSpace: "pre-wrap" }}>{lastRun.error}</pre>
