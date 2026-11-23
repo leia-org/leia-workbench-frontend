@@ -366,7 +366,7 @@ export const Conversations: React.FC = () => {
     [conversations, stageTotal]
   );
 
-  // KPI strip stats — grouped per activity run when staged, or per session in legacy replications.
+  // KPI strip stats — grouped per activity run.
   const stats = useMemo(() => {
     const completed = runGroups.filter((g) => g.isCompleted).length;
     const scored = conversations.filter((c) => c.score !== null && c.score !== undefined);
