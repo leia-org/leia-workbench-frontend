@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
+import ReactMarkdown from "react-markdown";
 import { io } from "socket.io-client";
 import {
   Box,
@@ -36,6 +37,14 @@ import { formatTimeAgo } from "../components/admin/RelativeTime";
 import LeiaPreviewDrawer from "../components/admin/LeiaPreview";
 import { writeReplicationName } from "../lib/replicationNames";
 import { useAuth } from "../context/useAuth";
+import {
+  groupSessionsByRun,
+  type ActivityRunGroup,
+} from "./replication/activityRuns";
+import {
+  RubricEvaluationView,
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 
 interface SupervisorFlag {
   category: string;
@@ -47,11 +56,19 @@ interface SupervisorFlag {
 
 interface LiveSession {
   id: string;
+  runId?: string | null;
+  stageId?: string | null;
+  stageNumber?: number | null;
+  stageTotal?: number | null;
   user: { email: string; id: string };
   leia: string;
   startedAt: string;
   finishedAt?: string | null;
   isActive: boolean;
+  score?: number | null;
+  evaluationMode?: "classic" | "rubric" | null;
+  evaluation?: string | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   messageCount: number;
   lastMessage?: {
     text: string;
@@ -171,7 +188,9 @@ export const LiveDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [replicationName, setReplicationName] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [stageTotal, setStageTotal] = useState<number | null>(null);
+  const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [leiasById, setLeiasById] = useState<Record<string, ParsedLeia>>({});
   const [leiaDrawerId, setLeiaDrawerId] = useState<string | null>(null);
   const [shareDialog, setShareDialog] = useState<{ open: boolean; url: string }>({
@@ -279,6 +298,8 @@ export const LiveDashboard = () => {
           if (leiaId) map[leiaId] = l;
         }
         setLeiasById(map);
+        const stages = response.data?.experiment?.stages;
+        setStageTotal(Array.isArray(stages) && stages.length > 0 ? stages.length : null);
       } catch (err: unknown) {
         if (axios.isAxiosError(err) && err.response?.status === 403) {
           if (replicationToken) setError("Invalid or expired replication token");
@@ -348,6 +369,30 @@ export const LiveDashboard = () => {
       }
     );
     newSocket.on(
+      "session:evaluated",
+      (data: {
+        sessionId: string;
+        score?: number | null;
+        evaluationMode?: "classic" | "rubric" | null;
+        evaluation?: string | null;
+        rubricEvaluation?: RubricEvaluationResult | null;
+      }) => {
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === data.sessionId
+              ? {
+                  ...s,
+                  score: data.score ?? s.score ?? null,
+                  evaluationMode: data.evaluationMode ?? s.evaluationMode ?? null,
+                  evaluation: data.evaluation ?? s.evaluation ?? null,
+                  rubricEvaluation: data.rubricEvaluation ?? s.rubricEvaluation ?? null,
+                }
+              : s
+          )
+        );
+      }
+    );
+    newSocket.on(
       "session:supervisorFlag",
       (data: {
         sessionId: string;
@@ -372,6 +417,9 @@ export const LiveDashboard = () => {
         );
       }
     );
+    newSocket.on("run:stageChanged", () => {
+      void fetchSessions();
+    });
     newSocket.on("dashboard:error", (payload: { message?: string }) => {
       setError(payload.message || "Real-time access denied");
     });
@@ -383,7 +431,7 @@ export const LiveDashboard = () => {
       newSocket.emit("dashboard:leave", replicationId);
       newSocket.disconnect();
     };
-  }, [token, isAdmin, replicationId, replicationToken, tokenReady]);
+  }, [token, isAdmin, replicationId, replicationToken, tokenReady, fetchSessions]);
 
   const handleShareLink = async (sessionId: string, open: boolean = true) => {
     try {
@@ -409,42 +457,60 @@ export const LiveDashboard = () => {
     }
   };
 
-  // Apply filter + search; keep active sessions first within "all".
-  const filteredSessions = useMemo(() => {
+  const runGroups = useMemo(
+    () => groupSessionsByRun(sessions, stageTotal),
+    [sessions, stageTotal]
+  );
+
+  // Apply filter + search; keep active runs first within "all".
+  const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const matchSearch = (s: LiveSession) =>
-      !q || (s.user?.email ?? "").toLowerCase().includes(q);
-    const matchFilter = (s: LiveSession) =>
-      filter === "all" ? true : filter === "active" ? s.isActive : !s.isActive;
-    return sessions
-      .filter((s) => matchFilter(s) && matchSearch(s))
+    const matchSearch = (g: ActivityRunGroup<LiveSession>) =>
+      !q || (g.user?.email ?? "").toLowerCase().includes(q);
+    const matchFilter = (g: ActivityRunGroup<LiveSession>) =>
+      filter === "all" ? true : filter === "active" ? g.hasActiveStage : !g.hasActiveStage;
+    return runGroups
+      .filter((g) => matchFilter(g) && matchSearch(g))
       .sort((a, b) => {
-        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+        if (a.hasActiveStage !== b.hasActiveStage) return a.hasActiveStage ? -1 : 1;
         return (
           new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
         );
       });
-  }, [sessions, search, filter]);
+  }, [runGroups, search, filter]);
 
-  const activeCount = sessions.filter((s) => s.isActive).length;
-  const finishedCount = sessions.length - activeCount;
+  const activeCount = runGroups.filter((g) => g.hasActiveStage).length;
+  const finishedCount = runGroups.length - activeCount;
 
-  const selected = useMemo(
-    () => filteredSessions.find((s) => s.id === selectedId) ?? null,
-    [filteredSessions, selectedId]
+  const selectedGroup = useMemo(
+    () => filteredGroups.find((g) => g.key === selectedRunKey) ?? null,
+    [filteredGroups, selectedRunKey]
   );
 
-  // Auto-select first session when the list changes and current selection
+  const selected = useMemo(() => {
+    if (!selectedGroup) return null;
+    return (
+      selectedGroup.sessions.find((s) => s.id === selectedSessionId) ??
+      selectedGroup.currentSession
+    );
+  }, [selectedGroup, selectedSessionId]);
+
+  // Auto-select first run when the list changes and current selection
   // disappears.
   useEffect(() => {
-    if (filteredSessions.length === 0) {
-      if (selectedId !== null) setSelectedId(null);
+    if (filteredGroups.length === 0) {
+      if (selectedRunKey !== null) setSelectedRunKey(null);
+      if (selectedSessionId !== null) setSelectedSessionId(null);
       return;
     }
-    if (!filteredSessions.some((s) => s.id === selectedId)) {
-      setSelectedId(filteredSessions[0].id);
+    const activeGroup = filteredGroups.find((g) => g.key === selectedRunKey);
+    if (!activeGroup) {
+      setSelectedRunKey(filteredGroups[0].key);
+      setSelectedSessionId(filteredGroups[0].currentSession.id);
+    } else if (!activeGroup.sessions.some((s) => s.id === selectedSessionId)) {
+      setSelectedSessionId(activeGroup.currentSession.id);
     }
-  }, [filteredSessions, selectedId]);
+  }, [filteredGroups, selectedRunKey, selectedSessionId]);
 
   const headerActions = (
     <Stack direction="row" gap={1}>
@@ -534,7 +600,7 @@ export const LiveDashboard = () => {
             value="finished"
             label={`Finished (${finishedCount})`}
           />
-          <Tab value="all" label={`All (${sessions.length})`} />
+          <Tab value="all" label={`All (${runGroups.length})`} />
         </Tabs>
       </Box>
 
@@ -544,7 +610,7 @@ export const LiveDashboard = () => {
         searchPlaceholder="Search by email..."
         searchValue={search}
         onSearchChange={setSearch}
-        isListEmpty={!loading && filteredSessions.length === 0 && !error}
+        isListEmpty={!loading && filteredGroups.length === 0 && !error}
         emptyListMessage={
           sessions.length === 0
             ? "No sessions yet."
@@ -564,12 +630,15 @@ export const LiveDashboard = () => {
               </Typography>
             </Box>
           ) : (
-            filteredSessions.map((s) => (
+            filteredGroups.map((g) => (
               <SessionRow
-                key={s.id}
-                item={s}
-                selected={s.id === selectedId}
-                onClick={() => setSelectedId(s.id)}
+                key={g.key}
+                group={g}
+                selected={g.key === selectedRunKey}
+                onClick={() => {
+                  setSelectedRunKey(g.key);
+                  setSelectedSessionId(g.currentSession.id);
+                }}
               />
             ))
           )
@@ -577,9 +646,11 @@ export const LiveDashboard = () => {
         detail={
           loading ? (
             <SessionDetailSkeleton />
-          ) : selected ? (
+          ) : selected && selectedGroup ? (
             <SessionDetail
+              group={selectedGroup}
               item={selected}
+              onSelectStageSession={(sessionId) => setSelectedSessionId(sessionId)}
               replicationName={replicationName}
               leia={leiasById[selected.leia]}
               onOpenLeia={
@@ -614,10 +685,18 @@ export const LiveDashboard = () => {
 // — Row + Detail components --------------------------------------------
 
 const SessionRow: React.FC<{
-  item: LiveSession;
+  group: ActivityRunGroup<LiveSession>;
   selected: boolean;
   onClick: () => void;
-}> = ({ item, selected, onClick }) => {
+}> = ({ group, selected, onClick }) => {
+  const item = group.currentSession;
+  const totalMessages = group.sessions.reduce((sum, s) => sum + s.messageCount, 0);
+  const totalFlags = group.sessions.reduce((sum, s) => sum + (s.supervisorFlagCount || 0), 0);
+  const stageBadge =
+    group.isStaged && group.stageTotal && group.stageTotal > 1
+      ? `Stage ${item.stageNumber ?? group.sessions.length}/${group.stageTotal}`
+      : null;
+
   return (
     <ButtonBase
       onClick={onClick}
@@ -653,7 +732,7 @@ const SessionRow: React.FC<{
     >
       <Box sx={{ minWidth: 0, flex: 1, pr: 2 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <StatusDot color={item.isActive ? "success" : "neutral"} pulse={item.isActive} />
+          <StatusDot color={group.hasActiveStage ? "success" : "neutral"} pulse={group.hasActiveStage} />
           <Typography
             variant="subtitle2"
             sx={{
@@ -663,8 +742,15 @@ const SessionRow: React.FC<{
               textOverflow: "ellipsis",
             }}
           >
-            {item.user?.email || "Anonymous"}
+            {group.user?.email || "Anonymous"}
           </Typography>
+          {stageBadge && (
+            <Chip
+              size="small"
+              label={stageBadge}
+              sx={{ height: 18, fontSize: 10, fontWeight: 600 }}
+            />
+          )}
         </Box>
         <Typography
           variant="caption"
@@ -677,7 +763,7 @@ const SessionRow: React.FC<{
             textOverflow: "ellipsis",
           }}
         >
-          {item.messageCount} message{item.messageCount === 1 ? "" : "s"}
+          {totalMessages} message{totalMessages === 1 ? "" : "s"}
           {item.lastMessage ? ` · "${item.lastMessage.text}"` : ""}
         </Typography>
       </Box>
@@ -691,22 +777,40 @@ const SessionRow: React.FC<{
         }}
       >
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
-          {formatTimeAgo(item.startedAt)}
+          {formatTimeAgo(group.startedAt)}
         </Typography>
-        {item.supervisorFlagCount ? (
-          <Chip
-            size="small"
-            label={`⚑ ${item.supervisorFlagCount}`}
-            sx={{
-              height: 20,
-              fontSize: 11,
-              fontWeight: 600,
-              mt: 0.5,
-              bgcolor: "rgba(211,47,47,0.08)",
-              color: "error.main",
-            }}
-          />
-        ) : null}
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.5 }}>
+          {item.score !== null && item.score !== undefined && (
+            <Chip
+              size="small"
+              label={`${item.score}/10${item.evaluationMode === "rubric" ? " · Rubric" : ""}`}
+              sx={{
+                height: 20,
+                fontSize: 10,
+                fontWeight: 600,
+                bgcolor:
+                  item.evaluationMode === "rubric"
+                    ? "rgba(217, 119, 6, 0.12)"
+                    : "surfaces.accent",
+                color:
+                  item.evaluationMode === "rubric" ? "#B45309" : "primary.dark",
+              }}
+            />
+          )}
+          {totalFlags ? (
+            <Chip
+              size="small"
+              label={`⚑ ${totalFlags}`}
+              sx={{
+                height: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                bgcolor: "rgba(211,47,47,0.08)",
+                color: "error.main",
+              }}
+            />
+          ) : null}
+        </Stack>
       </Box>
     </ButtonBase>
   );
@@ -728,13 +832,15 @@ const SessionRowSkeleton: React.FC = () => (
 );
 
 const SessionDetail: React.FC<{
+  group: ActivityRunGroup<LiveSession>;
   item: LiveSession;
+  onSelectStageSession: (sessionId: string) => void;
   replicationName: string;
   leia?: ParsedLeia | null;
   onOpenLeia?: () => void;
   onWatch: () => void;
   onShare: () => void;
-}> = ({ item, replicationName, leia, onOpenLeia, onWatch, onShare }) => {
+}> = ({ group, item, onSelectStageSession, replicationName, leia, onOpenLeia, onWatch, onShare }) => {
   const duration = useMemo(() => {
     const start = new Date(item.startedAt).getTime();
     const end = item.finishedAt ? new Date(item.finishedAt).getTime() : Date.now();
@@ -763,7 +869,7 @@ const SessionDetail: React.FC<{
         </Typography>
       </Stack>
 
-      <Stack direction="row" gap={1} sx={{ mb: 4 }}>
+      <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 2.5 }}>
         <Chip
           size="small"
           variant="outlined"
@@ -776,6 +882,14 @@ const SessionDetail: React.FC<{
             bgcolor: item.isActive ? "rgba(22,163,74,0.06)" : "transparent",
           }}
         />
+        {item.stageNumber && group.stageTotal && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Stage ${item.stageNumber} of ${group.stageTotal}`}
+            sx={{ height: 22, fontSize: 11, borderColor: "primary.main", color: "primary.dark" }}
+          />
+        )}
         <Chip
           size="small"
           variant="outlined"
@@ -783,6 +897,31 @@ const SessionDetail: React.FC<{
           sx={{ height: 22, fontSize: 11, borderColor: "divider" }}
         />
       </Stack>
+
+      {group.sessions.length > 1 && (
+        <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 3 }}>
+          {group.sessions.map((stageSession, idx) => {
+            const stageNum = stageSession.stageNumber ?? idx + 1;
+            const active = stageSession.id === item.id;
+            return (
+              <Chip
+                key={stageSession.id}
+                size="small"
+                variant={active ? "filled" : "outlined"}
+                color={active ? "primary" : "default"}
+                onClick={() => onSelectStageSession(stageSession.id)}
+                label={`Stage ${stageNum}`}
+                icon={
+                  <Box sx={{ pl: 0.75, display: "inline-flex" }}>
+                    <StatusDot color={stageSession.isActive ? "success" : "neutral"} pulse={stageSession.isActive} />
+                  </Box>
+                }
+                sx={{ cursor: "pointer", fontWeight: active ? 600 : 500 }}
+              />
+            );
+          })}
+        </Stack>
+      )}
 
       <Paper
         variant="outlined"
@@ -876,6 +1015,32 @@ const SessionDetail: React.FC<{
         )}
         <DetailRow label="Duration">{duration}</DetailRow>
         <DetailRow label="Messages">{item.messageCount}</DetailRow>
+        {item.score !== null && item.score !== undefined && (
+          <DetailRow label="Score">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography sx={{ fontSize: 14, fontWeight: 700 }}>
+                {item.score} / 10
+              </Typography>
+              {item.evaluationMode && (
+                <Chip
+                  size="small"
+                  label={item.evaluationMode === "rubric" ? "Rubric" : "Classic"}
+                  sx={{
+                    height: 20,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    bgcolor:
+                      item.evaluationMode === "rubric"
+                        ? "rgba(217, 119, 6, 0.12)"
+                        : "surfaces.subtle",
+                    color:
+                      item.evaluationMode === "rubric" ? "#B45309" : "text.secondary",
+                  }}
+                />
+              )}
+            </Stack>
+          </DetailRow>
+        )}
         <DetailRow label="LEIA">
           {leia ? (
             <ButtonBase
@@ -909,6 +1074,33 @@ const SessionDetail: React.FC<{
           )}
         </DetailRow>
       </Box>
+
+      {(item.rubricEvaluation || item.evaluation) && (
+        <Paper
+          variant="outlined"
+          sx={{ p: 2.5, borderRadius: 2, mb: 3, borderColor: "primary.light" }}
+        >
+          <Typography
+            variant="overline"
+            sx={{ display: "block", color: "text.disabled", mb: 1.5 }}
+          >
+            Evaluation
+          </Typography>
+          {item.rubricEvaluation ? (
+            <RubricEvaluationView rubricEvaluation={item.rubricEvaluation} compact />
+          ) : (
+            <Box
+              sx={{
+                "& p": { fontSize: 13, lineHeight: 1.55, my: 0.75 },
+                "& p:first-of-type": { mt: 0 },
+                "& p:last-of-type": { mb: 0 },
+              }}
+            >
+              <ReactMarkdown>{item.evaluation || ""}</ReactMarkdown>
+            </Box>
+          )}
+        </Paper>
+      )}
 
       <Stack direction="row" gap={1}>
         <Button

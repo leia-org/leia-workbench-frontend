@@ -1,62 +1,70 @@
 import { Rnd } from "react-rnd";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface NoteEntry {
   text: string;
   sessionId: string;
 }
 
-const Notes = () => {
-  const [sessionId] = useState(() => localStorage.getItem("sessionId"));
+function getAllNotes(): NoteEntry[] {
+  const raw = localStorage.getItem("notes");
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
-  const [text, setText] = useState(() => {
-    if (!sessionId) return "";
-    const raw = localStorage.getItem("notes");
-    if (!raw) return "";
-    try {
-      const parsed = JSON.parse(raw);
-      const found = parsed.find((note: NoteEntry) => note.sessionId === sessionId);
-      return found ? found.text : "";
-    } catch {
-      return "";
-    }
-  });
+function persistNote(noteKey: string, text: string) {
+  const notes = getAllNotes();
+  const index = notes.findIndex((note) => note.sessionId === noteKey);
 
-  function getAllNotes(): NoteEntry[] {
-    const raw = localStorage.getItem("notes");
-    if (!raw) return [];
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+  if (index !== -1) {
+    notes[index].text = text;
+  } else {
+    notes.push({
+      text,
+      sessionId: noteKey,
+    });
   }
 
+  localStorage.setItem("notes", JSON.stringify(notes));
+}
+
+const Notes = () => {
+  const [noteKey] = useState(
+    () => localStorage.getItem("runId") || localStorage.getItem("sessionId")
+  );
+
+  const [text, setText] = useState(() => {
+    if (!noteKey) return "";
+    const found = getAllNotes().find((note) => note.sessionId === noteKey);
+    return found ? found.text : "";
+  });
+
+  const latestTextRef = useRef(text);
+  latestTextRef.current = text;
+
   useEffect(() => {
-    if (!sessionId) return;
+    if (!noteKey) return;
 
     const timeout = setTimeout(() => {
-      const notes = getAllNotes();
-
-      const index = notes.findIndex((note) => note.sessionId === sessionId);
-
-      if (index !== -1) {
-        notes[index].text = text;
-      } else {
-        notes.push({
-          text,
-          sessionId,
-        });
-      }
-
-      localStorage.setItem("notes", JSON.stringify(notes));
+      persistNote(noteKey, text);
     }, 4000);
 
     return () => {
       clearTimeout(timeout);
     };
-  }, [text, sessionId]);
+  }, [text, noteKey]);
+
+  useEffect(() => {
+    if (!noteKey) return;
+    return () => {
+      persistNote(noteKey, latestTextRef.current);
+    };
+  }, [noteKey]);
 
   return (
     <Rnd

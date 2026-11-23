@@ -6,6 +6,10 @@ import ReactMarkdown from "react-markdown";
 import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
 import { SessionTimer } from "../components/SessionTimer";
+import { ContinueStage, type StageProgress } from "../components/ContinueStage";
+import RubricEvaluationView, {
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 import NotesWidget from "../widgets/NotesWidget";
 import {
   PencilSquareIcon,
@@ -47,6 +51,20 @@ const fallbackCode = `classDiagram
     Client "1" --> "*" Order : places
     Order "1" --> "*" Product : contains`;
 
+const clearStudentSessionStorage = () => {
+  [
+    "sessionId",
+    "runId",
+    "session",
+    "exercise",
+    "configuration",
+    "replication",
+    "mermaid_code",
+    "editor_width",
+    "showReferenceSolution",
+  ].forEach((key) => localStorage.removeItem(key));
+};
+
 const getDefaultCode = () => {
   const savedExercise = localStorage.getItem("exercise");
   if (savedExercise) {
@@ -68,14 +86,17 @@ const getDefaultCode = () => {
 
 interface EvaluationModalProps {
   evaluation: string;
+  rubricEvaluation?: RubricEvaluationResult | null;
   onClose: () => void;
   onHome: () => void;
   onOpenForm?: () => void;
   spectateUrl?: string;
+  nextStageSessionId?: string;
+  hasNextStage: boolean;
 }
 
 const EvaluationModal: React.FC<EvaluationModalProps> = memo(
-  ({ evaluation, onClose, onHome, onOpenForm, spectateUrl }) => {
+  ({ evaluation, rubricEvaluation, onClose, onHome, onOpenForm, spectateUrl, nextStageSessionId, hasNextStage }) => {
     const [copied, setCopied] = React.useState(false);
 
     const handleCopyLink = () => {
@@ -88,7 +109,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
+        <div className={`bg-white rounded-2xl ${rubricEvaluation ? "max-w-3xl" : "max-w-2xl"} w-full mx-4 shadow-xl`}>
           <div className="flex justify-between items-center px-6 py-4 border-b">
             <h2 className="text-xl font-semibold text-gray-900">
               Solution Submitted
@@ -112,8 +133,12 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
               </svg>
             </button>
           </div>
-          <div className="px-6 py-4 max-h-[60vh] overflow-y-auto prose prose-blue">
-            <ReactMarkdown>{evaluation}</ReactMarkdown>
+          <div className={`px-6 py-4 max-h-[65vh] overflow-y-auto ${rubricEvaluation ? "" : "prose prose-blue"}`}>
+            {rubricEvaluation ? (
+              <RubricEvaluationView rubricEvaluation={rubricEvaluation} />
+            ) : (
+              <ReactMarkdown>{evaluation}</ReactMarkdown>
+            )}
           </div>
 
           {spectateUrl && (
@@ -173,7 +198,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
           )}
 
           <div className="px-6 py-4 border-t flex justify-end gap-2">
-            <button
+            {!hasNextStage && <button
               onClick={onHome}
               className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-600 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
             >
@@ -191,7 +216,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
                 />
               </svg>
               Home
-            </button>
+            </button>}
 
             {onOpenForm && (
               <button
@@ -201,6 +226,7 @@ const EvaluationModal: React.FC<EvaluationModalProps> = memo(
                 Open Form
               </button>
             )}
+            {nextStageSessionId && <ContinueStage sessionId={nextStageSessionId} />}
           </div>
         </div>
       </div>
@@ -290,6 +316,7 @@ interface HeaderProps {
   onEvaluate: () => void;
   formUrl: string;
   loadingEvaluation: boolean;
+  submissionDisabled?: boolean;
   onAlert: () => void;
   sessionTime?: number | null;
   sessionStartedAt?: string | null;
@@ -297,7 +324,7 @@ interface HeaderProps {
   onNotesToggle?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisabled, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -333,7 +360,7 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, onAlert, sessio
         </button>
         <button
           onClick={onAlert}
-          disabled={loadingEvaluation}
+          disabled={loadingEvaluation || submissionDisabled}
           className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {loadingEvaluation ? (
@@ -384,6 +411,8 @@ interface Configuration {
   mode: string;
   askSolution: boolean;
   evaluateSolution: boolean;
+  evaluationMode?: "none" | "classic" | "rubric";
+  showSolution?: boolean;
   data: {
     messages?: unknown[];
     link?: string;
@@ -411,6 +440,7 @@ export const Edit = () => {
   });
   const [loadingEvaluation, setLoadingEvaluation] = useState(false);
   const [evaluation, setEvaluation] = useState<string | null>(null);
+  const [rubricEvaluation, setRubricEvaluation] = useState<RubricEvaluationResult | null>(null);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [concluded, setConcluded] = useState(false);
@@ -428,14 +458,31 @@ export const Edit = () => {
   const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
+  const [stage, setStage] = useState<StageProgress>();
+  const [stageCompleted, setStageCompleted] = useState(false);
+  const [timerExpiredStageModal, setTimerExpiredStageModal] = useState(false);
+  const [showReferenceSolution, setShowReferenceSolution] = useState(true);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
+  const codeRef = useRef(code);
+  codeRef.current = code;
+  const concludedRef = useRef(concluded);
+  concludedRef.current = concluded;
   // Load initial data from localStorage
   useEffect(() => {
     const savedConfiguration = localStorage.getItem("configuration");
     const savedReplication = localStorage.getItem("replication");
     const savedSessionId = localStorage.getItem("sessionId");
     const savedExercise = localStorage.getItem("exercise");
+    const savedShowReferenceSolution = localStorage.getItem("showReferenceSolution");
+
+    if (savedShowReferenceSolution !== null) {
+      try {
+        setShowReferenceSolution(Boolean(JSON.parse(savedShowReferenceSolution)));
+      } catch {
+        setShowReferenceSolution(true);
+      }
+    }
 
     if (savedConfiguration) {
       const parsedConfiguration = JSON.parse(savedConfiguration);
@@ -455,6 +502,12 @@ export const Edit = () => {
     const savedSession = localStorage.getItem("session");
     if (savedSession) {
       const parsedSession = JSON.parse(savedSession);
+      setStage(parsedSession.stage);
+      setStageCompleted(Boolean(parsedSession.stage && parsedSession.finishedAt));
+      if (parsedSession.stage && parsedSession.finishedAt && typeof parsedSession.result === "string") {
+        setCode(parsedSession.result);
+        setConcluded(true);
+      }
       if (parsedSession.startedAt) {
         setSessionStartedAt(parsedSession.startedAt);
       }
@@ -483,15 +536,35 @@ export const Edit = () => {
   }, []);
 
   const onHome = useCallback(() => {
-    localStorage.clear();
+    clearStudentSessionStorage();
     navigate("/");
   }, [navigate]);
 
   const handleTimerExpire = useCallback(async () => {
+    if (!sessionId) return;
     try {
-      await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
-      );
+      const { data } = concludedRef.current
+        ? await axios.post(
+            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+          )
+        : await axios.post(
+            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
+            { result: codeRef.current },
+          );
+      setConcluded(true);
+      setShowAlert(false);
+      if (data.spectateUrl) {
+        setSpectateUrl(data.spectateUrl);
+      }
+      if (data.stage) {
+        localStorage.setItem("session", JSON.stringify(data));
+        setStage(data.stage);
+        setStageCompleted(true);
+        if (data.stage.hasNext) {
+          setTimerExpiredStageModal(true);
+          return;
+        }
+      }
       setSessionFinishedAt(new Date().toISOString());
       setShowSuccessModal(true);
     } catch (error) {
@@ -505,7 +578,7 @@ export const Edit = () => {
         setRedirectingIn((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            localStorage.clear();
+            clearStudentSessionStorage();
             navigate("/");
             return 0;
           }
@@ -564,31 +637,38 @@ export const Edit = () => {
         // leave the editor open or cause a second submission on retry.
         setConcluded(true);
         setShowAlert(false);
+        if (response.data.stage) {
+          localStorage.setItem("session", JSON.stringify(response.data));
+          setStage(response.data.stage);
+          setStageCompleted(true);
+        }
         // Capture spectate URL from response
         if (response.data.spectateUrl) {
           setSpectateUrl(response.data.spectateUrl);
         }
 
-        try {
-          const { data } = await axios.get(
-            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/solution`
-          );
-          setProblemSolution(data.solution);
-          setSolutionFormat(data.solutionFormat || "text");
-          if (data.solutionFormat === "mermaid") {
-            const svg = await mermaid.render("mermaid2-diagram", data.solution);
-            setConcludedSvg(svg.svg);
+        if (showReferenceSolution) {
+          try {
+            const { data } = await axios.get(
+              `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/solution`
+            );
+            setProblemSolution(data.solution);
+            setSolutionFormat(data.solutionFormat || "text");
+            if (data.solutionFormat === "mermaid") {
+              const svg = await mermaid.render("mermaid2-diagram", data.solution);
+              setConcludedSvg(svg.svg);
+            }
+          } catch (previewError) {
+            console.error("Failed to display the reference solution:", previewError);
+            setSolutionError("Your solution was submitted, but the reference solution could not be displayed.");
           }
-        } catch (previewError) {
-          console.error("Failed to display the reference solution:", previewError);
-          setSolutionError("Your solution was submitted, but the reference solution could not be displayed.");
         }
       }
     } catch (error) {
       console.error("Failed to conclude the problem:", error);
       throw error;
     }
-  }, [code, concluded]);
+  }, [code, concluded, showReferenceSolution]);
 
   const getEvaluation = useCallback(async () => {
     if (submissionPendingRef.current) return;
@@ -597,17 +677,23 @@ export const Edit = () => {
     setLoadingEvaluation(true);
     try {
       await concludeProblem();
-      if (configuration?.evaluateSolution) {
+      const showResultsToStudent = configuration?.showSolution !== false;
+      const hasAutomaticEvaluation = configuration?.evaluationMode
+        ? configuration.evaluationMode !== "none"
+        : Boolean(configuration?.evaluateSolution);
+      if (hasAutomaticEvaluation && showResultsToStudent) {
         const response = await axios.get(
           `${
             import.meta.env.VITE_APP_BACKEND
           }/api/v1/interactions/${sessionId}/evaluation/`
         );
         if (response.status === 200) {
-          setEvaluation(response.data.evaluation);
+          setEvaluation(response.data.evaluation ?? "");
+          setRubricEvaluation(response.data.rubricEvaluation ?? null);
           setShowEvaluation(true);
         }
       } else {
+        setRubricEvaluation(null);
         setEvaluation("Solution submitted successfully.");
         setShowEvaluation(true);
       }
@@ -685,15 +771,26 @@ export const Edit = () => {
         onOpenForm={handleOpenForm}
         onEvaluate={getEvaluation}
         onAlert={() =>
-          evaluation ? setShowEvaluation(true) : concluded ? void getEvaluation() : setShowAlert(true)
+          evaluation || rubricEvaluation
+            ? setShowEvaluation(true)
+            : concluded
+              ? void getEvaluation()
+              : setShowAlert(true)
         }
-        formUrl={formUrl || ""}
+        formUrl={stage?.hasNext ? "" : formUrl || ""}
         loadingEvaluation={loadingEvaluation}
-        sessionTime={sessionTime}
+        submissionDisabled={stageCompleted && !concluded}
+        sessionTime={stageCompleted ? null : sessionTime}
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
         onNotesToggle={() => setShowNotes((prev) => !prev)}
       />
+      {stage && (
+        <div className="flex items-center justify-between gap-4 border-b px-4 py-2">
+          <p className="text-sm text-gray-700">Stage {stage.number} of {stage.total}</p>
+          {stageCompleted && stage.hasNext && sessionId && !showEvaluation && <ContinueStage sessionId={sessionId} />}
+        </div>
+      )}
 
       {submissionError && <div role="alert" className="bg-red-50 text-red-700 p-3">{submissionError}</div>}
 
@@ -747,13 +844,19 @@ export const Edit = () => {
         ) : (
           <div style={{ width: `${editorWidth}%` }} className="h-full relative">
             <h2 className="text-gray-500 px-4 py-2">Problem Solution</h2>
-            <FormatPreview
-              code={problemSolution || ""}
-              format={solutionFormat}
-              mermaidSvg={concludedSvg}
-              error={solutionError}
-              renderControls={(utils) => <DiagramControls {...utils} />}
-            />
+            {showReferenceSolution ? (
+              <FormatPreview
+                code={problemSolution || ""}
+                format={solutionFormat}
+                mermaidSvg={concludedSvg}
+                error={solutionError}
+                renderControls={(utils) => <DiagramControls {...utils} />}
+              />
+            ) : (
+              <div className="px-4 py-6 text-sm text-gray-600">
+                Your solution has been submitted. The reference solution and evaluation are not shown for this stage.
+              </div>
+            )}
           </div>
         )}
 
@@ -779,6 +882,23 @@ export const Edit = () => {
           />
         </div>
       </main>
+
+      {timerExpiredStageModal && stage?.hasNext && sessionId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Stage time expired"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-6">
+            <h2 className="mb-2 text-lg font-semibold">Stage {stage.number} completed</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              Time is up. Your current solution has been submitted automatically.
+            </p>
+            <ContinueStage sessionId={sessionId} />
+          </div>
+        </div>
+      )}
 
       {showSuccessModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -808,7 +928,7 @@ export const Edit = () => {
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
               <button
-                onClick={() => { setShowSuccessModal(false); localStorage.clear(); navigate("/"); }}
+                onClick={() => { setShowSuccessModal(false); clearStudentSessionStorage(); navigate("/"); }}
                 className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -852,18 +972,21 @@ export const Edit = () => {
         </div>
       )}
 
-      {showEvaluation && evaluation && (
+      {showEvaluation && (evaluation || rubricEvaluation) && (
         <EvaluationModal
-          evaluation={evaluation}
+          evaluation={evaluation || ""}
+          rubricEvaluation={rubricEvaluation}
           onClose={handleCloseEvaluation}
           onHome={onHome}
           onOpenForm={
-            formUrl &&
+            !stage?.hasNext && formUrl &&
             (formUrl.startsWith("http://") || formUrl.startsWith("https://"))
               ? onOpenForm
               : undefined
           }
           spectateUrl={spectateUrl || undefined}
+          nextStageSessionId={stage?.hasNext && stageCompleted ? sessionId ?? undefined : undefined}
+          hasNextStage={Boolean(stage?.hasNext)}
         />
       )}
     </div>
