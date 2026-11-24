@@ -317,6 +317,7 @@ interface HeaderProps {
   formUrl: string;
   loadingEvaluation: boolean;
   submissionDisabled?: boolean;
+  nextStageSessionId?: string;
   onAlert: () => void;
   sessionTime?: number | null;
   sessionStartedAt?: string | null;
@@ -324,7 +325,7 @@ interface HeaderProps {
   onNotesToggle?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisabled, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisabled, nextStageSessionId, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -358,20 +359,24 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisab
           </svg>
           <span className="hidden sm:inline">Notes</span>
         </button>
-        <button
-          onClick={onAlert}
-          disabled={loadingEvaluation || submissionDisabled}
-          className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {loadingEvaluation ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              Evaluating...
-            </>
-          ) : (
-            "Send Solution"
-          )}
-        </button>
+        {nextStageSessionId ? (
+          <ContinueStage sessionId={nextStageSessionId} />
+        ) : (
+          <button
+            onClick={onAlert}
+            disabled={loadingEvaluation || submissionDisabled}
+            className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loadingEvaluation ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Evaluating...
+              </>
+            ) : (
+              "Send Solution"
+            )}
+          </button>
+        )}
 
       </div>
     </div>
@@ -780,6 +785,11 @@ export const Edit = () => {
         formUrl={stage?.hasNext ? "" : formUrl || ""}
         loadingEvaluation={loadingEvaluation}
         submissionDisabled={stageCompleted && !concluded}
+        nextStageSessionId={
+          stageCompleted && stage?.hasNext && sessionId && !loadingEvaluation && !submissionError
+            ? sessionId
+            : undefined
+        }
         sessionTime={stageCompleted ? null : sessionTime}
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
@@ -788,7 +798,6 @@ export const Edit = () => {
       {stage && (
         <div className="flex items-center justify-between gap-4 border-b px-4 py-2">
           <p className="text-sm text-gray-700">Stage {stage.number} of {stage.total}</p>
-          {stageCompleted && stage.hasNext && sessionId && !showEvaluation && <ContinueStage sessionId={sessionId} />}
         </div>
       )}
 
