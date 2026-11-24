@@ -29,10 +29,15 @@ import FilterButton, {
   type SortState,
 } from "../components/admin/FilterButton";
 import { useDebounce } from "../hooks/useDebounce";
+import {
+  getActivityReplicationBlocker,
+  type ActivityLeiaRef,
+  type ActivityOrchestration,
+  type ActivityStage,
+} from "../lib/activityStages";
 
-interface ExperimentLeia {
+interface ExperimentLeia extends ActivityLeiaRef {
   configuration: { mode: string };
-  leia: string;
 }
 
 interface Experiment {
@@ -40,6 +45,8 @@ interface Experiment {
   isPublished: boolean;
   name: string;
   leias: ExperimentLeia[];
+  orchestration?: ActivityOrchestration;
+  stages?: ActivityStage[];
   createdAt: string;
   updatedAt: string;
   user?: {
@@ -220,6 +227,7 @@ const ExperimentDetail: React.FC<{
     ...new Set(item.leias.map((l) => l.configuration.mode)),
   ].join(", ");
   const userLabel = getExperimentUserLabel(item);
+  const replicationBlocker = getActivityReplicationBlocker(item);
   return (
     <Box sx={{ p: 4, maxWidth: 880 }}>
       <Stack direction="row" spacing={1} alignItems="center">
@@ -272,15 +280,25 @@ const ExperimentDetail: React.FC<{
       </Box>
 
       <Stack direction="column" gap={0.75} sx={{ mt: 4 }} alignItems="flex-start">
-        <Button
-          variant="contained"
-          startIcon={<AddIcon sx={{ fontSize: 16 }} />}
-          onClick={onOpen}
+        <Tooltip title={replicationBlocker ?? ""}>
+          <span>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+              onClick={onOpen}
+              disabled={Boolean(replicationBlocker)}
+            >
+              Create Replication from this Experiment
+            </Button>
+          </span>
+        </Tooltip>
+        <Typography
+          sx={{
+            fontSize: 12,
+            color: replicationBlocker ? "error.main" : "text.secondary",
+          }}
         >
-          Create Replication from this Experiment
-        </Button>
-        <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-          opens the experiment preview to confirm and create
+          {replicationBlocker ?? "opens the experiment preview to confirm and create"}
         </Typography>
       </Stack>
     </Box>
