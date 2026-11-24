@@ -18,7 +18,10 @@ import { SettingsSection } from "./replication/sections/SettingsSection";
 import { DataUsageSection } from "./replication/sections/DataUsageSection";
 import { ConversationsPlaceholder } from "./replication/sections/ConversationsPlaceholder";
 import { LivePlaceholder } from "./replication/sections/LivePlaceholder";
-import type { ReplicationData } from "./replication/types";
+import type {
+  ReplicationData,
+  StagePreviousConversationConfig,
+} from "./replication/types";
 import { writeReplicationName } from "../lib/replicationNames";
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
@@ -696,6 +699,40 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const updateStagePreviousConversation = async (
+    stageId: string,
+    previousConversation: StagePreviousConversationConfig
+  ) => {
+    if (!replication) return;
+    try {
+      const resp = await axios.patch<ReplicationData>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/stages/${stageId}/previous-conversation`,
+        previousConversation,
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication((prev) => {
+        if (!prev) return structuredClone(resp.data);
+        const next = structuredClone(prev);
+        next.experiment.stages = structuredClone(resp.data.experiment.stages);
+        return next;
+      });
+      toast.success("Stage conversation visibility updated", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, "Error updating previous conversation settings"),
+        {
+          position: "bottom-right",
+          autoClose: 5000,
+        }
+      );
+      console.error("Update error:", err);
+    }
+  };
+
   const handleLocalLeiaChange = (idx: number, key: string, value: unknown) => {
     setLocalReplication((prev) => {
       if (!prev) return prev;
@@ -923,6 +960,7 @@ export const Replication: React.FC = () => {
             onToggleEvaluateSolution={toggleEvaluateSolution}
             onUpdateEvaluationMode={updateEvaluationMode}
             onToggleShowSolution={toggleShowSolution}
+            onUpdateStagePreviousConversation={updateStagePreviousConversation}
             onStartTestSession={startTestSession}
             startingSessionLeiaId={startingSessionLeiaId}
             invalidLeiaFields={invalidLeiaFields}

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import {
+  ChatBubbleLeftRightIcon,
   ExclamationTriangleIcon,
   PencilSquareIcon,
   PhotoIcon,
@@ -33,6 +34,7 @@ import {
 } from "../widgets";
 import type { FrontendTool } from "@leia-org/luke-client";
 import NotesWidget from "../widgets/NotesWidget";
+import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
 import { postTestRun } from "../lib/testRuns";
 import type { TestRunReport } from "../widgets/codeEditor/testRunReport";
 
@@ -229,6 +231,11 @@ interface ConversationDynamicsState {
 
 interface Session {
   stage?: StageProgress;
+  previousConversation?: {
+    enabled: boolean;
+    stageNumber: number;
+    availability: "chat" | "both";
+  };
   runId?: string;
   conversationDynamics?: ConversationDynamicsState;
   id?: string;
@@ -371,6 +378,7 @@ const ChatSession = () => {
   const [dataUsageConsentSubmitting, setDataUsageConsentSubmitting] =
     useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [showPreviousConversation, setShowPreviousConversation] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const studentInfographicViewerRef =
@@ -1380,6 +1388,26 @@ const ChatSession = () => {
               <span className="hidden sm:inline">Notes</span>
             </button>
 
+          {session?.previousConversation?.enabled && (
+            <button
+              type="button"
+              onClick={() =>
+                setShowPreviousConversation((prev) => !prev)
+              }
+              aria-pressed={showPreviousConversation}
+              aria-label="Conversation"
+              title={`View Stage ${session.previousConversation.stageNumber} conversation`}
+              className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-1 ${
+                showPreviousConversation
+                  ? "text-blue-700 bg-blue-50 border-blue-300 hover:bg-blue-100"
+                  : "text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              <ChatBubbleLeftRightIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Conversation</span>
+            </button>
+          )}
+
           {hasStudentInfographic && (
             <button
               onClick={() => studentInfographicViewerRef.current?.open()}
@@ -1461,6 +1489,17 @@ const ChatSession = () => {
         </div>
       </header>
       {showNotes && <NotesWidget />}
+      {showPreviousConversation &&
+        !dataUsageConsentPending &&
+        sessionId &&
+        session?.previousConversation?.enabled && (
+          <PreviousConversationWidget
+            sessionId={sessionId}
+            stageNumber={session.previousConversation.stageNumber}
+            view="chat"
+            onClose={() => setShowPreviousConversation(false)}
+          />
+        )}
       {/* Widget side panel — text mode only. Luke mode renders its own
           slots inside LukeAudioWidget; here we mount the same widgets in
           a fixed right pane and bridge their tools out to the round-trip

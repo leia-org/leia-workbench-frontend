@@ -36,8 +36,10 @@ import {
 } from "../../../lib/avatar";
 import type {
   EvaluationMode,
+  PreviousConversationAvailability,
   ReplicationData,
   ReplicationLeia,
+  StagePreviousConversationConfig,
 } from "../types";
 import {
   getDependentStagesForSubmittedSolution,
@@ -138,6 +140,10 @@ interface LeiasSectionProps {
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onUpdateEvaluationMode?: (idx: number, mode: EvaluationMode) => Promise<void>;
   onToggleShowSolution: (idx: number) => Promise<void>;
+  onUpdateStagePreviousConversation?: (
+    stageId: string,
+    config: StagePreviousConversationConfig,
+  ) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
     replicationId: string,
@@ -244,6 +250,10 @@ interface LeiaEditorProps {
   stageIsMulti: boolean;
   isSecondaryMultiActor: boolean;
   problemLeiaName?: string;
+  stages?: ReplicationData["experiment"]["stages"];
+  stageIndex: number;
+  stageLeiaCount: number;
+  allLeias: ReplicationLeia[];
   item: ReplicationLeia;
   serverItem: ReplicationLeia;
   apiKeys: ApiKey[];
@@ -257,6 +267,10 @@ interface LeiaEditorProps {
   onToggleEvaluateSolution: (idx: number) => Promise<void>;
   onUpdateEvaluationMode?: (idx: number, mode: EvaluationMode) => Promise<void>;
   onToggleShowSolution: (idx: number) => Promise<void>;
+  onUpdateStagePreviousConversation?: (
+    stageId: string,
+    config: StagePreviousConversationConfig,
+  ) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
     replicationId: string,
@@ -277,6 +291,10 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   stageIsMulti,
   isSecondaryMultiActor,
   problemLeiaName,
+  stages,
+  stageIndex,
+  stageLeiaCount,
+  allLeias,
   item,
   serverItem,
   apiKeys,
@@ -290,6 +308,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onToggleEvaluateSolution,
   onUpdateEvaluationMode,
   onToggleShowSolution,
+  onUpdateStagePreviousConversation,
   onStartTestSession,
   replicationId,
   startingSessionLeiaId,
@@ -300,6 +319,8 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   const [showAllVoices, setShowAllVoices] = useState(false);
   const [contentOpen, setContentOpen] = useState(false);
   const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
+  const [updatingPreviousConversation, setUpdatingPreviousConversation] =
+    useState(false);
   const [studentInfographicAvailable, setStudentInfographicAvailable] =
     useState<boolean | null>(null);
   const [solutionInfographicAvailable, setSolutionInfographicAvailable] =
@@ -720,6 +741,170 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                 )}
               </Stack>
             </FieldRow>
+          </>
+        );
+      })()}
+
+      {stages && stageIndex > 0 && (() => {
+        const currentStage = stages[stageIndex];
+        if (!currentStage) return null;
+        const earlierStages = stages.slice(0, stageIndex);
+        const prevConvConfig = currentStage.previousConversation;
+        const prevConvEnabled = Boolean(prevConvConfig?.enabled);
+        const defaultSourceStageId =
+          earlierStages[earlierStages.length - 1]?.id ?? null;
+        const selectedSourceStageId =
+          prevConvConfig?.sourceStageId &&
+          earlierStages.some((s) => s.id === prevConvConfig.sourceStageId)
+            ? prevConvConfig.sourceStageId
+            : defaultSourceStageId;
+        const prevConvAvailability: PreviousConversationAvailability =
+          prevConvConfig?.availability === "chat" ? "chat" : "both";
+
+        const applyStagePreviousConversation = async (
+          nextConfig: StagePreviousConversationConfig,
+        ) => {
+          if (!onUpdateStagePreviousConversation) return;
+          setUpdatingPreviousConversation(true);
+          try {
+            await onUpdateStagePreviousConversation(currentStage.id, nextConfig);
+          } finally {
+            setUpdatingPreviousConversation(false);
+          }
+        };
+
+        const formatStageOptionLabel = (earlierStageId: string, earlierIdx: number) => {
+          const names = allLeias
+            .filter((entry) => entry.stageId === earlierStageId)
+            .map((entry) => entry.leia?.metadata?.name)
+            .filter((name): name is string => Boolean(name && name.trim()));
+          return names.length > 0
+            ? `Stage ${earlierIdx + 1} · ${names.join(", ")}`
+            : `Stage ${earlierIdx + 1}`;
+        };
+
+        return (
+          <>
+            <SectionLabel>
+              Stage {stageIndex + 1} · Previous conversation
+            </SectionLabel>
+            {stageLeiaCount > 1 && (
+              <Typography
+                variant="caption"
+                sx={{ display: "block", color: "text.secondary", mb: 1 }}
+              >
+                Applies to all LEIAs in Stage {stageIndex + 1}.
+              </Typography>
+            )}
+            <FieldRow
+              label="Conversation button"
+              helper="Show a Conversation button next to Notes so students can consult their conversation from an earlier stage."
+            >
+              <Switch
+                size="small"
+                checked={prevConvEnabled}
+                disabled={
+                  updatingPreviousConversation || !onUpdateStagePreviousConversation
+                }
+                slotProps={{ input: { "aria-label": "Show Conversation button" } }}
+                onChange={(_, checked) => {
+                  void applyStagePreviousConversation({
+                    enabled: checked,
+                    sourceStageId: checked
+                      ? selectedSourceStageId
+                      : (prevConvConfig?.sourceStageId ?? null),
+                    availability: prevConvAvailability,
+                  });
+                }}
+              />
+            </FieldRow>
+
+            {prevConvEnabled && (
+              <>
+                <FieldRow
+                  label="Source stage"
+                  helper="Earlier stage whose conversation the student can view."
+                >
+                  <FormControl size="small" sx={{ minWidth: 240 }}>
+                    <Select
+                      value={selectedSourceStageId ?? ""}
+                      disabled={
+                        updatingPreviousConversation ||
+                        !onUpdateStagePreviousConversation
+                      }
+                      SelectDisplayProps={{
+                        "aria-label": "Previous conversation source stage",
+                      }}
+                      onChange={(e) => {
+                        const nextSourceId = e.target.value;
+                        if (!nextSourceId || nextSourceId === selectedSourceStageId) {
+                          return;
+                        }
+                        void applyStagePreviousConversation({
+                          enabled: true,
+                          sourceStageId: nextSourceId,
+                          availability: prevConvAvailability,
+                        });
+                      }}
+                      sx={{ fontSize: 13 }}
+                    >
+                      {earlierStages.map((earlierStage, earlierIdx) => (
+                        <MenuItem
+                          key={earlierStage.id}
+                          value={earlierStage.id}
+                          sx={{ fontSize: 13 }}
+                        >
+                          {formatStageOptionLabel(earlierStage.id, earlierIdx)}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </FieldRow>
+
+                <FieldRow
+                  label="Available in"
+                  helper="Choose whether students can access the conversation only in Chat or in both Chat and Editor."
+                >
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={prevConvAvailability}
+                    aria-label="Previous conversation availability"
+                    onChange={(_, nextAvailability: PreviousConversationAvailability | null) => {
+                      if (!nextAvailability || nextAvailability === prevConvAvailability) {
+                        return;
+                      }
+                      void applyStagePreviousConversation({
+                        enabled: true,
+                        sourceStageId: selectedSourceStageId,
+                        availability: nextAvailability,
+                      });
+                    }}
+                  >
+                    <ToggleButton
+                      value="chat"
+                      disabled={
+                        updatingPreviousConversation ||
+                        !onUpdateStagePreviousConversation
+                      }
+                      sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                    >
+                      Chat only
+                    </ToggleButton>
+                    <ToggleButton
+                      value="both"
+                      disabled={
+                        updatingPreviousConversation ||
+                        !onUpdateStagePreviousConversation
+                      }
+                      sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                    >
+                      Chat &amp; Editor
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </FieldRow>
+              </>
+            )}
           </>
         );
       })()}
@@ -1318,6 +1503,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   onToggleEvaluateSolution,
   onUpdateEvaluationMode,
   onToggleShowSolution,
+  onUpdateStagePreviousConversation,
   onStartTestSession,
   startingSessionLeiaId,
   invalidLeiaFields,
@@ -1344,7 +1530,10 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   const item = leias[effectiveIdx];
   const serverItem = replication.experiment.leias[effectiveIdx];
   const stages = localReplication.experiment.stages;
-  const stage = stages?.find(({ id }) => id === item.stageId);
+  const stageIndex = stages
+    ? stages.findIndex(({ id }) => id === item.stageId)
+    : -1;
+  const stage = stageIndex >= 0 && stages ? stages[stageIndex] : undefined;
   const orchestration = stage?.orchestration ?? localReplication.experiment.orchestration;
   const isMultiLeia = orchestration?.mode === "multi";
   const openingLeia = leias.find(
@@ -1430,6 +1619,10 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         stageIsMulti={Boolean(stage && isMultiLeia)}
         isSecondaryMultiActor={isSecondaryMultiActor}
         problemLeiaName={effectiveProblemLeia?.leia.metadata.name}
+        stages={stages}
+        stageIndex={stageIndex}
+        stageLeiaCount={stageEntries.length}
+        allLeias={leias}
         item={item}
         serverItem={serverItem}
         apiKeys={apiKeys}
@@ -1443,6 +1636,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onToggleEvaluateSolution={onToggleEvaluateSolution}
         onUpdateEvaluationMode={onUpdateEvaluationMode}
         onToggleShowSolution={onToggleShowSolution}
+        onUpdateStagePreviousConversation={onUpdateStagePreviousConversation}
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
         pronouns= {pronouns}

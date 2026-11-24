@@ -71,6 +71,14 @@ export interface StageOutputSources {
   problem?: string | null;
 }
 
+export type PreviousConversationAvailability = "chat" | "both";
+
+export interface StagePreviousConversationConfig {
+  enabled: boolean;
+  sourceStageId: string | null;
+  availability: PreviousConversationAvailability;
+}
+
 export interface ReplicationData {
   id: string;
   name: string;
@@ -96,6 +104,7 @@ export interface ReplicationData {
     stages?: {
       id: string;
       outputSources?: StageOutputSources;
+      previousConversation?: StagePreviousConversationConfig;
       orchestration: ActivityOrchestration;
     }[];
   };

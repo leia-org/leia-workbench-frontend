@@ -1,4 +1,8 @@
-import type { StageOutput, StageOutputSources } from "../views/replication/types";
+import type {
+  StageOutput,
+  StageOutputSources,
+  StagePreviousConversationConfig,
+} from "../views/replication/types";
 
 export interface ActivityOrchestration {
   mode: "single" | "multi";
@@ -11,6 +15,7 @@ export interface ActivityOrchestration {
 export interface ActivityStage {
   id: string;
   outputSources?: StageOutputSources;
+  previousConversation?: StagePreviousConversationConfig;
   orchestration?: ActivityOrchestration;
 }
 

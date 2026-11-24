@@ -11,7 +11,9 @@ import RubricEvaluationView, {
   type RubricEvaluationResult,
 } from "../components/RubricEvaluationView";
 import NotesWidget from "../widgets/NotesWidget";
+import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
 import {
+  ChatBubbleLeftRightIcon,
   PencilSquareIcon,
 } from "@heroicons/react/24/outline";
 mermaid.initialize({
@@ -323,9 +325,13 @@ interface HeaderProps {
   sessionStartedAt?: string | null;
   onTimerExpire?: () => void;
   onNotesToggle?: () => void;
+  canShowPreviousConversation?: boolean;
+  showPreviousConversation?: boolean;
+  previousConversationStageNumber?: number;
+  onPreviousConversationToggle?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisabled, nextStageSessionId, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
+const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisabled, nextStageSessionId, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle, canShowPreviousConversation, showPreviousConversation, previousConversationStageNumber, onPreviousConversationToggle }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="max-w-full mx-auto flex justify-between items-center">
       <div className="flex items-center space-x-2">
@@ -359,6 +365,27 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisab
           </svg>
           <span className="hidden sm:inline">Notes</span>
         </button>
+        {canShowPreviousConversation && (
+          <button
+            type="button"
+            onClick={onPreviousConversationToggle}
+            aria-pressed={showPreviousConversation}
+            aria-label="Conversation"
+            title={
+              previousConversationStageNumber
+                ? `View Stage ${previousConversationStageNumber} conversation`
+                : "View previous conversation"
+            }
+            className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-1 ${
+              showPreviousConversation
+                ? "text-blue-700 bg-blue-50 border-blue-300 hover:bg-blue-100"
+                : "text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
+            }`}
+          >
+            <ChatBubbleLeftRightIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">Conversation</span>
+          </button>
+        )}
         {nextStageSessionId ? (
           <ContinueStage sessionId={nextStageSessionId} />
         ) : (
@@ -469,6 +496,12 @@ export const Edit = () => {
   const [showReferenceSolution, setShowReferenceSolution] = useState(true);
   const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
+  const [previousConversation, setPreviousConversation] = useState<{
+    enabled: boolean;
+    stageNumber: number;
+    availability: "chat" | "both";
+  } | null>(null);
+  const [showPreviousConversation, setShowPreviousConversation] = useState<boolean>(false);
   const codeRef = useRef(code);
   codeRef.current = code;
   const concludedRef = useRef(concluded);
@@ -515,6 +548,9 @@ export const Edit = () => {
       }
       if (parsedSession.startedAt) {
         setSessionStartedAt(parsedSession.startedAt);
+      }
+      if (parsedSession.previousConversation?.enabled) {
+        setPreviousConversation(parsedSession.previousConversation);
       }
     }
     if (savedExercise) {
@@ -771,6 +807,17 @@ export const Edit = () => {
   return (
     <div className="flex flex-col h-screen bg-white">
       {showNotes && <NotesWidget />}
+      {showPreviousConversation &&
+        sessionId &&
+        previousConversation?.enabled &&
+        previousConversation.availability === "both" && (
+          <PreviousConversationWidget
+            sessionId={sessionId}
+            stageNumber={previousConversation.stageNumber}
+            view="editor"
+            onClose={() => setShowPreviousConversation(false)}
+          />
+        )}
       <Header
         onHome={handleHome}
         onOpenForm={handleOpenForm}
@@ -794,6 +841,15 @@ export const Edit = () => {
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
         onNotesToggle={() => setShowNotes((prev) => !prev)}
+        canShowPreviousConversation={Boolean(
+          previousConversation?.enabled &&
+            previousConversation.availability === "both",
+        )}
+        showPreviousConversation={showPreviousConversation}
+        previousConversationStageNumber={previousConversation?.stageNumber}
+        onPreviousConversationToggle={() =>
+          setShowPreviousConversation((prev) => !prev)
+        }
       />
       {stage && (
         <div className="flex items-center justify-between gap-4 border-b px-4 py-2">
