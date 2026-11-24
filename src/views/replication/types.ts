@@ -63,11 +63,12 @@ interface ActivityOrchestration {
   sharedTask: string;
 }
 
-export type StageOutput = "conversation" | "submitedSolution";
+export type StageOutput = "conversation" | "submitedSolution" | "problem";
 
 export interface StageOutputSources {
   conversation?: string | null;
   submitedSolution?: string | null;
+  problem?: string | null;
 }
 
 export interface ReplicationData {
