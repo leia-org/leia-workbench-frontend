@@ -279,7 +279,7 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
   }, [tools, connectionState, reload]);
   const prevForceMuteRef = useRef(forceMute);
   const sequenceCounterRef = useRef(0);
-  const emittedCountRef = useRef(0);
+  const emittedMessagesRef = useRef<WeakSet<TranscriptionMessage>>(new WeakSet());
   const [showTranscription, setShowTranscription] = useState(initialShowTranscription);
   const transcriptListRef = useRef<HTMLDivElement | null>(null);
 
@@ -349,24 +349,22 @@ export const LukeAudioWidget: React.FC<LukeAudioWidgetProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceMute]);
 
-  // Emit new final transcriptions upward as the hook's transcription state grows.
+  // Emit each finalized transcription upward once. A streaming message starts
+  // as `final: false` and is replaced in place at the same array index when it
+  // finalizes, so advancing an index watermark by `transcription.length` skips it.
   useEffect(() => {
-    if (!onTranscriptComplete) {
-      emittedCountRef.current = transcription.length;
-      return;
+    if (!onTranscriptComplete) return;
+    for (const msg of transcription) {
+      if (!msg.final || emittedMessagesRef.current.has(msg)) continue;
+      emittedMessagesRef.current.add(msg);
+      if (!msg.text?.trim()) continue;
+      onTranscriptComplete(
+        msg.text,
+        msg.role === "assistant",
+        new Date(msg.timestamp || Date.now()),
+        sequenceCounterRef.current++,
+      );
     }
-    for (let i = emittedCountRef.current; i < transcription.length; i++) {
-      const msg: TranscriptionMessage = transcription[i];
-      if (msg.final) {
-        onTranscriptComplete(
-          msg.text,
-          msg.role === "assistant",
-          new Date(msg.timestamp || Date.now()),
-          sequenceCounterRef.current++,
-        );
-      }
-    }
-    emittedCountRef.current = transcription.length;
   }, [transcription, onTranscriptComplete]);
 
   // Halo around the avatar pulses with the ASSISTANT's audio level so you
