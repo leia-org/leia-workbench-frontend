@@ -207,7 +207,7 @@ export const LiveDashboard = () => {
     url: "",
   });
   const { token, user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const canUseUserAuth = user?.role === "admin" || user?.role === "advanced";
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
 
@@ -239,7 +239,7 @@ export const LiveDashboard = () => {
   const buildRequestConfig = useCallback(
     (config: AxiosRequestConfig = {}) => {
       const headers = { ...(config.headers || {}) };
-      if (token && isAdmin) {
+      if (token && canUseUserAuth) {
         headers.Authorization = `Bearer ${token}`;
       }
       const params = { ...(config.params || {}) };
@@ -249,7 +249,7 @@ export const LiveDashboard = () => {
       if (Object.keys(params).length > 0) final.params = params;
       return final;
     },
-    [token, isAdmin, replicationToken]
+    [token, canUseUserAuth, replicationToken]
   );
 
   const fetchSessions = useCallback(async () => {
@@ -336,11 +336,13 @@ export const LiveDashboard = () => {
   useEffect(() => {
     if (!tokenReady || !replicationId) return;
     const authPayload: Record<string, string> = {};
-    if (token && isAdmin) {
+    if (token && canUseUserAuth) {
       authPayload.token = token;
-    } else if (replicationToken) {
+    }
+    if (replicationToken) {
       authPayload.shareToken = replicationToken;
-    } else {
+    }
+    if (!authPayload.token && !authPayload.shareToken) {
       return;
     }
 
@@ -466,7 +468,7 @@ export const LiveDashboard = () => {
       newSocket.emit("dashboard:leave", replicationId);
       newSocket.disconnect();
     };
-  }, [token, isAdmin, replicationId, replicationToken, tokenReady, fetchSessions]);
+  }, [token, canUseUserAuth, replicationId, replicationToken, tokenReady, fetchSessions]);
 
   // Full test runs of a session, including the code at each run. Fetched
   // only when a code snapshot is opened.

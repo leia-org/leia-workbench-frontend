@@ -3,20 +3,29 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import axios from "axios";
 
-vi.mock("socket.io-client", () => ({
-  io: vi.fn(() => ({
+const { mockIo, mockAuthState } = vi.hoisted(() => ({
+  mockIo: vi.fn(() => ({
     on: vi.fn(),
     emit: vi.fn(),
     disconnect: vi.fn(),
   })),
+  mockAuthState: {
+    token: "test-token" as string | null,
+    user: { id: "admin-1", email: "admin@example.com", role: "admin" } as {
+      id: string;
+      email: string;
+      role: string;
+    } | null,
+    logout: vi.fn(),
+  },
+}));
+
+vi.mock("socket.io-client", () => ({
+  io: mockIo,
 }));
 
 vi.mock("../../src/context/useAuth", () => ({
-  useAuth: () => ({
-    token: "test-token",
-    user: { id: "admin-1", email: "admin@example.com", role: "admin" },
-    logout: vi.fn(),
-  }),
+  useAuth: () => mockAuthState,
 }));
 
 import { LiveDashboard } from "../../src/views/LiveDashboard";
@@ -24,6 +33,10 @@ import { LiveDashboard } from "../../src/views/LiveDashboard";
 describe("LiveDashboard staged activities", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockIo.mockClear();
+    localStorage.clear();
+    mockAuthState.token = "test-token";
+    mockAuthState.user = { id: "admin-1", email: "admin@example.com", role: "admin" };
     vi.stubEnv("VITE_APP_BACKEND", "http://localhost:3001");
   });
 
@@ -112,6 +125,89 @@ describe("LiveDashboard staged activities", () => {
 
     await waitFor(() => {
       expect(screen.getByText("No sessions yet.")).toBeTruthy();
+    });
+  });
+
+  test("sends bearer token on HTTP and WebSocket auth for advanced users", async () => {
+    mockAuthState.token = "advanced-jwt-token";
+    mockAuthState.user = { id: "adv-1", email: "adv@example.com", role: "advanced" };
+
+    const getSpy = vi.spyOn(axios, "get").mockImplementation(async (url: string) => {
+      if (url.includes("/sessions")) {
+        return { data: { sessions: [] } };
+      }
+      return { data: { name: "Advanced Rep", experiment: { leias: [] } } };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/replications/rep-adv/live"]}>
+        <Routes>
+          <Route path="/replications/:id/live" element={<LiveDashboard />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("No sessions yet.")).toBeTruthy();
+    });
+
+    expect(getSpy).toHaveBeenCalledWith(
+      "http://localhost:3001/api/v1/spectator/replications/rep-adv/sessions",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer advanced-jwt-token",
+        }),
+      })
+    );
+    expect(getSpy).toHaveBeenCalledWith(
+      "http://localhost:3001/api/v1/replications/rep-adv",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer advanced-jwt-token",
+        }),
+      })
+    );
+    expect(mockIo).toHaveBeenCalledWith("http://localhost:3001", {
+      auth: { token: "advanced-jwt-token" },
+    });
+  });
+
+  test("forwards both user token and shareToken when an advanced user opens a shared live link", async () => {
+    mockAuthState.token = "advanced-jwt-token";
+    mockAuthState.user = { id: "adv-1", email: "adv@example.com", role: "advanced" };
+
+    const getSpy = vi.spyOn(axios, "get").mockImplementation(async (url: string) => {
+      if (url.includes("/sessions")) {
+        return { data: { sessions: [] } };
+      }
+      return { data: { name: "Shared Rep", experiment: { leias: [] } } };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/replications/rep-shared/live?token=share-123"]}>
+        <Routes>
+          <Route path="/replications/:id/live" element={<LiveDashboard />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("No sessions yet.")).toBeTruthy();
+    });
+
+    expect(getSpy).toHaveBeenCalledWith(
+      "http://localhost:3001/api/v1/spectator/replications/rep-shared/sessions",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer advanced-jwt-token",
+        }),
+        params: expect.objectContaining({
+          token: "share-123",
+        }),
+      })
+    );
+    expect(mockIo).toHaveBeenCalledWith("http://localhost:3001", {
+      auth: { token: "advanced-jwt-token", shareToken: "share-123" },
     });
   });
 });
