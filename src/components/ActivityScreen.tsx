@@ -132,13 +132,18 @@ export function ActivityCompletion({ progress, sessionId, formUrl, onHome, notic
       subtitle={nextStage ? `Stage ${nextStage} is next.` : undefined}
       progress={progress}
     >
-      {!nextStage && (
-        <div className="flex shrink-0 items-center gap-3 rounded-lg bg-green-50 p-4 text-green-900">
+      {!nextStage ? (
+        <div role="status" className="flex shrink-0 items-center gap-3 rounded-lg bg-green-50 p-4 text-green-900">
           <CheckCircleIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-          <p>Thank you for completing the activity.</p>
+          <p>
+            {notice
+              ? `Thank you for completing the activity. ${notice}`
+              : "Thank you for completing the activity."}
+          </p>
         </div>
+      ) : (
+        notice && <p role="status" className="shrink-0 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">{notice}</p>
       )}
-      {notice && <p role="status" className="shrink-0 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">{notice}</p>}
       {children}
       <div className="flex shrink-0 flex-col gap-4">
         {footerContent}

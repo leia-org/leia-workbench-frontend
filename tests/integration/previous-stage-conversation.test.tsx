@@ -680,5 +680,9 @@ describe("Student Conversation button in Chat and Edit views", () => {
     expect(reviewBtn.closest("footer")).toBe(backHomeBtn.closest("footer"));
     expect(reviewBtn.className).not.toContain("underline");
     expect(reviewBtn.className).toContain("border");
+    expect(
+      screen.getByText("Thank you for completing the activity. Your solution was submitted."),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 });
