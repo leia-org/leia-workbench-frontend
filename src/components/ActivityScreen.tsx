@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ThemeProvider } from "@mui/material/styles";
 import { ArrowRightIcon, CheckCircleIcon } from "@heroicons/react/24/outline";
 import ReactMarkdown from "react-markdown";
@@ -73,6 +73,40 @@ export function ActivityEvaluation({ evaluation, rubricEvaluation }: {
         </div>
       )}
     </ActivityScrollCard>
+  );
+}
+
+export function ConversationViewerLink({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 p-4">
+      <label htmlFor="conversation-viewer-link" className="block font-medium">
+        Conversation viewer link (valid for 1 year)
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="conversation-viewer-link"
+          readOnly
+          value={url}
+          className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+        <button
+          type="button"
+          className="rounded-md bg-blue-50 px-3 py-2 font-medium text-blue-700"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(url);
+              setCopied(true);
+            } catch {
+              document.getElementById("conversation-viewer-link")?.focus();
+            }
+          }}
+        >
+          {copied ? "Copied" : "Copy link"}
+        </button>
+      </div>
+    </div>
   );
 }
 

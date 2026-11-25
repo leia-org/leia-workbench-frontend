@@ -77,7 +77,10 @@ test("keeps the solution within its stage and shows a separate task before the f
     }
     if (url.endsWith("/task-1/next-stage")) return { status: 201, data: { sessionId: "task-2" } };
     if (url.endsWith("/task-2/finish")) {
-      finishedStages.set(2, { finishedAt: completedAt });
+      finishedStages.set(2, {
+        finishedAt: completedAt,
+        spectateUrl: "https://example.test/final-conversation",
+      });
       return { status: 200, data: session(2) };
     }
     throw new Error(`Unexpected POST ${url}`);
@@ -116,13 +119,11 @@ test("keeps the solution within its stage and shows a separate task before the f
   const continueStage = screen.getByRole("button", { name: "Continue to Stage 2" });
   const actions = review.closest("footer");
   expect(continueStage.closest("footer")).toBe(actions);
-  const viewer = screen.getByLabelText("Conversation viewer link (valid for 1 year)");
+  expect(screen.queryByLabelText("Conversation viewer link (valid for 1 year)")).toBeNull();
   const rubric = await screen.findByRole("region", { name: "Evaluation" });
   expect(within(rubric).getByText("Stage 1 rubric")).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Evaluation" })).toBeNull();
-  expect(rubric.contains(viewer)).toBe(false);
   expect(rubric.contains(continueStage)).toBe(false);
-  expect(viewer.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(review);
   fireEvent.click(screen.getByRole("button", { name: "Back to completion" }));
   fireEvent.click(screen.getByRole("button", { name: "Continue to Stage 2" }));
@@ -135,6 +136,8 @@ test("keeps the solution within its stage and shows a separate task before the f
   fireEvent.click(screen.getByRole("button", { name: "Finish Stage 2" }));
   await screen.findByRole("heading", { name: "Activity complete" });
   expect(screen.getByText("Thank you for completing the activity.")).toBeTruthy();
+  const finalViewer = screen.getByLabelText("Conversation viewer link (valid for 1 year)") as HTMLInputElement;
+  expect(finalViewer.value).toBe("https://example.test/final-conversation");
   const evaluation = await screen.findByText("Clear analysis of the transcript.");
   const backToHome = screen.getByRole("button", { name: "Back to home" });
   expect(evaluation.compareDocumentPosition(backToHome) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

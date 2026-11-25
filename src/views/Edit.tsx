@@ -7,7 +7,7 @@ import { FormatPreview } from "../components/FormatPreview";
 import { SessionTimer } from "../components/SessionTimer";
 import type { StageProgress } from "../components/ContinueStage";
 import { ActivityProgress, type ActivityProgressProps, type ActivityStagePhase } from "../components/ActivityProgress";
-import { ActivityCompletion, ActivityEvaluation } from "../components/ActivityScreen";
+import { ActivityCompletion, ActivityEvaluation, ConversationViewerLink } from "../components/ActivityScreen";
 import type { RubricEvaluationResult } from "../components/RubricEvaluationView";
 import NotesWidget from "../widgets/NotesWidget";
 import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
@@ -322,7 +322,6 @@ export const Edit = () => {
   const [stagePlan, setStagePlan] = useState<ActivityStagePhase[]>();
   const [reviewingSolution, setReviewingSolution] = useState(false);
   const [submittedOnTimeout, setSubmittedOnTimeout] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [showReferenceSolution, setShowReferenceSolution] = useState(true);
   const [showNotes, setShowNotes] = useState<boolean>(false);
   const [previousConversation, setPreviousConversation] = useState<{
@@ -575,26 +574,8 @@ export const Edit = () => {
 
   if (sessionFinishedAt && !reviewingSolution) {
     const reviewLabel = showReferenceSolution ? "Review your solution and the reference" : "Review your solution";
-    const conversationLink = spectateUrl && (
-      <div className="space-y-2 rounded-lg border border-slate-200 p-4">
-        <label htmlFor="conversation-viewer-link" className="block font-medium">Conversation viewer link (valid for 1 year)</label>
-        <div className="flex flex-wrap gap-2">
-          <input id="conversation-viewer-link" readOnly value={spectateUrl}
-            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm" />
-          <button type="button" className="rounded-md bg-blue-50 px-3 py-2 font-medium text-blue-700"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(spectateUrl);
-                setCopied(true);
-              } catch {
-                document.getElementById("conversation-viewer-link")?.focus();
-              }
-            }}>
-            {copied ? "Copied" : "Copy link"}
-          </button>
-        </div>
-      </div>
-    );
+    const isFinalStage = !stage?.hasNext;
+    const conversationLink = isFinalStage && spectateUrl ? <ConversationViewerLink url={spectateUrl} /> : undefined;
 
     return (
       <ActivityCompletion

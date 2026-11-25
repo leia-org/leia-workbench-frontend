@@ -17,7 +17,7 @@ import { AudioControls } from "../components/AudioControls";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import type { StageProgress } from "../components/ContinueStage";
 import { ActivityProgress, type ActivityStagePhase, type ActivityProgressProps } from "../components/ActivityProgress";
-import { ActivityCompletion, ActivityEvaluation, ActivityScreen, ActivityScrollCard } from "../components/ActivityScreen";
+import { ActivityCompletion, ActivityEvaluation, ActivityScreen, ActivityScrollCard, ConversationViewerLink } from "../components/ActivityScreen";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import InfographicViewer, {
   type InfographicViewerHandle,
@@ -249,6 +249,7 @@ interface Session {
   evaluationMode?: "none" | "classic" | "rubric" | null;
   rubricEvaluation?: RubricEvaluationResult | null;
   score: number | null | undefined;
+  spectateUrl?: string | null;
   dataUsage?: SessionDataUsage | null;
 }
 
@@ -794,9 +795,10 @@ const ChatSession = () => {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.id) {
         // Pequeño delay para asegurar que el DOM se ha actualizado
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           scrollToLeiaMessage(lastMessage.id!);
         }, 150);
+        return () => clearTimeout(timer);
       }
     }
   }, [messages, scrollToLeiaMessage]);
@@ -807,9 +809,10 @@ const ChatSession = () => {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.id) {
         // Pequeño delay para asegurar que el DOM se ha actualizado
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           scrollToLeiaMessage(lastMessage.id!);
         }, 100);
+        return () => clearTimeout(timer);
       }
     }
   }, [messages, scrollToLeiaMessage]);
@@ -1259,12 +1262,14 @@ const ChatSession = () => {
   ) : null;
 
   if (session?.finishedAt) {
+    const isFinalStage = !session.stage?.hasNext;
     return (
       <ActivityCompletion
         progress={progress}
         sessionId={sessionId}
         formUrl={replication?.form}
         onHome={() => navigate("/")}
+        footerContent={isFinalStage && session.spectateUrl ? <ConversationViewerLink url={session.spectateUrl} /> : undefined}
         notice={finishedOnTimeout ? "Time is up. This stage has ended." : undefined}
       >
         <ActivityEvaluation evaluation={chatEvaluation?.evaluation} rubricEvaluation={chatEvaluation?.rubricEvaluation} />
