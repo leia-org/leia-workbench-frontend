@@ -133,6 +133,7 @@ interface LeiasSectionProps {
   apiKeyProvidersMapped: Record<string, string[]>;
   providerProviderModuleMap: Record<string, string>;
   userRole?: string;
+  canManageModel: boolean;
   onLocalLeiaChange: (idx: number, key: string, value: unknown) => void;
   onLocalLeiaReset: (idx: number) => void;
   onLeiaUpdate: (idx: number) => Promise<boolean>;
@@ -260,6 +261,7 @@ interface LeiaEditorProps {
   apiKeyProvidersMapped: Record<string, string[]>;
   providerProviderModuleMap: Record<string, string>;
   userRole?: string;
+  canManageModel: boolean;
   onLocalLeiaChange: (idx: number, key: string, value: unknown) => void;
   onLocalLeiaReset: (idx: number) => void;
   onLeiaUpdate: (idx: number) => Promise<boolean>;
@@ -301,6 +303,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   apiKeyProvidersMapped,
   providerProviderModuleMap,
   userRole,
+  canManageModel,
   onLocalLeiaChange,
   onLocalLeiaReset,
   onLeiaUpdate,
@@ -394,6 +397,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   );
 
   React.useEffect(() => {
+    if (!canManageModel) return;
     if (!currentModelName) return;
 
     const currentKeyStillMatches = compatibleApiKeys.some(
@@ -412,6 +416,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
       nextApiKeyId
     );
   }, [
+    canManageModel,
     compatibleApiKeys,
     currentApiKeyId,
     currentModelName,
@@ -437,6 +442,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   );
 
   const isCurrentModelValid =
+    !canManageModel ||
     currentModelName === "" ||
     validModelsForLeia.includes(currentModelName);
 
@@ -1032,11 +1038,16 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
       )}
       <FieldRow
         label="Model"
-        helper="Model used by this LEIA's runner."
+        helper={
+          canManageModel
+            ? "Model used by this LEIA's runner."
+            : "Only the owner of the replication can change the model."
+        }
       >
         <FormControl size="small" sx={{ minWidth: 240 }}>
           <Select
             displayEmpty
+            disabled={!canManageModel}
             value={currentModelName}
             onChange={(e) => {
               const modelName = e.target.value;
@@ -1133,21 +1144,23 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             </MuiLink>
           )}
 
-          <MuiLink
-            component={Link}
-            to="/administration/api-keys"
-            underline="hover"
-            sx={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 0.5,
-              fontSize: 13,
-              fontWeight: 500,
-            }}
-          >
-            <VpnKeyOutlinedIcon sx={{ fontSize: 16 }} />
-            Manage Keys
-          </MuiLink>
+          {canManageModel && (
+            <MuiLink
+              component={Link}
+              to="/administration/api-keys"
+              underline="hover"
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.5,
+                fontSize: 13,
+                fontWeight: 500,
+              }}
+            >
+              <VpnKeyOutlinedIcon sx={{ fontSize: 16 }} />
+              Manage Keys
+            </MuiLink>
+          )}
         </Stack>
       </FieldRow>
 
@@ -1164,6 +1177,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
                   : ""
               }
               displayEmpty
+              disabled={!canManageModel}
               onChange={(e) =>
                 onLocalLeiaChange(
                   idx,
@@ -1496,6 +1510,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   apiKeyProvidersMapped,
   providerProviderModuleMap,
   userRole,
+  canManageModel,
   onLocalLeiaChange,
   onLocalLeiaReset,
   onLeiaUpdate,
@@ -1629,6 +1644,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         apiKeyProvidersMapped={apiKeyProvidersMapped}
         providerProviderModuleMap={providerProviderModuleMap}
         userRole={userRole}
+        canManageModel={canManageModel}
         onLocalLeiaChange={onLocalLeiaChange}
         onLocalLeiaReset={onLocalLeiaReset}
         onLeiaUpdate={onLeiaUpdate}
