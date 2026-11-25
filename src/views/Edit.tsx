@@ -584,7 +584,7 @@ export const Edit = () => {
         formUrl={formUrl}
         onHome={onHome}
         footerContent={conversationLink}
-        reviewAction={concluded && stage?.hasNext
+        reviewAction={concluded
           ? { label: reviewLabel, onClick: () => setReviewingSolution(true) }
           : undefined}
         notice={submittedOnTimeout
@@ -601,11 +601,6 @@ export const Edit = () => {
           </div>
         )}
         <ActivityEvaluation evaluation={evaluation} rubricEvaluation={rubricEvaluation} />
-        {concluded && !stage?.hasNext && (
-          <button type="button" className="shrink-0 self-start font-medium text-blue-700 underline" onClick={() => setReviewingSolution(true)}>
-            {reviewLabel}
-          </button>
-        )}
       </ActivityCompletion>
     );
   }

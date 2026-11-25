@@ -637,4 +637,48 @@ describe("Student Conversation button in Chat and Edit views", () => {
       { params: { view: "editor" } },
     );
   });
+
+  test("Edit renders review solution action as a footer button on the final stage", async () => {
+    vi.spyOn(axios, "get").mockResolvedValue({
+      status: 200,
+      data: { solution: "Reference solution", solutionFormat: "text" },
+    });
+
+    localStorage.setItem("sessionId", "sess-final");
+    localStorage.setItem(
+      "configuration",
+      JSON.stringify({ mode: "standard", askSolution: true, evaluateSolution: false, showSolution: true }),
+    );
+    localStorage.setItem("showReferenceSolution", JSON.stringify(true));
+    localStorage.setItem("replication", JSON.stringify({ duration: null, form: null }));
+    localStorage.setItem(
+      "exercise",
+      JSON.stringify({ description: "Final task", solutionFormat: "text", initialSolution: "" }),
+    );
+    localStorage.setItem(
+      "session",
+      JSON.stringify({
+        id: "sess-final",
+        stage: { number: 2, total: 2, hasNext: false },
+        startedAt: "2026-11-25T12:00:00Z",
+        finishedAt: "2026-11-25T12:10:00Z",
+        result: "Final submitted answer",
+        spectateUrl: "https://example.test/final-spectate",
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <Edit />
+      </MemoryRouter>,
+    );
+
+    const reviewBtn = await screen.findByRole("button", {
+      name: "Review your solution and the reference",
+    });
+    const backHomeBtn = screen.getByRole("button", { name: "Back to home" });
+    expect(reviewBtn.closest("footer")).toBe(backHomeBtn.closest("footer"));
+    expect(reviewBtn.className).not.toContain("underline");
+    expect(reviewBtn.className).toContain("border");
+  });
 });

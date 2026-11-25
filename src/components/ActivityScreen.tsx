@@ -146,7 +146,7 @@ export function ActivityCompletion({ progress, sessionId, formUrl, onHome, notic
           <footer className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-start sm:justify-end">
             {reviewAction && (
               <button type="button" onClick={reviewAction.onClick}
-                className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50">
+                className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                 {reviewAction.label}
               </button>
             )}
@@ -156,12 +156,18 @@ export function ActivityCompletion({ progress, sessionId, formUrl, onHome, notic
           <footer className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
             {feedbackUrl && (
               <a href={feedbackUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700">
+                className="inline-flex min-h-10 items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
                 Open feedback form <ArrowRightIcon className="h-4 w-4" aria-hidden="true" />
               </a>
             )}
+            {reviewAction && (
+              <button type="button" onClick={reviewAction.onClick}
+                className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                {reviewAction.label}
+              </button>
+            )}
             <button type="button" onClick={onHome}
-              className="rounded-md border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50">
+              className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Back to home
             </button>
           </footer>
