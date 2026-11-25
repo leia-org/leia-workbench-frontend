@@ -1,5 +1,7 @@
 // Shared types between Replication.tsx and its sections.
 
+export type EvaluationMode = "none" | "classic" | "rubric";
+
 export interface ReplicationLeia {
   stageId?: string;
   configuration: {
@@ -7,6 +9,7 @@ export interface ReplicationLeia {
     data?: unknown;
     askSolution: boolean;
     evaluateSolution: boolean;
+    evaluationMode?: EvaluationMode;
     showSolution?: boolean;
   };
   leia: {
@@ -60,11 +63,20 @@ interface ActivityOrchestration {
   sharedTask: string;
 }
 
-export type StageOutput = "conversation" | "submitedSolution";
+export type StageOutput = "conversation" | "submitedSolution" | "problem";
 
 export interface StageOutputSources {
   conversation?: string | null;
   submitedSolution?: string | null;
+  problem?: string | null;
+}
+
+export type PreviousConversationAvailability = "chat" | "both";
+
+export interface StagePreviousConversationConfig {
+  enabled: boolean;
+  sourceStageId: string | null;
+  availability: PreviousConversationAvailability;
 }
 
 export interface ReplicationData {
@@ -92,6 +104,7 @@ export interface ReplicationData {
     stages?: {
       id: string;
       outputSources?: StageOutputSources;
+      previousConversation?: StagePreviousConversationConfig;
       orchestration: ActivityOrchestration;
     }[];
   };

@@ -18,7 +18,10 @@ import { SettingsSection } from "./replication/sections/SettingsSection";
 import { DataUsageSection } from "./replication/sections/DataUsageSection";
 import { ConversationsPlaceholder } from "./replication/sections/ConversationsPlaceholder";
 import { LivePlaceholder } from "./replication/sections/LivePlaceholder";
-import type { ReplicationData } from "./replication/types";
+import type {
+  ReplicationData,
+  StagePreviousConversationConfig,
+} from "./replication/types";
 import { writeReplicationName } from "../lib/replicationNames";
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
@@ -639,6 +642,36 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const updateEvaluationMode = async (
+    idx: number,
+    evaluationMode: "none" | "classic" | "rubric"
+  ) => {
+    if (!replication) return;
+    const leiaId = replication.experiment.leias[idx].id;
+    try {
+      const resp = await axios.patch(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/leia/${leiaId}/evaluation-mode`,
+        { evaluationMode },
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication(structuredClone(resp.data));
+      toast.success("Evaluation mode updated", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, "Error updating evaluation mode"),
+        {
+          position: "bottom-right",
+          autoClose: 5000,
+        }
+      );
+      console.error("Update error:", err);
+    }
+  };
+
   const toggleShowSolution = async (idx: number) => {
     if (!replication) return;
     const leiaId = replication.experiment.leias[idx].id;
@@ -657,6 +690,40 @@ export const Replication: React.FC = () => {
     } catch (err) {
       toast.error(
         getErrorMessage(err, "Error toggling show reference solution state"),
+        {
+          position: "bottom-right",
+          autoClose: 5000,
+        }
+      );
+      console.error("Update error:", err);
+    }
+  };
+
+  const updateStagePreviousConversation = async (
+    stageId: string,
+    previousConversation: StagePreviousConversationConfig
+  ) => {
+    if (!replication) return;
+    try {
+      const resp = await axios.patch<ReplicationData>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/stages/${stageId}/previous-conversation`,
+        previousConversation,
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication((prev) => {
+        if (!prev) return structuredClone(resp.data);
+        const next = structuredClone(prev);
+        next.experiment.stages = structuredClone(resp.data.experiment.stages);
+        return next;
+      });
+      toast.success("Stage conversation visibility updated", {
+        position: "bottom-right",
+        autoClose: 5000,
+      });
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, "Error updating previous conversation settings"),
         {
           position: "bottom-right",
           autoClose: 5000,
@@ -891,7 +958,9 @@ export const Replication: React.FC = () => {
             onLeiaUpdate={handleLeiaUpdate}
             onToggleAskSolution={toggleAskSolution}
             onToggleEvaluateSolution={toggleEvaluateSolution}
+            onUpdateEvaluationMode={updateEvaluationMode}
             onToggleShowSolution={toggleShowSolution}
+            onUpdateStagePreviousConversation={updateStagePreviousConversation}
             onStartTestSession={startTestSession}
             startingSessionLeiaId={startingSessionLeiaId}
             invalidLeiaFields={invalidLeiaFields}

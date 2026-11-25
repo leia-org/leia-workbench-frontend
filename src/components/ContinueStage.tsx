@@ -8,7 +8,7 @@ export interface StageProgress {
   hasNext: boolean;
 }
 
-export function ContinueStage({ sessionId }: { sessionId: string }) {
+export function ContinueStage({ sessionId, nextStageNumber }: { sessionId: string; nextStageNumber: number }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -28,12 +28,12 @@ export function ContinueStage({ sessionId }: { sessionId: string }) {
   };
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    <div className="flex flex-col gap-2">
       <button type="button" disabled={loading} onClick={() => void next()}
-        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-        {loading ? "Opening next stage…" : "Continue to next stage"}
+        className="min-h-10 rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+        {loading ? `Opening Stage ${nextStageNumber}…` : `Continue to Stage ${nextStageNumber}`}
       </button>
+      {error && <p role="alert" className="text-sm text-red-700 sm:max-w-56">{error}</p>}
     </div>
   );
 }

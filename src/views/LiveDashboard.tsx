@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
+import ReactMarkdown from "react-markdown";
 import { io } from "socket.io-client";
 import {
   Box,
@@ -35,11 +36,21 @@ import StatusDot from "../components/admin/StatusDot";
 import { formatTimeAgo } from "../components/admin/RelativeTime";
 import LeiaPreviewDrawer from "../components/admin/LeiaPreview";
 import { writeReplicationName } from "../lib/replicationNames";
+import { appendLiveRun, type TestRunRecord } from "../lib/testRuns";
+import { TestRunsSection } from "../components/admin/TestRunsSection";
 import { useAuth } from "../context/useAuth";
 import {
   groupSessionsByRun,
   type ActivityRunGroup,
 } from "./replication/activityRuns";
+import {
+  RubricEvaluationView,
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
+
+// The dashboard keeps only the most recent test runs of each session (same
+// number the backend sends on load); the Conversations page has them all.
+const LIVE_RECENT_TEST_RUNS = 5;
 
 interface SupervisorFlag {
   category: string;
@@ -60,6 +71,10 @@ interface LiveSession {
   startedAt: string;
   finishedAt?: string | null;
   isActive: boolean;
+  score?: number | null;
+  evaluationMode?: "classic" | "rubric" | null;
+  evaluation?: string | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   messageCount: number;
   lastMessage?: {
     text: string;
@@ -68,6 +83,9 @@ interface LiveSession {
   } | null;
   supervisorFlags?: SupervisorFlag[];
   supervisorFlagCount?: number;
+  /** Latest code editor test runs, without their code snapshots. */
+  testRuns?: TestRunRecord[];
+  testRunCount?: number;
 }
 
 // Loose typing for the parsed LEIA spec returned by the workbench-backend.
@@ -362,6 +380,30 @@ export const LiveDashboard = () => {
       }
     );
     newSocket.on(
+      "session:evaluated",
+      (data: {
+        sessionId: string;
+        score?: number | null;
+        evaluationMode?: "classic" | "rubric" | null;
+        evaluation?: string | null;
+        rubricEvaluation?: RubricEvaluationResult | null;
+      }) => {
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === data.sessionId
+              ? {
+                  ...s,
+                  score: data.score ?? s.score ?? null,
+                  evaluationMode: data.evaluationMode ?? s.evaluationMode ?? null,
+                  evaluation: data.evaluation ?? s.evaluation ?? null,
+                  rubricEvaluation: data.rubricEvaluation ?? s.rubricEvaluation ?? null,
+                }
+              : s
+          )
+        );
+      }
+    );
+    newSocket.on(
       "session:supervisorFlag",
       (data: {
         sessionId: string;
@@ -389,6 +431,30 @@ export const LiveDashboard = () => {
     newSocket.on("run:stageChanged", () => {
       void fetchSessions();
     });
+    newSocket.on(
+      "session:testRun",
+      (data: { sessionId: string; testRun?: TestRunRecord; testRunCount?: number }) => {
+        const run = data.testRun;
+        if (!run) return;
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== data.sessionId) return s;
+            // The same run can also come with a refresh: never count it twice.
+            const known = (s.testRuns || []).some((existing) => existing.id === run.id);
+            return {
+              ...s,
+              testRuns: appendLiveRun(s.testRuns, run, LIVE_RECENT_TEST_RUNS),
+              // The server's count wins; events may arrive out of order, so
+              // it never goes down.
+              testRunCount:
+                typeof data.testRunCount === "number"
+                  ? Math.max(data.testRunCount, s.testRunCount || 0)
+                  : (s.testRunCount || 0) + (known ? 0 : 1),
+            };
+          })
+        );
+      }
+    );
     newSocket.on("dashboard:error", (payload: { message?: string }) => {
       setError(payload.message || "Real-time access denied");
     });
@@ -401,6 +467,19 @@ export const LiveDashboard = () => {
       newSocket.disconnect();
     };
   }, [token, isAdmin, replicationId, replicationToken, tokenReady, fetchSessions]);
+
+  // Full test runs of a session, including the code at each run. Fetched
+  // only when a code snapshot is opened.
+  const loadSessionTestRuns = useCallback(
+    async (sessionId: string): Promise<TestRunRecord[]> => {
+      const response = await axios.get<{ testRuns: TestRunRecord[] }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${replicationId}/sessions/${sessionId}/test-runs`,
+        buildRequestConfig()
+      );
+      return response.data.testRuns ?? [];
+    },
+    [replicationId, buildRequestConfig]
+  );
 
   const handleShareLink = async (sessionId: string, open: boolean = true) => {
     try {
@@ -627,6 +706,7 @@ export const LiveDashboard = () => {
               }
               onWatch={() => handleWatch(selected.id)}
               onShare={() => handleShareLink(selected.id, true)}
+              loadTestRuns={loadSessionTestRuns}
             />
           ) : (
             <MasterDetailEmptyState
@@ -748,20 +828,53 @@ const SessionRow: React.FC<{
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
           {formatTimeAgo(group.startedAt)}
         </Typography>
-        {totalFlags ? (
-          <Chip
-            size="small"
-            label={`⚑ ${totalFlags}`}
-            sx={{
-              height: 20,
-              fontSize: 11,
-              fontWeight: 600,
-              mt: 0.5,
-              bgcolor: "rgba(211,47,47,0.08)",
-              color: "error.main",
-            }}
-          />
-        ) : null}
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.5 }}>
+          {item.score !== null && item.score !== undefined && (
+            <Chip
+              size="small"
+              label={`${item.score}/10${item.evaluationMode === "rubric" ? " · Rubric" : ""}`}
+              sx={{
+                height: 20,
+                fontSize: 10,
+                fontWeight: 600,
+                bgcolor:
+                  item.evaluationMode === "rubric"
+                    ? "rgba(217, 119, 6, 0.12)"
+                    : "surfaces.accent",
+                color:
+                  item.evaluationMode === "rubric" ? "#B45309" : "primary.dark",
+              }}
+            />
+          )}
+          {totalFlags ? (
+            <Chip
+              size="small"
+              label={`⚑ ${totalFlags}`}
+              sx={{
+                height: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                bgcolor: "rgba(211,47,47,0.08)",
+                color: "error.main",
+              }}
+            />
+          ) : null}
+          {item.testRunCount ? (
+            <Chip
+              size="small"
+              label={`▶ ${item.testRunCount}`}
+              title={`${item.testRunCount} test run${item.testRunCount === 1 ? "" : "s"}`}
+              sx={{
+                height: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                mt: 0.5,
+                bgcolor: "surfaces.subtle",
+                color: "text.secondary",
+              }}
+            />
+          ) : null}
+        </Stack>
       </Box>
     </ButtonBase>
   );
@@ -791,7 +904,10 @@ const SessionDetail: React.FC<{
   onOpenLeia?: () => void;
   onWatch: () => void;
   onShare: () => void;
-}> = ({ group, item, onSelectStageSession, replicationName, leia, onOpenLeia, onWatch, onShare }) => {
+  loadTestRuns: (sessionId: string) => Promise<TestRunRecord[]>;
+}> = ({ group, item, onSelectStageSession, replicationName, leia, onOpenLeia, onWatch, onShare, loadTestRuns }) => {
+  const sessionId = item.id;
+  const loadSessionCode = useCallback(() => loadTestRuns(sessionId), [loadTestRuns, sessionId]);
   const duration = useMemo(() => {
     const start = new Date(item.startedAt).getTime();
     const end = item.finishedAt ? new Date(item.finishedAt).getTime() : Date.now();
@@ -955,6 +1071,19 @@ const SessionDetail: React.FC<{
         </Paper>
       )}
 
+      {item.testRuns && item.testRuns.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          {/* Keyed by session so opened snapshots and loaded code reset. */}
+          <TestRunsSection
+            key={item.id}
+            runs={item.testRuns}
+            totalCount={item.testRunCount}
+            loadCode={loadSessionCode}
+            formatDate={(s) => new Date(s).toLocaleString()}
+          />
+        </Box>
+      )}
+
       <Box sx={{ mb: 4 }}>
         <DetailRow label="Started">
           {new Date(item.startedAt).toLocaleString()}
@@ -966,6 +1095,32 @@ const SessionDetail: React.FC<{
         )}
         <DetailRow label="Duration">{duration}</DetailRow>
         <DetailRow label="Messages">{item.messageCount}</DetailRow>
+        {item.score !== null && item.score !== undefined && (
+          <DetailRow label="Score">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography sx={{ fontSize: 14, fontWeight: 700 }}>
+                {item.score} / 10
+              </Typography>
+              {item.evaluationMode && (
+                <Chip
+                  size="small"
+                  label={item.evaluationMode === "rubric" ? "Rubric" : "Classic"}
+                  sx={{
+                    height: 20,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    bgcolor:
+                      item.evaluationMode === "rubric"
+                        ? "rgba(217, 119, 6, 0.12)"
+                        : "surfaces.subtle",
+                    color:
+                      item.evaluationMode === "rubric" ? "#B45309" : "text.secondary",
+                  }}
+                />
+              )}
+            </Stack>
+          </DetailRow>
+        )}
         <DetailRow label="LEIA">
           {leia ? (
             <ButtonBase
@@ -999,6 +1154,33 @@ const SessionDetail: React.FC<{
           )}
         </DetailRow>
       </Box>
+
+      {(item.rubricEvaluation || item.evaluation) && (
+        <Paper
+          variant="outlined"
+          sx={{ p: 2.5, borderRadius: 2, mb: 3, borderColor: "primary.light" }}
+        >
+          <Typography
+            variant="overline"
+            sx={{ display: "block", color: "text.disabled", mb: 1.5 }}
+          >
+            Evaluation
+          </Typography>
+          {item.rubricEvaluation ? (
+            <RubricEvaluationView rubricEvaluation={item.rubricEvaluation} compact />
+          ) : (
+            <Box
+              sx={{
+                "& p": { fontSize: 13, lineHeight: 1.55, my: 0.75 },
+                "& p:first-of-type": { mt: 0 },
+                "& p:last-of-type": { mb: 0 },
+              }}
+            >
+              <ReactMarkdown>{item.evaluation || ""}</ReactMarkdown>
+            </Box>
+          )}
+        </Paper>
+      )}
 
       <Stack direction="row" gap={1}>
         <Button

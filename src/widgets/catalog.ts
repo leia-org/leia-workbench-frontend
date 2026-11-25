@@ -17,7 +17,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     {
         widgetType: "codeEditor",
         label: "Editor",
-        description: "Monaco editor (JavaScript, Python or plain text). LEIA can read, comment and rewrite the content while you talk.",
+        description: "Monaco editor with templates for 50 programming, scripting, query and visual languages. LEIA can read, comment and rewrite the content while you talk; tests run for JavaScript and Python.",
         Component: CodeEditorWidget,
     },
 ];

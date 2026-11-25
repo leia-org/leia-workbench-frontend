@@ -32,6 +32,8 @@ import {
 import StatusDot from "../components/admin/StatusDot";
 import { formatTimeAgo } from "../components/admin/RelativeTime";
 import { writeReplicationName } from "../lib/replicationNames";
+import { mergeTimeline, type TestRunRecord } from "../lib/testRuns";
+import { TestRunMarker, TestRunsSection } from "../components/admin/TestRunsSection";
 import { useAuth } from "../context";
 import {
   groupSessionsByRun,
@@ -39,6 +41,10 @@ import {
   type ActivityRunGroup,
   type LeiaDisplayInfo,
 } from "./replication/activityRuns";
+import {
+  RubricEvaluationView,
+  type RubricEvaluationResult,
+} from "../components/RubricEvaluationView";
 
 interface Message {
   id: string;
@@ -69,9 +75,13 @@ interface Session {
   result: string | null;
   evaluation: string | null;
   score: number | null;
+  evaluationMode?: "classic" | "rubric" | null;
+  rubricEvaluation?: RubricEvaluationResult | null;
   messages: Message[];
   user: { email: string } | null;
   supervisorFlags?: SupervisorFlag[] | null;
+  /** Code editor test runs, without the code snapshots (loaded on demand). */
+  testRuns?: TestRunRecord[] | null;
   replicationConfig?: unknown | null;
   dataUsage?: {
     config: {
@@ -86,6 +96,26 @@ interface Session {
 }
 
 const REPLICATION_TOKENS_KEY = "replicationTokens";
+
+// True when a LEIA of the replication carries the code editor widget, either
+// in its problem definition or in the legacy runner configuration.
+function leiaHasCodeEditor(entry: unknown): boolean {
+  const leia = entry as {
+    leia?: { spec?: { problem?: { spec?: { widgets?: unknown } } } };
+    runnerConfiguration?: { lukeConfig?: { widgets?: unknown } };
+  } | null;
+  const problemWidgets = leia?.leia?.spec?.problem?.spec?.widgets;
+  const legacyWidgets = leia?.runnerConfiguration?.lukeConfig?.widgets;
+  const widgets: unknown[] =
+    Array.isArray(problemWidgets) && problemWidgets.length > 0
+      ? problemWidgets
+      : Array.isArray(legacyWidgets)
+        ? legacyWidgets
+        : [];
+  return widgets.some(
+    (widget) => (widget as { widgetType?: string } | null)?.widgetType === "codeEditor"
+  );
+}
 
 // Initialise mermaid once. `securityLevel: 'loose'` lets it render user
 // content without sanitising too aggressively — same setting Edit.tsx
@@ -158,6 +188,7 @@ export const Conversations: React.FC = () => {
   const [solutionFormat, setSolutionFormat] = useState<string | null>(null);
   const [leiaInfoById, setLeiaInfoById] = useState<Record<string, LeiaDisplayInfo>>({});
   const [stageTotal, setStageTotal] = useState<number | null>(null);
+  const [hasCodeEditor, setHasCodeEditor] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -237,6 +268,12 @@ export const Conversations: React.FC = () => {
         if (typeof fmt === "string" && fmt.length > 0) {
           setSolutionFormat(fmt);
         }
+        // The test-runs export only makes sense when some LEIA of the
+        // replication has the code editor widget.
+        const leias: unknown[] = Array.isArray(repResp.data?.experiment?.leias)
+          ? repResp.data.experiment.leias
+          : [];
+        setHasCodeEditor(leias.some(leiaHasCodeEditor));
 
         const convResp = await axios.get<Session[]>(
           `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/conversations`,
@@ -257,10 +294,13 @@ export const Conversations: React.FC = () => {
     fetch();
   }, [id, navigate, replicationToken, tokenReady, buildRequestConfig]);
 
-  const handleDownloadCSV = async () => {
+  // Two exports: the transcript ("conversations", one row per message) and
+  // the code editor's test runs ("test-runs", one row per run). `kind` is both
+  // the path segment and the file suffix.
+  const downloadCSV = async (kind: "conversations" | "test-runs") => {
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/conversations/csv`,
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/${kind}/csv`,
         buildRequestConfig({ responseType: "blob" })
       );
       const blob = new Blob([response.data], { type: "text/csv" });
@@ -269,7 +309,7 @@ export const Conversations: React.FC = () => {
       link.href = url;
       link.setAttribute(
         "download",
-        `${replicationName.replace(/\s+/g, "_")}_conversations.csv`
+        `${replicationName.replace(/\s+/g, "_")}_${kind.replace("-", "_")}.csv`
       );
       document.body.appendChild(link);
       link.click();
@@ -277,8 +317,24 @@ export const Conversations: React.FC = () => {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Download error:", err);
+      if (kind === "test-runs") alert("The test runs CSV could not be downloaded");
     }
   };
+
+  const handleDownloadCSV = () => downloadCSV("conversations");
+
+  // Full test runs of a session, including the code at each run. Fetched
+  // only when the instructor opens a code snapshot.
+  const loadSessionTestRuns = useCallback(
+    async (sessionId: string): Promise<TestRunRecord[]> => {
+      const response = await axios.get<{ testRuns: TestRunRecord[] }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/sessions/${sessionId}/test-runs`,
+        buildRequestConfig()
+      );
+      return response.data.testRuns ?? [];
+    },
+    [id, buildRequestConfig]
+  );
 
   const handleSaveScore = async (sessionId: string) => {
     try {
@@ -367,6 +423,12 @@ export const Conversations: React.FC = () => {
     setScoreValue("");
   }, [selected?.id]);
 
+  // Offered when the activity has a code editor, or when runs exist anyway
+  // (e.g. the widget was removed from the activity afterwards).
+  const showTestRunsExport =
+    /^pre(?:-\d+)?\.workbench\.leia\.ovh$/.test(window.location.hostname) &&
+    (hasCodeEditor || conversations.some((c) => (c.testRuns?.length ?? 0) > 0));
+
   const headerActions = (
     <Stack direction="row" gap={1}>
       <Button
@@ -379,6 +441,18 @@ export const Conversations: React.FC = () => {
       >
         Live
       </Button>
+      {showTestRunsExport && (
+        <Button
+          variant="outlined"
+          color="inherit"
+          size="small"
+          startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+          onClick={() => downloadCSV("test-runs")}
+          sx={{ borderColor: "divider", color: "text.primary" }}
+        >
+          Download tests CSV
+        </Button>
+      )}
       <Button
         variant="contained"
         size="small"
@@ -486,6 +560,7 @@ export const Conversations: React.FC = () => {
                 setScoreValue("");
               }}
               formatDate={formatDate}
+              loadTestRuns={loadSessionTestRuns}
             />
           ) : (
             <MasterDetailEmptyState
@@ -637,6 +712,7 @@ const SessionDetail: React.FC<{
   onSaveScore: () => void;
   onCancelEditScore: () => void;
   formatDate: (s: string) => string;
+  loadTestRuns: (sessionId: string) => Promise<TestRunRecord[]>;
 }> = ({
   group,
   session,
@@ -651,8 +727,19 @@ const SessionDetail: React.FC<{
   onSaveScore,
   onCancelEditScore,
   formatDate,
+  loadTestRuns,
 }) => {
   const [detailView, setDetailView] = useState<"conversation" | "configuration" | "dataUsage">("conversation");
+  // Test run a transcript marker asked to bring into view.
+  const [focusedRun, setFocusedRun] = useState<{ id: string; at: number } | null>(null);
+  const testRuns = useMemo(() => session.testRuns ?? [], [session.testRuns]);
+  // Transcript with a marker at the moment of each test run.
+  const timeline = useMemo(
+    () => mergeTimeline(session.messages, testRuns),
+    [session.messages, testRuns]
+  );
+  const sessionId = session.id;
+  const loadSessionCode = useCallback(() => loadTestRuns(sessionId), [loadTestRuns, sessionId]);
   const resultIsMermaid =
     Boolean(session.result) &&
     (solutionFormat === "mermaid" || looksLikeMermaid(session.result ?? ""));
@@ -662,6 +749,7 @@ const SessionDetail: React.FC<{
 
   useEffect(() => {
     setDetailView("conversation");
+    setFocusedRun(null);
   }, [session.id]);
 
   return (
@@ -827,20 +915,33 @@ const SessionDetail: React.FC<{
           mb: 3,
         }}
       >
-        {session.messages.length === 0 ? (
+        {session.messages.length === 0 && (
           <Typography
             variant="body2"
-            sx={{ color: "text.disabled", fontStyle: "italic" }}
+            sx={{ color: "text.disabled", fontStyle: "italic", mb: timeline.length > 0 ? 1.25 : 0 }}
           >
             {conversationWasRemoved
               ? "No conversation is available because the participant did not consent to data usage and automated conversation removal was enabled."
               : "No messages yet."}
           </Typography>
-        ) : (
+        )}
+        {timeline.length > 0 && (
           <Stack gap={1.25}>
-            {session.messages.map((m) => (
+            {timeline.map((item) => {
+              if (item.kind === "testRun") {
+                return (
+                  <TestRunMarker
+                    key={item.key}
+                    run={item.run}
+                    formatDate={formatDate}
+                    onClick={() => setFocusedRun({ id: item.run.id, at: Date.now() })}
+                  />
+                );
+              }
+              const m = item.message;
+              return (
               <Box
-                key={m.id}
+                key={item.key}
                 sx={{
                   display: "flex",
                   justifyContent: m.isLeia ? "flex-start" : "flex-end",
@@ -878,109 +979,143 @@ const SessionDetail: React.FC<{
                   </Typography>
                 </Box>
               </Box>
-            ))}
+              );
+            })}
           </Stack>
         )}
       </Paper>
 
-      {session.evaluation && (
+      {(session.rubricEvaluation || session.evaluation) && (
         <>
-          <Typography
-            variant="overline"
-            sx={{ display: "block", mb: 1.5, color: "text.disabled" }}
-          >
-            Evaluation
-          </Typography>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              bgcolor: "surfaces.accent",
-              borderColor: "primary.main",
-              borderStyle: "solid",
-              borderWidth: 1,
-              "& p": { fontSize: 14, lineHeight: 1.6, my: 1.25 },
-              "& p:first-of-type": { mt: 0 },
-              "& p:last-of-type": { mb: 0 },
-              "& h1, & h2, & h3, & h4": {
-                fontWeight: 600,
-                letterSpacing: "-0.01em",
-                color: "text.primary",
-                mt: 2,
-                mb: 1,
-              },
-              "& h1": { fontSize: 20 },
-              "& h2": { fontSize: 17 },
-              "& h3": { fontSize: 15 },
-              "& h4": { fontSize: 14 },
-              "& ul, & ol": { pl: 3, my: 1.25 },
-              "& li": { fontSize: 14, lineHeight: 1.6, mb: 0.5 },
-              "& code": {
-                fontFamily:
-                  "'JetBrains Mono Variable', ui-monospace, monospace",
-                fontSize: 12,
-                bgcolor: "surfaces.subtle",
-                px: 0.6,
-                py: 0.2,
-                borderRadius: 0.75,
-                color: "text.primary",
-              },
-              "& pre": {
-                bgcolor: "surfaces.subtle",
-                border: "1px solid",
-                borderColor: "divider",
-                p: 1.5,
-                borderRadius: 1.5,
-                overflowX: "auto",
-                my: 1.5,
-              },
-              "& pre code": {
-                bgcolor: "transparent",
-                p: 0,
-                borderRadius: 0,
-                fontSize: 12,
-              },
-              "& blockquote": {
-                borderLeft: "3px solid",
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+            <Typography
+              variant="overline"
+              sx={{ display: "block", color: "text.disabled" }}
+            >
+              Evaluation
+            </Typography>
+            {session.evaluationMode && (
+              <Chip
+                size="small"
+                label={session.evaluationMode === "rubric" ? "Rubric" : "Classic"}
+                sx={{
+                  height: 18,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  bgcolor:
+                    session.evaluationMode === "rubric"
+                      ? "rgba(217, 119, 6, 0.12)"
+                      : "surfaces.subtle",
+                  color:
+                    session.evaluationMode === "rubric" ? "#B45309" : "text.secondary",
+                }}
+              />
+            )}
+          </Stack>
+          {session.rubricEvaluation ? (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 3,
+                borderRadius: 2,
+                bgcolor: "background.paper",
                 borderColor: "primary.main",
-                pl: 2,
-                py: 0.25,
-                my: 1.5,
-                color: "text.secondary",
-                fontStyle: "italic",
-              },
-              "& a": {
-                color: "primary.main",
-                textDecoration: "underline",
-              },
-              "& hr": {
-                border: "none",
-                borderTop: "1px solid",
-                borderColor: "divider",
-                my: 2,
-              },
-              "& table": {
-                width: "100%",
-                borderCollapse: "collapse",
-                my: 1.5,
-                fontSize: 13,
-              },
-              "& th, & td": {
-                border: "1px solid",
-                borderColor: "divider",
-                px: 1,
-                py: 0.5,
-                textAlign: "left",
-              },
-              "& th": {
-                bgcolor: "surfaces.subtle",
-                fontWeight: 600,
-              },
-            }}
-          >
-            <ReactMarkdown>{session.evaluation}</ReactMarkdown>
-          </Paper>
+              }}
+            >
+              <RubricEvaluationView rubricEvaluation={session.rubricEvaluation} />
+            </Paper>
+          ) : (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 3,
+                borderRadius: 2,
+                bgcolor: "surfaces.accent",
+                borderColor: "primary.main",
+                borderStyle: "solid",
+                borderWidth: 1,
+                "& p": { fontSize: 14, lineHeight: 1.6, my: 1.25 },
+                "& p:first-of-type": { mt: 0 },
+                "& p:last-of-type": { mb: 0 },
+                "& h1, & h2, & h3, & h4": {
+                  fontWeight: 600,
+                  letterSpacing: "-0.01em",
+                  color: "text.primary",
+                  mt: 2,
+                  mb: 1,
+                },
+                "& h1": { fontSize: 20 },
+                "& h2": { fontSize: 17 },
+                "& h3": { fontSize: 15 },
+                "& h4": { fontSize: 14 },
+                "& ul, & ol": { pl: 3, my: 1.25 },
+                "& li": { fontSize: 14, lineHeight: 1.6, mb: 0.5 },
+                "& code": {
+                  fontFamily:
+                    "'JetBrains Mono Variable', ui-monospace, monospace",
+                  fontSize: 12,
+                  bgcolor: "surfaces.subtle",
+                  px: 0.6,
+                  py: 0.2,
+                  borderRadius: 0.75,
+                  color: "text.primary",
+                },
+                "& pre": {
+                  bgcolor: "surfaces.subtle",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  overflowX: "auto",
+                  my: 1.5,
+                },
+                "& pre code": {
+                  bgcolor: "transparent",
+                  p: 0,
+                  borderRadius: 0,
+                  fontSize: 12,
+                },
+                "& blockquote": {
+                  borderLeft: "3px solid",
+                  borderColor: "primary.main",
+                  pl: 2,
+                  py: 0.25,
+                  my: 1.5,
+                  color: "text.secondary",
+                  fontStyle: "italic",
+                },
+                "& a": {
+                  color: "primary.main",
+                  textDecoration: "underline",
+                },
+                "& hr": {
+                  border: "none",
+                  borderTop: "1px solid",
+                  borderColor: "divider",
+                  my: 2,
+                },
+                "& table": {
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  my: 1.5,
+                  fontSize: 13,
+                },
+                "& th, & td": {
+                  border: "1px solid",
+                  borderColor: "divider",
+                  px: 1,
+                  py: 0.5,
+                  textAlign: "left",
+                },
+                "& th": {
+                  bgcolor: "surfaces.subtle",
+                  fontWeight: 600,
+                },
+              }}
+            >
+              <ReactMarkdown>{session.evaluation || ""}</ReactMarkdown>
+            </Paper>
+          )}
         </>
       )}
 
@@ -1048,6 +1183,20 @@ const SessionDetail: React.FC<{
               </Paper>
             ))}
           </Stack>
+        </>
+      )}
+
+      {testRuns.length > 0 && (
+        <>
+          <Divider sx={{ my: 3 }} />
+          {/* Keyed by session so opened snapshots and loaded code reset. */}
+          <TestRunsSection
+            key={session.id}
+            runs={testRuns}
+            loadCode={loadSessionCode}
+            formatDate={formatDate}
+            focus={focusedRun}
+          />
         </>
       )}
 
@@ -1313,6 +1462,13 @@ const getReplicationConfigSections = (config: unknown): ConfigSection[] => {
         { label: "Mode", value: asDisplayValue(selectedConfiguration.mode) },
         { label: "Ask solution", value: selectedConfiguration.askSolution ? "Yes" : "No" },
         { label: "Evaluate solution", value: selectedConfiguration.evaluateSolution ? "Yes" : "No" },
+        {
+          label: "Evaluation mode",
+          value: asDisplayValue(
+            selectedConfiguration.evaluationMode ??
+              (selectedConfiguration.evaluateSolution ? "classic" : "none"),
+          ),
+        },
         { label: "Solution format", value: asDisplayValue(activity.solutionFormat) },
       ],
     },
