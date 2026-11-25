@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import axios from "axios";
@@ -10,6 +10,142 @@ import type {
   ReplicationData,
   StagePreviousConversationConfig,
 } from "../../src/views/replication/types";
+
+test("keeps the solution within its stage and shows a separate task before the final stage", async () => {
+  localStorage.clear();
+  sessionStorage.clear();
+  vi.stubEnv("VITE_APP_BACKEND", "http://backend.test");
+  const stagePlan = [
+    { askSolution: true, mode: "conversation" },
+    { askSolution: false, mode: "transcription" },
+  ];
+  const completedAt = "2026-11-25T12:10:00Z";
+  const finishedStages = new Map<number, Record<string, unknown>>();
+  const session = (number: number) => ({
+    id: `task-${number}`,
+    stage: { number, total: 2, hasNext: number < 2 },
+    stagePlan,
+    startedAt: "2026-11-25T12:00:00Z",
+    finishedAt: null,
+    ...finishedStages.get(number),
+  });
+  vi.spyOn(axios, "get").mockImplementation(async (url) => {
+    if (url.endsWith("/task-1/evaluation/")) {
+      return {
+        status: 200,
+        data: { rubricEvaluation: {
+          rubricName: "Stage 1 rubric",
+          totalScore: 8,
+          scale: 10,
+          summary: "Good use of evidence.",
+          sections: [],
+        } },
+      };
+    }
+    if (url.endsWith("/task-2/evaluation/")) {
+      return { status: 200, data: { evaluation: "Clear analysis of the transcript." } };
+    }
+    const number = url.endsWith("/task-1") ? 1 : 2;
+    const phase = stagePlan[number - 1];
+    return {
+      status: 200,
+      data: {
+        session: session(number),
+        replication: { name: "Activity", duration: 0, form: "https://example.test/feedback" },
+        showReferenceSolution: false,
+        leia: {
+          showReferenceSolution: false,
+          configuration: { ...phase, evaluationMode: "rubric" },
+          leia: { spec: {
+            persona: { spec: { firstName: "LEIA" } },
+            problem: { spec: { description: `Task for Stage ${number}`, solutionFormat: "text", initialSolution: "My answer" } },
+            behaviour: { spec: {} },
+          } },
+        },
+        messages: [{ id: "msg-1", text: "Hello", isLeia: true, timestamp: "2026-11-25T12:00:00Z" }],
+      },
+    };
+  });
+  const post = vi.spyOn(axios, "post").mockImplementation(async (url, body) => {
+    if (url.endsWith("/task-1/result")) {
+      finishedStages.set(1, {
+        finishedAt: completedAt,
+        result: body.result,
+        spectateUrl: "https://example.test/conversation",
+      });
+      return { status: 200, data: session(1) };
+    }
+    if (url.endsWith("/task-1/next-stage")) return { status: 201, data: { sessionId: "task-2" } };
+    if (url.endsWith("/task-2/finish")) {
+      finishedStages.set(2, { finishedAt: completedAt });
+      return { status: 200, data: session(2) };
+    }
+    throw new Error(`Unexpected POST ${url}`);
+  });
+  const open = (path: string) => render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/chat/:sessionId" element={<Chat />} />
+        <Route path="/edit" element={<Edit />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const view = open("/chat/task-1");
+  const introProgress = within(await screen.findByRole("region", { name: "Activity progress" }));
+  expect(introProgress.getAllByRole("listitem")).toHaveLength(2);
+  expect(introProgress.getByText("Send solution")).toBeTruthy();
+  expect(introProgress.getByText("Review transcript")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start Stage 1" }));
+  expect(screen.getByRole("img", { name: "LEIA Logo" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Continue to solution" }));
+  expect(screen.getByRole("img", { name: "LEIA Logo" })).toBeTruthy();
+  expect(screen.queryByText("Stage 1 of 2")).toBeNull();
+  expect(within(screen.getByRole("region", { name: "Activity progress" }))
+    .getByText("Send solution").getAttribute("aria-current")).toBe("step");
+  fireEvent.click(screen.getByRole("button", { name: "Send solution" }));
+  const confirmation = screen.getByRole("dialog", { name: "Send your solution?" });
+  expect(within(confirmation).getByText(/Stage 2 comes next/)).toBeTruthy();
+  fireEvent.click(within(confirmation).getByRole("button", { name: "Send solution" }));
+
+  await screen.findByRole("heading", { name: "Stage 1 completed" });
+  expect(screen.queryByRole("link", { name: "Open feedback form" })).toBeNull();
+  expect(post).toHaveBeenCalledExactlyOnceWith("http://backend.test/api/v1/interactions/task-1/result", { result: "My answer" });
+  const review = screen.getByRole("button", { name: "Review your solution" });
+  const continueStage = screen.getByRole("button", { name: "Continue to Stage 2" });
+  const actions = review.closest("footer");
+  expect(continueStage.closest("footer")).toBe(actions);
+  const viewer = screen.getByLabelText("Conversation viewer link (valid for 1 year)");
+  const rubric = await screen.findByRole("region", { name: "Evaluation" });
+  expect(within(rubric).getByText("Stage 1 rubric")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Evaluation" })).toBeNull();
+  expect(rubric.contains(viewer)).toBe(false);
+  expect(rubric.contains(continueStage)).toBe(false);
+  expect(viewer.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(review);
+  fireEvent.click(screen.getByRole("button", { name: "Back to completion" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to Stage 2" }));
+  const instructions = await screen.findByRole("region", { name: "What you’ll do" });
+  expect(within(instructions).getByText("Task for Stage 2")).toBeTruthy();
+  expect(screen.getByText("Review the transcript for this stage.")).toBeTruthy();
+  const start = screen.getByRole("button", { name: "Start Stage 2" });
+  expect(instructions.contains(start)).toBe(false);
+  fireEvent.click(start);
+  fireEvent.click(screen.getByRole("button", { name: "Finish Stage 2" }));
+  await screen.findByRole("heading", { name: "Activity complete" });
+  expect(screen.getByText("Thank you for completing the activity.")).toBeTruthy();
+  const evaluation = await screen.findByText("Clear analysis of the transcript.");
+  const backToHome = screen.getByRole("button", { name: "Back to home" });
+  expect(evaluation.compareDocumentPosition(backToHome) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Open feedback form" }).getAttribute("href")).toBe("https://example.test/feedback");
+  expect(post).toHaveBeenCalledTimes(3);
+
+  view.unmount();
+  open("/chat/task-2");
+  await screen.findByRole("heading", { name: "Activity complete" });
+  expect(post).toHaveBeenCalledTimes(3);
+}, 15000);
 
 vi.mock("@leia-org/luke-client", () => ({
   useLuke: vi.fn(),
@@ -408,6 +544,8 @@ describe("Student Conversation button in Chat and Edit views", () => {
         </Routes>
       </MemoryRouter>,
     );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Stage 2" }, { timeout: 3000 }));
 
     const conversationButton = await screen.findByRole(
       "button",

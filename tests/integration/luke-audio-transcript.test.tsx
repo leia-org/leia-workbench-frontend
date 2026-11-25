@@ -160,7 +160,7 @@ describe('LukeAudioWidget finalized transcript emission', () => {
     );
   });
 
-  test('enables Go to Editor in Luke mode once a streaming transcript finalizes when a later stage uses the conversation', async () => {
+  test('enables the solution phase in Luke mode once a streaming transcript finalizes when a later stage uses the conversation', async () => {
     vi.stubEnv('VITE_APP_BACKEND', 'http://localhost:3001');
     vi.spyOn(axios, 'get').mockResolvedValue({
       status: 200,
@@ -196,7 +196,7 @@ describe('LukeAudioWidget finalized transcript emission', () => {
         },
       },
     });
-    vi.spyOn(axios, 'post').mockResolvedValue({
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({
       status: 200,
       data: { token: 'luke-jwt' },
     });
@@ -210,19 +210,20 @@ describe('LukeAudioWidget finalized transcript emission', () => {
       </MemoryRouter>,
     );
 
+    const startButton = await screen.findByRole('button', { name: 'Start Stage 1' }, { timeout: 3000 });
+    expect(screen.getByText('Use your microphone')).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(startButton);
+
     const goToEditorButton = (await screen.findByRole(
       'button',
-      { name: /Go to Editor/i },
+      { name: /Continue to solution/i },
       { timeout: 3000 },
     )) as HTMLButtonElement;
     expect(goToEditorButton.disabled).toBe(true);
     expect(goToEditorButton.title).toBe(
       'Have a conversation before finishing because a later stage uses it',
     );
-
-    // Dismiss instructions modal so Luke unmutes and is active.
-    const continueBtn = screen.queryByRole('button', { name: /Continue Task/i });
-    if (continueBtn) fireEvent.click(continueBtn);
 
     await waitFor(() => expect(screen.getByText('Listening')).toBeTruthy());
 

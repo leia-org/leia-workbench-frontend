@@ -4,20 +4,20 @@ import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/sol
 import {
   ChatBubbleLeftRightIcon,
   ExclamationTriangleIcon,
+  MicrophoneIcon,
   PencilSquareIcon,
   PhotoIcon,
 } from "@heroicons/react/24/outline";
 import axios from "axios";
-import ReactMarkdown from "react-markdown";
 import { scrollUtils, mobileUtils, touchUtils } from "../lib/utils";
-import RubricEvaluationView, {
-  type RubricEvaluationResult,
-} from "../components/RubricEvaluationView";
+import type { RubricEvaluationResult } from "../components/RubricEvaluationView";
 import { useRealtimeAudio } from "../hooks/useRealtimeAudio";
 import { useLukeToken } from "../hooks/useLukeAudio";
 import { AudioControls } from "../components/AudioControls";
 import { ChatMarkdown } from "../components/ChatMarkdown";
-import { ContinueStage, type StageProgress } from "../components/ContinueStage";
+import type { StageProgress } from "../components/ContinueStage";
+import { ActivityProgress, type ActivityStagePhase, type ActivityProgressProps } from "../components/ActivityProgress";
+import { ActivityCompletion, ActivityEvaluation, ActivityScreen, ActivityScrollCard } from "../components/ActivityScreen";
 import { LiveTranscriptionNotice } from "../components/LiveTranscriptionNotice";
 import InfographicViewer, {
   type InfographicViewerHandle,
@@ -231,6 +231,7 @@ interface ConversationDynamicsState {
 
 interface Session {
   stage?: StageProgress;
+  stagePlan?: ActivityStagePhase[];
   previousConversation?: {
     enabled: boolean;
     stageNumber: number;
@@ -348,14 +349,17 @@ const ChatSession = () => {
     null,
   );
   const [replication, setReplication] = useState<Replication | null>(null);
-  const [showInstructions, setShowInstructions] = useState(true);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const introStorageKey = `workbench:stage-started:${sessionId}`;
+  const [showStageIntro, setShowStageIntro] = useState(
+    () => sessionStorage.getItem(introStorageKey) !== "true",
+  );
+  const [showInstructions, setShowInstructions] = useState(false);
+  const [finishedOnTimeout, setFinishedOnTimeout] = useState(false);
   const [chatEvaluation, setChatEvaluation] = useState<{
     evaluation?: string | null;
     rubricEvaluation?: RubricEvaluationResult | null;
   } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [redirectingIn, setRedirectingIn] = useState(6);
   const [showTooltip, setShowTooltip] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
@@ -380,6 +384,7 @@ const ChatSession = () => {
   const [showNotes, setShowNotes] = useState(false);
   const [showPreviousConversation, setShowPreviousConversation] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const finishPending = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const studentInfographicViewerRef =
     useRef<InfographicViewerHandle | null>(null);
@@ -469,14 +474,16 @@ const ChatSession = () => {
     session.conversationDynamics.leiaSpeaksFirst.completed !== true && !messages.some((message) => message.isLeia);
   const conversationClosed = session?.conversationDynamics?.stoppingCondition.enabled === true &&
     session.conversationDynamics.stoppingCondition.satisfied === true;
+  const canConnectAudio = !showStageIntro && !dataUsageConsentPending && !session?.finishedAt;
   // Luke starts its greeting after the first microphone frame confirms that
   // client audio is ready. Muting while openingPending would prevent that
   // frame forever, so openingPending must not mute Luke.
   const lukeForceMute = showInstructions || dataUsageConsentPending || conversationClosed;
+  const hasConversationDynamics = Boolean(session?.conversationDynamics);
   const canFinishConversation = session?.conversationDynamics?.canFinish !== false;
   useEffect(() => {
-    if (!sessionId || !session?.conversationDynamics || session.finishedAt ||
-        (!openingPending && session.conversationDynamics.canFinish)) return;
+    if (!sessionId || !hasConversationDynamics || session?.finishedAt ||
+        (!openingPending && canFinishConversation)) return;
     let disposed = false;
     const refresh = async () => {
       try {
@@ -491,8 +498,7 @@ const ChatSession = () => {
     };
     const interval = window.setInterval(refresh, 3000);
     return () => { disposed = true; window.clearInterval(interval); };
-  }, [sessionId, session?.conversationDynamics?.stoppingCondition.enabled,
-      session?.conversationDynamics?.canFinish, session?.finishedAt, openingPending]);
+  }, [sessionId, hasConversationDynamics, canFinishConversation, session?.finishedAt, openingPending]);
 
   const handleTranscriptComplete = useCallback(
     (
@@ -531,7 +537,7 @@ const ChatSession = () => {
 
   const realtimeAudio = useRealtimeAudio({
     sessionId: sessionId || "",
-    enabled: audioMode === "audio" && !dataUsageConsentPending,
+    enabled: audioMode === "audio" && canConnectAudio,
     forceMute: showInstructions || dataUsageConsentPending || conversationClosed,
     onTranscriptComplete: handleTranscriptComplete,
     onError: handleAudioError,
@@ -539,7 +545,7 @@ const ChatSession = () => {
 
   const lukeToken = useLukeToken({
     sessionId: sessionId || "",
-    enabled: audioMode === "luke" && !dataUsageConsentPending,
+    enabled: audioMode === "luke" && canConnectAudio,
     onError: handleAudioError,
   });
 
@@ -626,13 +632,14 @@ const ChatSession = () => {
     }
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (signal: AbortSignal) => {
     try {
       const response = await axios.get(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`,
+        { signal },
       );
 
-      if (response.status === 200) {
+      if (!signal.aborted && response.status === 200) {
         setMultiLeia(response.data.multiLeia || null);
         const personaSpec = extractPersonaSpec(response.data.leia);
         setExercise(response.data.leia.leia.spec.problem.spec);
@@ -755,15 +762,16 @@ const ChatSession = () => {
         setMessages(sortedMessages);
       }
     } catch (error: unknown) {
-      setLoadError(getRequestErrorMessage(error));
+      if (!signal.aborted) setLoadError(getRequestErrorMessage(error));
+    } finally {
+      if (!signal.aborted) setLoading(false);
     }
-    setTimeout(() => {
-      setLoading(false);
-    }, 1000);
   }, [sessionId]);
 
   useEffect(() => {
-    loadData();
+    const controller = new AbortController();
+    void loadData(controller.signal);
+    return () => controller.abort();
   }, [loadData]);
 
   // Mejorar la experiencia móvil al cargar el componente
@@ -1128,60 +1136,40 @@ const ChatSession = () => {
     }
   }, [configuration, sessionId]);
 
-  const handleFinishConversation = async () => {
-    if (!canFinishConversation) return;
-    if (dataUsageConsentPending) return;
+  const finishSession = useCallback(async (timedOut = false) => {
+    if (finishPending.current || dataUsageConsentPending || !sessionId) return;
+    finishPending.current = true;
+    setConcluding(true);
+    try {
+      const { data } = await axios.post<Session>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
+      );
+      localStorage.setItem("session", JSON.stringify(data));
+      setFinishedOnTimeout(timedOut);
+      setSession((previous) => ({ ...previous, ...data }));
+    } catch (error: unknown) {
+      setLoadError(getRequestErrorMessage(error));
+    } finally {
+      finishPending.current = false;
+      setConcluding(false);
+    }
+  }, [dataUsageConsentPending, sessionId]);
+
+  const handleFinishConversation = () => {
+    if (!canFinishConversation || dataUsageConsentPending || finishPending.current) return;
     if (
       !messages.length &&
       (requiresConversationForNextStage ||
         (configuration?.mode !== "transcription" &&
           audioMode !== "luke" &&
           audioMode !== "audio"))
-    )
-      return;
-    setConcluding(true);
+    ) return;
     if (configuration?.askSolution) {
       navigate("/edit");
     } else {
-      try {
-        const response = await axios.post(
-          `${
-            import.meta.env.VITE_APP_BACKEND
-          }/api/v1/interactions/${sessionId}/finish`,
-        );
-
-        if (response.status === 200) {
-          const updatedSession = response.data;
-          await loadChatEvaluationIfEnabled();
-          setSession(updatedSession);
-          setShowSuccessModal(true);
-        }
-      } catch (error: unknown) {
-        setLoadError(getRequestErrorMessage(error));
-      } finally {
-        setConcluding(false);
-      }
+      void finishSession();
     }
   };
-
-  const handleTimerExpire = useCallback(async () => {
-    if (dataUsageConsentPending) return;
-    setConcluding(true);
-    try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
-      );
-      if (response.status === 200) {
-        await loadChatEvaluationIfEnabled();
-        setSession(response.data);
-        setShowSuccessModal(true);
-      }
-    } catch (error: unknown) {
-      setLoadError(getRequestErrorMessage(error));
-    } finally {
-      setConcluding(false);
-    }
-  }, [sessionId, dataUsageConsentPending, loadChatEvaluationIfEnabled]);
 
   const handleDataUsageConsentDecision = async (accepted: boolean) => {
     if (dataUsageConsentSubmitting) return;
@@ -1201,22 +1189,8 @@ const ChatSession = () => {
   };
 
   useEffect(() => {
-    if (session?.finishedAt && !session.stage?.hasNext && !showSuccessModal) {
-      // Start countdown and redirect
-      const timer = setInterval(() => {
-        setRedirectingIn((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            navigate("/");
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-
-      return () => clearInterval(timer);
-    }
-  }, [session, showSuccessModal, navigate]);
+    if (session?.finishedAt) void loadChatEvaluationIfEnabled();
+  }, [session?.finishedAt, loadChatEvaluationIfEnabled]);
 
   const renderStudentInfographic = () =>
     studentInfographic ? (
@@ -1260,6 +1234,88 @@ const ChatSession = () => {
           </button>
         </div>
       </div>
+    );
+  }
+
+  const progress: ActivityProgressProps = {
+    stage: session?.stage,
+    stagePlan: session?.stagePlan,
+    currentStage: {
+      askSolution: Boolean(configuration?.askSolution),
+      mode: configuration?.mode === "transcription" ? "transcription" : "conversation",
+    },
+    phase: session?.finishedAt ? "completed" : showStageIntro ? "ready" : "conversation",
+    solutionSubmitted: typeof session?.result === "string",
+  };
+  const timer = !dataUsageConsentPending && sessionTime && session?.startedAt && !session.finishedAt ? (
+    <SessionTimer
+      durationMinutes={sessionTime}
+      sessionStartedAt={session.startedAt}
+      onExpire={() => void finishSession(true)}
+    />
+  ) : null;
+
+  if (session?.finishedAt) {
+    return (
+      <ActivityCompletion
+        progress={progress}
+        sessionId={sessionId}
+        formUrl={replication?.form}
+        onHome={() => navigate("/")}
+        notice={finishedOnTimeout ? "Time is up. This stage has ended." : undefined}
+      >
+        <ActivityEvaluation evaluation={chatEvaluation?.evaluation} rubricEvaluation={chatEvaluation?.rubricEvaluation} />
+      </ActivityCompletion>
+    );
+  }
+
+  if (showStageIntro && !dataUsageConsentPending) {
+    const transcription = configuration?.mode === "transcription";
+    return (
+      <ActivityScreen
+        title={session?.stage ? `Stage ${session.stage.number}` : "Start your activity"}
+        subtitle={session?.stage && session.stage.number > 1
+          ? `Stage ${session.stage.number - 1} is complete. You’re about to start a new task.`
+          : undefined}
+        progress={progress}
+      >
+        <ActivityScrollCard title="What you’ll do">
+          <div className="space-y-3">
+            {exercise?.description && <p className="whitespace-pre-wrap text-slate-700">{exercise.description}</p>}
+            {audioMode !== "text" ? (
+              <div className="flex gap-3 rounded-lg bg-blue-50 p-4 text-blue-950">
+                <MicrophoneIcon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <div>
+                  <h3 className="font-semibold">Use your microphone</h3>
+                  <p className="mt-1">When prompted, allow microphone access so you can speak with LEIA. Use the mute control to pause your microphone.</p>
+                </div>
+              </div>
+            ) : (
+              <p>{transcription ? "Review the transcript for this stage." : "Use the chat to talk with LEIA during this stage."}</p>
+            )}
+            {configuration?.askSolution && (
+              <p>After {transcription ? "reviewing the transcript" : "the conversation"}, open the editor and send your solution to complete this stage.</p>
+            )}
+            {session?.previousConversation?.enabled && (
+              <div className="flex gap-3 rounded-lg bg-blue-50 p-4 text-blue-950">
+                <ChatBubbleLeftRightIcon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <p>Use the Conversation button to revisit Stage {session.previousConversation.stageNumber} during this stage.</p>
+              </div>
+            )}
+          </div>
+        </ActivityScrollCard>
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
+          <button type="button" disabled={concluding}
+            onClick={() => {
+              sessionStorage.setItem(introStorageKey, "true");
+              setShowStageIntro(false);
+            }}
+            className="rounded-md bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {session?.stage ? `Start Stage ${session.stage.number}` : "Continue Task"}
+          </button>
+          {timer && <div className="flex items-center gap-2 text-sm text-slate-700">Time remaining {timer}</div>}
+        </div>
+      </ActivityScreen>
     );
   }
 
@@ -1354,25 +1410,13 @@ const ChatSession = () => {
         </div>
       )}
 
-      <header className="flex justify-between items-center px-4 py-3 border-b bg-white sticky top-0 z-10">
-        <div className="flex items-center space-x-2">
-          <img
-            src="/logo/leia_main_dark.png"
-            alt="LEIA Logo"
-            className="w-6 h-6"
-          />
-          <h1 className="text-lg font-semibold text-gray-900">
-            {session?.stage ? `Stage ${session.stage.number} of ${session.stage.total}` : "Chat"}
-          </h1>
+      <header className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b bg-white px-4 py-2 sm:flex-nowrap">
+        <div className="flex w-full min-w-0 items-center gap-3">
+          <img src="/logo/leia_main_dark.png" alt="LEIA Logo" className="h-6 w-6 shrink-0" />
+          <ActivityProgress {...progress} />
         </div>
-        <div className="flex gap-2">
-        {!dataUsageConsentPending && sessionTime && session?.startedAt && !session.finishedAt && (
-          <SessionTimer
-            durationMinutes={sessionTime}
-            sessionStartedAt={session.startedAt}
-            onExpire={handleTimerExpire}
-          />
-        )}
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+          {timer}
         <button
             onClick={() => setShowNotes(!showNotes)}
             className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1"
@@ -1458,33 +1502,11 @@ const ChatSession = () => {
             }
             className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {(() => {
-              const hasCodeEditorWidget =
-                audioMode !== "audio" &&
-                !!lukeConfig?.widgets?.some((w) => w.widgetType === "codeEditor");
-              const askSolutionLabel = hasCodeEditorWidget
-                ? "Send Solution"
-                : "Go to Editor";
-              return concluding ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span className="hidden sm:inline">Processing...</span>
-                </>
-              ) : (
-                <>
-                  <span className="hidden sm:inline">
-                    {configuration?.askSolution
-                      ? askSolutionLabel
-                      : session?.stage ? "Finish Stage" : "Finish Session"}
-                  </span>
-                  <span className="sm:hidden">
-                    {configuration?.askSolution
-                      ? askSolutionLabel
-                      : session?.stage ? "Finish Stage" : "Finish Session"}
-                  </span>
-                </>
-              );
-            })()}
+            {concluding
+              ? "Finishing…"
+              : configuration?.askSolution
+                ? "Continue to solution"
+                : session?.stage ? `Finish Stage ${session.stage.number}` : "Finish activity"}
           </button>
         </div>
       </header>
@@ -1506,6 +1528,7 @@ const ChatSession = () => {
           loop owned by handleSubmit. */}
       {hasStudentInfographic && renderStudentInfographic()}
 
+      <div className="relative flex min-h-0 flex-1 flex-col">
       {hasTextWidgets && (
         <VoiceModeWithWidgets widgets={widgetDefs}>
           {({ rightSlot, leftSlot }) => {
@@ -1513,12 +1536,12 @@ const ChatSession = () => {
               <>
                 <ToolsBridge onTools={handleToolsSync} />
                 {rightSlot && (
-                  <div className="fixed top-14 right-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-l bg-neutral-900 text-white border-neutral-800">
+                  <div className="absolute inset-y-0 right-0 w-1/2 z-20 flex flex-col overflow-hidden border-l bg-neutral-900 text-white border-neutral-800">
                     {rightSlot}
                   </div>
                 )}
                 {leftSlot && (
-                  <div className="fixed top-14 left-0 bottom-0 w-1/2 z-20 flex flex-col overflow-hidden border-r bg-neutral-900 text-white border-neutral-800">
+                  <div className="absolute inset-y-0 left-0 w-1/2 z-20 flex flex-col overflow-hidden border-r bg-neutral-900 text-white border-neutral-800">
                     {leftSlot}
                   </div>
                 )}
@@ -2018,175 +2041,7 @@ const ChatSession = () => {
         </div>
       )}
 
-      {session?.finishedAt && session.stage?.hasNext && sessionId && (
-        <div role="dialog" aria-modal="true" aria-label="Stage completed"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className={`w-full ${chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation ? "max-w-3xl" : "max-w-md"} rounded-xl bg-white p-6`}>
-            <h2 className="mb-4 text-lg font-semibold">Stage {session.stage.number} completed</h2>
-            {(chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation) && (
-              <div className="mb-4 max-h-[60vh] overflow-y-auto border border-gray-200 rounded-lg p-4">
-                {chatEvaluation.rubricEvaluation ? (
-                  <RubricEvaluationView rubricEvaluation={chatEvaluation.rubricEvaluation} />
-                ) : (
-                  <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown>{chatEvaluation.evaluation || ""}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
-            )}
-            <ContinueStage sessionId={sessionId} />
-          </div>
-        </div>
-      )}
-
-      {showSuccessModal && !session?.stage?.hasNext && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className={`bg-white rounded-2xl ${chatEvaluation?.rubricEvaluation || chatEvaluation?.evaluation ? "max-w-3xl" : "max-w-lg"} w-full mx-4 shadow-xl`}>
-            <div className="flex justify-between items-center px-6 py-4 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Session Completed
-              </h2>
-              <button
-                onClick={() => setShowSuccessModal(false)}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-            <div className="px-6 py-4 max-h-[65vh] overflow-y-auto">
-              {chatEvaluation?.rubricEvaluation ? (
-                <RubricEvaluationView rubricEvaluation={chatEvaluation.rubricEvaluation} />
-              ) : chatEvaluation?.evaluation ? (
-                <div className="prose prose-sm max-w-none">
-                  <ReactMarkdown>{chatEvaluation.evaluation}</ReactMarkdown>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-center mb-4">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-10 w-10 text-green-600"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
-                    Success!
-                  </h3>
-                  <p className="text-gray-600 text-center mb-4">
-                    {replication?.form
-                      ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
-                      : "Your session has been successfully completed."}
-                  </p>
-                </>
-              )}
-            </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowSuccessModal(false);
-                  navigate("/");
-                }}
-                className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                  />
-                </svg>
-                Home
-              </button>
-              {replication?.form &&
-                (replication.form.startsWith("http://") ||
-                  replication.form.startsWith("https://")) && (
-                  <button
-                    onClick={() => window.open(replication.form, "_blank")}
-                    className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                      />
-                    </svg>
-                    Open Form
-                  </button>
-                )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {session?.finishedAt && !session.stage?.hasNext && !showSuccessModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-10 w-10 text-green-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                </div>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
-                Session Already Completed
-              </h3>
-              <p className="text-gray-600 text-center mb-4">
-                This session has already been completed. You will be redirected
-                to the home page in {redirectingIn} seconds.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Audio Controls Floating Popup - Legacy realtime mode */}
       {audioMode === "audio" && (
