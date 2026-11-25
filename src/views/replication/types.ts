@@ -63,11 +63,20 @@ interface ActivityOrchestration {
   sharedTask: string;
 }
 
-export type StageOutput = "conversation" | "submitedSolution";
+export type StageOutput = "conversation" | "submitedSolution" | "problem";
 
 export interface StageOutputSources {
   conversation?: string | null;
   submitedSolution?: string | null;
+  problem?: string | null;
+}
+
+export type PreviousConversationAvailability = "chat" | "both";
+
+export interface StagePreviousConversationConfig {
+  enabled: boolean;
+  sourceStageId: string | null;
+  availability: PreviousConversationAvailability;
 }
 
 export interface ReplicationData {
@@ -95,6 +104,7 @@ export interface ReplicationData {
     stages?: {
       id: string;
       outputSources?: StageOutputSources;
+      previousConversation?: StagePreviousConversationConfig;
       orchestration: ActivityOrchestration;
     }[];
   };

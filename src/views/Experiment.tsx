@@ -4,17 +4,20 @@ import axios from 'axios';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import { useAuth } from '../context';
+import {
+  getActivityReplicationBlocker,
+  type ActivityLeiaRef,
+  type ActivityOrchestration,
+  type ActivityStage,
+} from '../lib/activityStages';
 
 interface Experiment {
   id: string;
   isPublished: boolean;
   name: string;
-  leias: [{
-    configuration: {
-      mode: string;
-    }
-    leia: string;
-  }];
+  leias: ActivityLeiaRef[];
+  orchestration?: ActivityOrchestration;
+  stages?: ActivityStage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -28,6 +31,8 @@ export const Experiment: React.FC = () => {
 
   const [isCreateReplicationModalOpen, setIsCreateReplicationModalOpen] = useState(false);
   const [replicationName, setReplicationName] = useState('');
+  const [createError, setCreateError] = useState('');
+  const replicationBlocker = experiment ? getActivityReplicationBlocker(experiment) : null;
 
   useEffect(() => {
     const fetchExperiment = async () => {
@@ -42,7 +47,7 @@ export const Experiment: React.FC = () => {
         );
         setExperiment(response.data);
         console.log('Experiment:', response.data);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to load experiments:', error);
       } finally {
         setLoading(false);
@@ -59,6 +64,8 @@ export const Experiment: React.FC = () => {
   }, [experiment]);
 
   const handleCreateReplication = async () => {
+    if (replicationBlocker) return;
+    setCreateError('');
     try {
       const response = await axios.post(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications`,
@@ -76,8 +83,16 @@ export const Experiment: React.FC = () => {
       setIsCreateReplicationModalOpen(false);
       setReplicationName('');
       navigate(`/replications/${response.data.id}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to create replication:', error);
+      if (axios.isAxiosError(error)) {
+        const message =
+          (error.response?.data as { message?: string } | undefined)?.message ||
+          error.message;
+        setCreateError(message || 'Failed to create replication');
+      } else {
+        setCreateError('Failed to create replication');
+      }
     }
   };
 
@@ -98,13 +113,30 @@ export const Experiment: React.FC = () => {
               Go back
             </button>
             <button
-              onClick={() => setIsCreateReplicationModalOpen(true)}
-              className="ml-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200"
+              onClick={() => {
+                setCreateError('');
+                setIsCreateReplicationModalOpen(true);
+              }}
+              disabled={!experiment || Boolean(replicationBlocker)}
+              title={replicationBlocker ?? undefined}
+              className={`ml-2 px-4 py-2 text-white rounded-md transition duration-200 ${
+                !experiment || replicationBlocker
+                  ? 'bg-blue-300 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
               Create Replication
             </button>
           </div>
         </div>
+        {replicationBlocker && (
+          <div
+            role="alert"
+            className="mx-4 mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            Cannot replicate this activity: {replicationBlocker}
+          </div>
+        )}
         <SyntaxHighlighter
           language="json"
           style={docco}
@@ -121,6 +153,7 @@ export const Experiment: React.FC = () => {
             if (e.target === e.currentTarget) {
               setIsCreateReplicationModalOpen(false);
               setReplicationName('');
+              setCreateError('');
             }
           }}
         >
@@ -138,11 +171,17 @@ export const Experiment: React.FC = () => {
               placeholder='name'
               className="w-full border border-gray-300 rounded-md p-2 mb-4"
             />
+            {createError && (
+              <p role="alert" className="mb-4 text-sm text-red-600">
+                {createError}
+              </p>
+            )}
             <div className="flex justify-end space-x-2">
               <button
                 onClick={() => {
                   setIsCreateReplicationModalOpen(false);
                   setReplicationName('');
+                  setCreateError('');
                 }}
                 className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
               >
@@ -150,9 +189,9 @@ export const Experiment: React.FC = () => {
               </button>
               <button
                 onClick={handleCreateReplication}
-                disabled={!replicationName.trim()}
+                disabled={!replicationName.trim() || Boolean(replicationBlocker)}
                 className={`px-4 py-2 rounded-md ${
-                  replicationName.trim()
+                  replicationName.trim() && !replicationBlocker
                     ? 'bg-blue-600 hover:bg-blue-700 text-white'
                     : 'bg-blue-300 text-white cursor-not-allowed'
                 }`}

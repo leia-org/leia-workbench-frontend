@@ -2,16 +2,17 @@ import React, { useEffect, useState, useCallback, useRef, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import mermaid from "mermaid";
 import axios from "axios";
-import ReactMarkdown from "react-markdown";
 import { FormatEditor } from "../components/FormatEditor";
 import { FormatPreview } from "../components/FormatPreview";
 import { SessionTimer } from "../components/SessionTimer";
-import { ContinueStage, type StageProgress } from "../components/ContinueStage";
-import RubricEvaluationView, {
-  type RubricEvaluationResult,
-} from "../components/RubricEvaluationView";
+import type { StageProgress } from "../components/ContinueStage";
+import { ActivityProgress, type ActivityProgressProps, type ActivityStagePhase } from "../components/ActivityProgress";
+import { ActivityCompletion, ActivityEvaluation } from "../components/ActivityScreen";
+import type { RubricEvaluationResult } from "../components/RubricEvaluationView";
 import NotesWidget from "../widgets/NotesWidget";
+import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
 import {
+  ChatBubbleLeftRightIcon,
   PencilSquareIcon,
 } from "@heroicons/react/24/outline";
 mermaid.initialize({
@@ -83,158 +84,6 @@ const getDefaultCode = () => {
   }
   return fallbackCode;
 };
-
-interface EvaluationModalProps {
-  evaluation: string;
-  rubricEvaluation?: RubricEvaluationResult | null;
-  onClose: () => void;
-  onHome: () => void;
-  onOpenForm?: () => void;
-  spectateUrl?: string;
-  nextStageSessionId?: string;
-  hasNextStage: boolean;
-}
-
-const EvaluationModal: React.FC<EvaluationModalProps> = memo(
-  ({ evaluation, rubricEvaluation, onClose, onHome, onOpenForm, spectateUrl, nextStageSessionId, hasNextStage }) => {
-    const [copied, setCopied] = React.useState(false);
-
-    const handleCopyLink = () => {
-      if (spectateUrl) {
-        navigator.clipboard.writeText(spectateUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    };
-
-    return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className={`bg-white rounded-2xl ${rubricEvaluation ? "max-w-3xl" : "max-w-2xl"} w-full mx-4 shadow-xl`}>
-          <div className="flex justify-between items-center px-6 py-4 border-b">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Solution Submitted
-            </h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-500 transition-colors"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-          <div className={`px-6 py-4 max-h-[65vh] overflow-y-auto ${rubricEvaluation ? "" : "prose prose-blue"}`}>
-            {rubricEvaluation ? (
-              <RubricEvaluationView rubricEvaluation={rubricEvaluation} />
-            ) : (
-              <ReactMarkdown>{evaluation}</ReactMarkdown>
-            )}
-          </div>
-
-          {spectateUrl && (
-            <div className="px-6 py-3 bg-blue-50 border-t border-b border-blue-100">
-              <p className="text-sm font-medium text-blue-900 mb-2">
-                Conversation Viewer Link (valid for 1 year)
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={spectateUrl}
-                  className="flex-1 px-3 py-2 text-sm bg-white border border-blue-200 rounded-md text-gray-600 font-mono"
-                />
-                <button
-                  onClick={handleCopyLink}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2"
-                >
-                  {copied ? (
-                    <>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Copy Link
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="px-6 py-4 border-t flex justify-end gap-2">
-            {!hasNextStage && <button
-              onClick={onHome}
-              className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-600 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-              Home
-            </button>}
-
-            {onOpenForm && (
-              <button
-                onClick={onOpenForm}
-                className="px-4 py-1.5 text-sm font-medium text-blue-600 bg-white border border-blue-600 rounded-md hover:bg-blue-50"
-              >
-                Open Form
-              </button>
-            )}
-            {nextStageSessionId && <ContinueStage sessionId={nextStageSessionId} />}
-          </div>
-        </div>
-      </div>
-    );
-  }
-);
-
-EvaluationModal.displayName = "EvaluationModal";
 
 interface DiagramControlsProps {
   zoomIn: () => void;
@@ -311,32 +160,28 @@ const DiagramControls: React.FC<DiagramControlsProps> = memo(
 DiagramControls.displayName = "DiagramControls";
 
 interface HeaderProps {
-  onHome: () => void;
-  onOpenForm: () => void;
-  onEvaluate: () => void;
-  formUrl: string;
-  loadingEvaluation: boolean;
-  submissionDisabled?: boolean;
+  progress: ActivityProgressProps;
   onAlert: () => void;
+  submitting: boolean;
+  onBackToCompletion?: () => void;
   sessionTime?: number | null;
   sessionStartedAt?: string | null;
   onTimerExpire?: () => void;
   onNotesToggle?: () => void;
+  canShowPreviousConversation?: boolean;
+  showPreviousConversation?: boolean;
+  previousConversationStageNumber?: number;
+  onPreviousConversationToggle?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisabled, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle }) => (
+const Header: React.FC<HeaderProps> = memo(({ progress, submitting, onBackToCompletion, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle, canShowPreviousConversation, showPreviousConversation, previousConversationStageNumber, onPreviousConversationToggle }) => (
   <header className="bg-white border-b px-4 py-3">
-    <div className="max-w-full mx-auto flex justify-between items-center">
-      <div className="flex items-center space-x-2">
-        <img
-          src="/logo/leia_main_dark.png"
-          alt="LEIA Logo"
-          className="w-6 h-6"
-        />
-        <h1 className="text-xl font-semibold text-gray-900">Editor</h1>
+    <div className="flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap">
+      <div className="flex w-full min-w-0 items-center gap-3">
+        <img src="/logo/leia_main_dark.png" alt="LEIA Logo" className="h-6 w-6 shrink-0" />
+        <ActivityProgress {...progress} />
       </div>
-
-      <div className="flex gap-2 items-center">
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
         {sessionTime && sessionStartedAt && onTimerExpire && (
           <SessionTimer
             durationMinutes={sessionTime}
@@ -358,21 +203,38 @@ const Header: React.FC<HeaderProps> = memo(({ loadingEvaluation, submissionDisab
           </svg>
           <span className="hidden sm:inline">Notes</span>
         </button>
-        <button
-          onClick={onAlert}
-          disabled={loadingEvaluation || submissionDisabled}
-          className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {loadingEvaluation ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              Evaluating...
-            </>
-          ) : (
-            "Send Solution"
-          )}
-        </button>
-
+        {canShowPreviousConversation && (
+          <button
+            type="button"
+            onClick={onPreviousConversationToggle}
+            aria-pressed={showPreviousConversation}
+            aria-label="Conversation"
+            title={
+              previousConversationStageNumber
+                ? `View Stage ${previousConversationStageNumber} conversation`
+                : "View previous conversation"
+            }
+            className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-1 ${
+              showPreviousConversation
+                ? "text-blue-700 bg-blue-50 border-blue-300 hover:bg-blue-100"
+                : "text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
+            }`}
+          >
+            <ChatBubbleLeftRightIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">Conversation</span>
+          </button>
+        )}
+        {onBackToCompletion ? (
+          <button type="button" onClick={onBackToCompletion}
+            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
+            Back to completion
+          </button>
+        ) : (
+          <button type="button" onClick={onAlert} disabled={submitting}
+            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            Send solution
+          </button>
+        )}
       </div>
     </div>
   </header>
@@ -431,7 +293,7 @@ export const Edit = () => {
     return getDefaultCode();
   });
   const [mermaidSvg, setMermaidSvg] = useState<string>("");
-  const [lastValidSvg, setLastValidSvg] = useState<string>("");
+  const lastValidSvg = useRef("");
   const [error, setError] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [editorWidth, setEditorWidth] = useState(() => {
@@ -441,7 +303,6 @@ export const Edit = () => {
   const [loadingEvaluation, setLoadingEvaluation] = useState(false);
   const [evaluation, setEvaluation] = useState<string | null>(null);
   const [rubricEvaluation, setRubricEvaluation] = useState<RubricEvaluationResult | null>(null);
-  const [showEvaluation, setShowEvaluation] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [concluded, setConcluded] = useState(false);
   const [concludedSvg, setConcludedSvg] = useState<string | null>(null);
@@ -456,18 +317,22 @@ export const Edit = () => {
   const [problemSolution, setProblemSolution] = useState<string | null>(null);
   const [sessionTime, setSessionTime] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [sessionFinishedAt, setSessionFinishedAt] = useState<string | null>(null);
   const [stage, setStage] = useState<StageProgress>();
-  const [stageCompleted, setStageCompleted] = useState(false);
-  const [timerExpiredStageModal, setTimerExpiredStageModal] = useState(false);
+  const [stagePlan, setStagePlan] = useState<ActivityStagePhase[]>();
+  const [reviewingSolution, setReviewingSolution] = useState(false);
+  const [submittedOnTimeout, setSubmittedOnTimeout] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [showReferenceSolution, setShowReferenceSolution] = useState(true);
-  const [redirectingIn, setRedirectingIn] = useState(6);
   const [showNotes, setShowNotes] = useState<boolean>(false);
+  const [previousConversation, setPreviousConversation] = useState<{
+    enabled: boolean;
+    stageNumber: number;
+    availability: "chat" | "both";
+  } | null>(null);
+  const [showPreviousConversation, setShowPreviousConversation] = useState<boolean>(false);
   const codeRef = useRef(code);
   codeRef.current = code;
-  const concludedRef = useRef(concluded);
-  concludedRef.current = concluded;
   // Load initial data from localStorage
   useEffect(() => {
     const savedConfiguration = localStorage.getItem("configuration");
@@ -503,13 +368,18 @@ export const Edit = () => {
     if (savedSession) {
       const parsedSession = JSON.parse(savedSession);
       setStage(parsedSession.stage);
-      setStageCompleted(Boolean(parsedSession.stage && parsedSession.finishedAt));
-      if (parsedSession.stage && parsedSession.finishedAt && typeof parsedSession.result === "string") {
+      setStagePlan(parsedSession.stagePlan);
+      setSessionFinishedAt(parsedSession.finishedAt || null);
+      setSpectateUrl(parsedSession.spectateUrl || null);
+      if (parsedSession.finishedAt && typeof parsedSession.result === "string") {
         setCode(parsedSession.result);
         setConcluded(true);
       }
       if (parsedSession.startedAt) {
         setSessionStartedAt(parsedSession.startedAt);
+      }
+      if (parsedSession.previousConversation?.enabled) {
+        setPreviousConversation(parsedSession.previousConversation);
       }
     }
     if (savedExercise) {
@@ -540,61 +410,6 @@ export const Edit = () => {
     navigate("/");
   }, [navigate]);
 
-  const handleTimerExpire = useCallback(async () => {
-    if (!sessionId) return;
-    try {
-      const { data } = concludedRef.current
-        ? await axios.post(
-            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
-          )
-        : await axios.post(
-            `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
-            { result: codeRef.current },
-          );
-      setConcluded(true);
-      setShowAlert(false);
-      if (data.spectateUrl) {
-        setSpectateUrl(data.spectateUrl);
-      }
-      if (data.stage) {
-        localStorage.setItem("session", JSON.stringify(data));
-        setStage(data.stage);
-        setStageCompleted(true);
-        if (data.stage.hasNext) {
-          setTimerExpiredStageModal(true);
-          return;
-        }
-      }
-      setSessionFinishedAt(new Date().toISOString());
-      setShowSuccessModal(true);
-    } catch (error) {
-      console.error("Failed to finish session on timer expiry:", error);
-    }
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (sessionFinishedAt && !showSuccessModal) {
-      const timer = setInterval(() => {
-        setRedirectingIn((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            clearStudentSessionStorage();
-            navigate("/");
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
-    }
-  }, [sessionFinishedAt, showSuccessModal, navigate]);
-
-  const onOpenForm = useCallback(() => {
-    if (formUrl) {
-      window.open(formUrl, "_blank");
-    }
-  }, [formUrl]);
-
   const handleEditorChange = useCallback((value: string | undefined) => {
     if (value) {
       setCode(value);
@@ -606,107 +421,91 @@ export const Edit = () => {
     e.preventDefault();
   }, []);
 
-  const handleCloseEvaluation = useCallback(() => {
-    setShowEvaluation(false);
-  }, []);
-
-  const handleHome = useCallback(() => {
-    navigate("/");
-  }, [navigate]);
-
-  const handleOpenForm = useCallback(() => {
-    if (formUrl) {
-      window.open(formUrl, "_blank");
-    }
-  }, [formUrl]);
-
-  const concludeProblem = useCallback(async () => {
-    if (concluded) return;
-    try {
-      const sessionId = localStorage.getItem("sessionId");
-      const response = await axios.post(
-        `${
-          import.meta.env.VITE_APP_BACKEND
-        }/api/v1/interactions/${sessionId}/result`,
-        {
-          result: code,
-        }
-      );
-      if (response.status === 200) {
-        // Submission is committed now. Preview/evaluation failures must not
-        // leave the editor open or cause a second submission on retry.
-        setConcluded(true);
-        setShowAlert(false);
-        if (response.data.stage) {
-          localStorage.setItem("session", JSON.stringify(response.data));
-          setStage(response.data.stage);
-          setStageCompleted(true);
-        }
-        // Capture spectate URL from response
-        if (response.data.spectateUrl) {
-          setSpectateUrl(response.data.spectateUrl);
-        }
-
-        if (showReferenceSolution) {
-          try {
-            const { data } = await axios.get(
-              `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/solution`
-            );
-            setProblemSolution(data.solution);
-            setSolutionFormat(data.solutionFormat || "text");
-            if (data.solutionFormat === "mermaid") {
-              const svg = await mermaid.render("mermaid2-diagram", data.solution);
-              setConcludedSvg(svg.svg);
-            }
-          } catch (previewError) {
-            console.error("Failed to display the reference solution:", previewError);
-            setSolutionError("Your solution was submitted, but the reference solution could not be displayed.");
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Failed to conclude the problem:", error);
-      throw error;
-    }
-  }, [code, concluded, showReferenceSolution]);
-
-  const getEvaluation = useCallback(async () => {
-    if (submissionPendingRef.current) return;
+  const submitSolution = useCallback(async (timedOut = false) => {
+    if (!sessionId || sessionFinishedAt || submissionPendingRef.current) return;
     submissionPendingRef.current = true;
     setSubmissionError(null);
     setLoadingEvaluation(true);
     try {
-      await concludeProblem();
-      const showResultsToStudent = configuration?.showSolution !== false;
-      const hasAutomaticEvaluation = configuration?.evaluationMode
-        ? configuration.evaluationMode !== "none"
-        : Boolean(configuration?.evaluateSolution);
-      if (hasAutomaticEvaluation && showResultsToStudent) {
-        const response = await axios.get(
-          `${
-            import.meta.env.VITE_APP_BACKEND
-          }/api/v1/interactions/${sessionId}/evaluation/`
-        );
-        if (response.status === 200) {
-          setEvaluation(response.data.evaluation ?? "");
-          setRubricEvaluation(response.data.rubricEvaluation ?? null);
-          setShowEvaluation(true);
-        }
-      } else {
-        setRubricEvaluation(null);
-        setEvaluation("Solution submitted successfully.");
-        setShowEvaluation(true);
-      }
+      const result = codeRef.current;
+      const { data } = await axios.post(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/result`,
+        { result },
+      );
+      const finishedAt = data.finishedAt || new Date().toISOString();
+      const savedSession = { ...JSON.parse(localStorage.getItem("session") || "{}"), ...data, result, finishedAt };
+      localStorage.setItem("session", JSON.stringify(savedSession));
+      setStage(savedSession.stage);
+      setStagePlan(savedSession.stagePlan);
+      setSpectateUrl(data.spectateUrl || null);
+      setCode(result);
+      setConcluded(true);
+      setShowAlert(false);
+      setSubmittedOnTimeout(timedOut);
+      setSessionFinishedAt(finishedAt);
     } catch (error) {
-      console.error("Failed to get evaluation:", error);
       setSubmissionError(axios.isAxiosError(error)
         ? error.response?.data?.message || error.response?.data?.error || error.message
-        : "Could not complete the request. Please try again.");
+        : "Could not send your solution. Please try again.");
     } finally {
       submissionPendingRef.current = false;
       setLoadingEvaluation(false);
     }
-  }, [concludeProblem, configuration, sessionId]);
+  }, [sessionId, sessionFinishedAt]);
+
+  const handleTimerExpire = useCallback(() => void submitSolution(true), [submitSolution]);
+
+  useEffect(() => {
+    if (!sessionId || !sessionFinishedAt || !concluded) return;
+    let active = true;
+    const baseUrl = `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}`;
+    if (showReferenceSolution) {
+      const loadReferenceSolution = async () => {
+        try {
+          const { data } = await axios.get(`${baseUrl}/solution`);
+          if (!active) return;
+          setProblemSolution(data.solution);
+          setSolutionFormat(data.solutionFormat || "text");
+          if (data.solutionFormat === "mermaid") {
+            const svg = await mermaid.render("mermaid2-diagram", data.solution);
+            if (active) setConcludedSvg(svg.svg);
+          }
+        } catch (error) {
+          console.error("Failed to display the reference solution:", error);
+          if (active) setSolutionError("The reference solution could not be displayed.");
+        }
+      };
+      void loadReferenceSolution();
+    }
+    return () => { active = false; };
+  }, [sessionId, sessionFinishedAt, concluded, showReferenceSolution]);
+
+  const loadEvaluation = useCallback(async () => {
+    if (!sessionId || !sessionFinishedAt || !concluded) return;
+    const hasAutomaticEvaluation = configuration?.evaluationMode
+      ? configuration.evaluationMode !== "none"
+      : Boolean(configuration?.evaluateSolution);
+    if (!hasAutomaticEvaluation || configuration?.showSolution === false) return;
+    setLoadingEvaluation(true);
+    setSubmissionError(null);
+    try {
+      const { data } = await axios.get(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/evaluation/`,
+      );
+      setEvaluation(data.evaluation ?? null);
+      setRubricEvaluation(data.rubricEvaluation ?? null);
+    } catch (error) {
+      console.error("Failed to get evaluation:", error);
+      setSubmissionError("Your solution was submitted, but the evaluation could not be loaded.");
+    } finally {
+      setLoadingEvaluation(false);
+    }
+  }, [sessionId, sessionFinishedAt, concluded, configuration]);
+
+  useEffect(() => {
+    void loadEvaluation();
+  }, [loadEvaluation]);
+
   useEffect(() => {
     const renderMermaid = async () => {
       if (solutionFormat !== "mermaid") {
@@ -719,13 +518,13 @@ export const Edit = () => {
       try {
         const { svg } = await mermaid.render("mermaid-diagram", code);
         setMermaidSvg(svg);
-        setLastValidSvg(svg);
+        lastValidSvg.current = svg;
         setError(null);
-      } catch (error: any) {
+      } catch (error) {
         console.error("Error rendering mermaid diagram:", error);
-        setMermaidSvg(lastValidSvg);
+        setMermaidSvg(lastValidSvg.current);
 
-        let errorMessage = error.message || "Error al renderizar el diagrama";
+        let errorMessage = error instanceof Error ? error.message : "Error al renderizar el diagrama";
         if (errorMessage.includes("Syntax error in")) {
           errorMessage =
             errorMessage.split("Parse error:").pop()?.trim() || errorMessage;
@@ -763,47 +562,121 @@ export const Edit = () => {
     };
   }, [isResizing]);
 
+  const progress: ActivityProgressProps = {
+    stage,
+    stagePlan,
+    currentStage: {
+      askSolution: true,
+      mode: configuration?.mode === "transcription" ? "transcription" : "conversation",
+    },
+    phase: sessionFinishedAt ? "completed" : "solution",
+    solutionSubmitted: concluded,
+  };
+
+  if (sessionFinishedAt && !reviewingSolution) {
+    const reviewLabel = showReferenceSolution ? "Review your solution and the reference" : "Review your solution";
+    const conversationLink = spectateUrl && (
+      <div className="space-y-2 rounded-lg border border-slate-200 p-4">
+        <label htmlFor="conversation-viewer-link" className="block font-medium">Conversation viewer link (valid for 1 year)</label>
+        <div className="flex flex-wrap gap-2">
+          <input id="conversation-viewer-link" readOnly value={spectateUrl}
+            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <button type="button" className="rounded-md bg-blue-50 px-3 py-2 font-medium text-blue-700"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(spectateUrl);
+                setCopied(true);
+              } catch {
+                document.getElementById("conversation-viewer-link")?.focus();
+              }
+            }}>
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      </div>
+    );
+
+    return (
+      <ActivityCompletion
+        progress={progress}
+        sessionId={sessionId ?? undefined}
+        formUrl={formUrl}
+        onHome={onHome}
+        footerContent={conversationLink}
+        reviewAction={concluded && stage?.hasNext
+          ? { label: reviewLabel, onClick: () => setReviewingSolution(true) }
+          : undefined}
+        notice={submittedOnTimeout
+          ? "Time is up. Your current solution was submitted automatically."
+          : concluded ? "Your solution was submitted." : undefined}
+      >
+        {loadingEvaluation && <p role="status" className="shrink-0">Loading evaluation…</p>}
+        {submissionError && (
+          <div className="shrink-0 rounded-lg bg-red-50 p-4 text-red-700">
+            <p role="alert">{submissionError}</p>
+            <button type="button" className="mt-2 font-semibold underline" onClick={() => void loadEvaluation()}>
+              Retry evaluation
+            </button>
+          </div>
+        )}
+        <ActivityEvaluation evaluation={evaluation} rubricEvaluation={rubricEvaluation} />
+        {concluded && !stage?.hasNext && (
+          <button type="button" className="shrink-0 self-start font-medium text-blue-700 underline" onClick={() => setReviewingSolution(true)}>
+            {reviewLabel}
+          </button>
+        )}
+      </ActivityCompletion>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-white">
       {showNotes && <NotesWidget />}
+      {showPreviousConversation &&
+        sessionId &&
+        previousConversation?.enabled &&
+        previousConversation.availability === "both" && (
+          <PreviousConversationWidget
+            sessionId={sessionId}
+            stageNumber={previousConversation.stageNumber}
+            view="editor"
+            onClose={() => setShowPreviousConversation(false)}
+          />
+        )}
       <Header
-        onHome={handleHome}
-        onOpenForm={handleOpenForm}
-        onEvaluate={getEvaluation}
-        onAlert={() =>
-          evaluation || rubricEvaluation
-            ? setShowEvaluation(true)
-            : concluded
-              ? void getEvaluation()
-              : setShowAlert(true)
-        }
-        formUrl={stage?.hasNext ? "" : formUrl || ""}
-        loadingEvaluation={loadingEvaluation}
-        submissionDisabled={stageCompleted && !concluded}
-        sessionTime={stageCompleted ? null : sessionTime}
+        progress={progress}
+        onAlert={() => setShowAlert(true)}
+        submitting={loadingEvaluation}
+        onBackToCompletion={sessionFinishedAt ? () => setReviewingSolution(false) : undefined}
+        sessionTime={sessionFinishedAt ? null : sessionTime}
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
         onNotesToggle={() => setShowNotes((prev) => !prev)}
+        canShowPreviousConversation={Boolean(
+          previousConversation?.enabled &&
+            previousConversation.availability === "both",
+        )}
+        showPreviousConversation={showPreviousConversation}
+        previousConversationStageNumber={previousConversation?.stageNumber}
+        onPreviousConversationToggle={() =>
+          setShowPreviousConversation((prev) => !prev)
+        }
       />
-      {stage && (
-        <div className="flex items-center justify-between gap-4 border-b px-4 py-2">
-          <p className="text-sm text-gray-700">Stage {stage.number} of {stage.total}</p>
-          {stageCompleted && stage.hasNext && sessionId && !showEvaluation && <ContinueStage sessionId={sessionId} />}
-        </div>
-      )}
 
       {submissionError && <div role="alert" className="bg-red-50 text-red-700 p-3">{submissionError}</div>}
 
       {showAlert && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div role="dialog" aria-modal="true" aria-labelledby="confirm-solution"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl max-w-2xl w-full mx-4 shadow-xl">
             <div className="px-6 py-4 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">
-                ¿Are you sure you want to conclude the problem?
+              <h2 id="confirm-solution" className="text-xl font-semibold text-gray-900">
+                Send your solution?
               </h2>
               <p className="text-gray-600">
-                This action will conclude the problem and you will not be able
-                to continue working on it.
+                {stage?.hasNext
+                  ? `Sending your solution completes Stage ${stage.number}. Stage ${stage.number + 1} comes next.`
+                  : "Sending your solution completes this activity."}
               </p>
               <div className="flex justify-end mt-4 gap-2">
                 {submissionError && <p role="alert" className="text-red-700">{submissionError}</p>}
@@ -814,11 +687,11 @@ export const Edit = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={getEvaluation}
+                  onClick={() => void submitSolution()}
                   disabled={loadingEvaluation}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
                 >
-                  {loadingEvaluation ? "Submitting..." : "Conclude Problem"}
+                  {loadingEvaluation ? "Submitting..." : "Send solution"}
                 </button>
               </div>
             </div>
@@ -883,112 +756,6 @@ export const Edit = () => {
         </div>
       </main>
 
-      {timerExpiredStageModal && stage?.hasNext && sessionId && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Stage time expired"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="w-full max-w-md rounded-xl bg-white p-6">
-            <h2 className="mb-2 text-lg font-semibold">Stage {stage.number} completed</h2>
-            <p className="mb-4 text-sm text-gray-600">
-              Time is up. Your current solution has been submitted automatically.
-            </p>
-            <ContinueStage sessionId={sessionId} />
-          </div>
-        </div>
-      )}
-
-      {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
-            <div className="flex justify-between items-center px-6 py-4 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">Session Completed</h2>
-              <button onClick={() => setShowSuccessModal(false)} className="text-gray-400 hover:text-gray-500">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Success!</h3>
-              <p className="text-gray-600 text-center mb-4">
-                {formUrl
-                  ? "Your session has been successfully completed. Please fill out the form to provide your feedback."
-                  : "Your session has been successfully completed."}
-              </p>
-            </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button
-                onClick={() => { setShowSuccessModal(false); clearStudentSessionStorage(); navigate("/"); }}
-                className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                </svg>
-                Home
-              </button>
-              {formUrl && (formUrl.startsWith("http://") || formUrl.startsWith("https://")) && (
-                <button
-                  onClick={() => window.open(formUrl, "_blank")}
-                  className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                  Open Form
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {sessionFinishedAt && !showSuccessModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl">
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">Session Already Completed</h3>
-              <p className="text-gray-600 text-center mb-4">
-                This session has already been completed. You will be redirected to the home page in {redirectingIn} seconds.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showEvaluation && (evaluation || rubricEvaluation) && (
-        <EvaluationModal
-          evaluation={evaluation || ""}
-          rubricEvaluation={rubricEvaluation}
-          onClose={handleCloseEvaluation}
-          onHome={onHome}
-          onOpenForm={
-            !stage?.hasNext && formUrl &&
-            (formUrl.startsWith("http://") || formUrl.startsWith("https://"))
-              ? onOpenForm
-              : undefined
-          }
-          spectateUrl={spectateUrl || undefined}
-          nextStageSessionId={stage?.hasNext && stageCompleted ? sessionId ?? undefined : undefined}
-          hasNextStage={Boolean(stage?.hasNext)}
-        />
-      )}
     </div>
   );
 };

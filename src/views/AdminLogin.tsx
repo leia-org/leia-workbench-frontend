@@ -19,7 +19,7 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import { adminTheme } from "../components/admin/theme";
-import { SplitLoginLayout } from "./Login";
+import { SplitLoginLayout } from "../components/SplitLoginLayout";
 import { useAuth } from "../context";
 import type { DecodedToken } from "../context";
 import { TurnstileWidget } from "../components/TurnstileWidget";
