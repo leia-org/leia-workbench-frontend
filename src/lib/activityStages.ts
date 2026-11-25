@@ -26,6 +26,10 @@ export interface ActivityLeiaRef {
   stageId?: string;
   configuration?: {
     mode?: string;
+    data?: {
+      messages?: Array<{ text?: unknown }>;
+      link?: unknown;
+    };
   };
   leia?:
     | {
@@ -77,6 +81,14 @@ const OUTPUT_LABELS: Record<StageOutput, string> = {
 
 function getStageOutputSource(stage: ActivityStage, output: StageOutput): string | null {
   return stage.outputSources?.[output] ?? null;
+}
+
+export function hasTranscriptionMessages(entry: ActivityLeiaRef | null | undefined): boolean {
+  const messages = entry?.configuration?.data?.messages;
+  return (
+    Array.isArray(messages) &&
+    messages.some((message) => typeof message?.text === "string" && message.text.trim().length > 0)
+  );
 }
 
 function getLeiaTemplates(leia: ActivityLeiaRef["leia"]): string[] {
@@ -167,13 +179,14 @@ export function getActivityReplicationBlocker(
     const conversationSourceId = getStageOutputSource(stage, "conversation");
     if (referencedOutputs.has("conversation") && conversationSourceId) {
       const sourceIndex = positions.get(conversationSourceId);
-      const sourceHasTranscription = leias.some(
+      const sourceHasEmptyTranscription = leias.some(
         (entry) =>
           entry.stageId === conversationSourceId &&
-          entry.configuration?.mode === "transcription",
+          entry.configuration?.mode === "transcription" &&
+          !hasTranscriptionMessages(entry),
       );
-      if (sourceIndex !== undefined && sourceHasTranscription) {
-        return `Stage ${sourceIndex + 1} cannot use transcription mode because stage ${number} uses its conversation`;
+      if (sourceIndex !== undefined && sourceHasEmptyTranscription) {
+        return `Stage ${sourceIndex + 1} requires non-empty transcription chat messages because stage ${number} uses its conversation`;
       }
     }
 
