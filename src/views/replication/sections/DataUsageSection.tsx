@@ -148,7 +148,7 @@ export const DataUsageSection: React.FC<DataUsageSectionProps> = ({
 
       <Field
         label="Conversation automated removal"
-        helper="If enabled, conversations will be automatically removed after the student leaves the replication."
+        helper="If a student declines consent, their conversation and Langfuse traces are automatically removed after they finish the replication."
       >
         <Stack direction="row" alignItems="center" gap={1}>
           <Switch
