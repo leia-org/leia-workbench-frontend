@@ -1181,7 +1181,9 @@ const ChatSession = () => {
       );
       setSession(response.data.session);
       localStorage.setItem("session", JSON.stringify(response.data.session));
-      if (Array.isArray(response.data.messages)) setMessages(response.data.messages);
+      if (configuration?.mode !== "transcription" && Array.isArray(response.data.messages)) {
+        setMessages(response.data.messages);
+      }
     } catch (error: unknown) {
       setLoadError(getRequestErrorMessage(error));
     } finally {
