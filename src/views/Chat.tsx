@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { UserCircleIcon, SparklesIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import {
   ChatBubbleLeftRightIcon,
+  DocumentTextIcon,
   ExclamationTriangleIcon,
   MicrophoneIcon,
   PencilSquareIcon,
@@ -35,6 +36,7 @@ import {
 import type { FrontendTool } from "@leia-org/luke-client";
 import NotesWidget from "../widgets/NotesWidget";
 import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
+import PreviousSubmittedSolutionWidget from "../widgets/PreviousSubmittedSolutionWidget";
 import { postTestRun } from "../lib/testRuns";
 import type { TestRunReport } from "../widgets/codeEditor/testRunReport";
 
@@ -235,7 +237,12 @@ interface Session {
   previousConversation?: {
     enabled: boolean;
     stageNumber: number;
-    availability: "chat" | "both";
+    availability: "chat" | "editor" | "both";
+  };
+  previousSubmittedSolution?: {
+    enabled: boolean;
+    stageNumber: number;
+    availability: "chat" | "editor" | "both";
   };
   runId?: string;
   conversationDynamics?: ConversationDynamicsState;
@@ -384,6 +391,7 @@ const ChatSession = () => {
     useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [showPreviousConversation, setShowPreviousConversation] = useState(false);
+  const [showPreviousSubmittedSolution, setShowPreviousSubmittedSolution] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const finishPending = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1307,7 +1315,21 @@ const ChatSession = () => {
             {session?.previousConversation?.enabled && (
               <div className="flex gap-3 rounded-lg bg-blue-50 p-4 text-blue-950">
                 <ChatBubbleLeftRightIcon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-                <p>Use the Conversation button to revisit Stage {session.previousConversation.stageNumber} during this stage.</p>
+                <p>
+                  {session.previousConversation.availability === "editor"
+                    ? `Use the Conversation button in the editor to revisit Stage ${session.previousConversation.stageNumber}.`
+                    : `Use the Conversation button to revisit Stage ${session.previousConversation.stageNumber} during this stage.`}
+                </p>
+              </div>
+            )}
+            {session?.previousSubmittedSolution?.enabled && (
+              <div className="flex gap-3 rounded-lg bg-blue-50 p-4 text-blue-950">
+                <DocumentTextIcon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <p>
+                  {session.previousSubmittedSolution.availability === "editor"
+                    ? `Use the Submitted solution button in the editor to revisit your Stage ${session.previousSubmittedSolution.stageNumber} solution.`
+                    : `Use the Submitted solution button to revisit your Stage ${session.previousSubmittedSolution.stageNumber} solution during this stage.`}
+                </p>
               </div>
             )}
           </div>
@@ -1440,25 +1462,47 @@ const ChatSession = () => {
               <span className="hidden sm:inline">Notes</span>
             </button>
 
-          {session?.previousConversation?.enabled && (
-            <button
-              type="button"
-              onClick={() =>
-                setShowPreviousConversation((prev) => !prev)
-              }
-              aria-pressed={showPreviousConversation}
-              aria-label="Conversation"
-              title={`View Stage ${session.previousConversation.stageNumber} conversation`}
-              className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-1 ${
-                showPreviousConversation
-                  ? "text-blue-700 bg-blue-50 border-blue-300 hover:bg-blue-100"
-                  : "text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
-              }`}
-            >
-              <ChatBubbleLeftRightIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Conversation</span>
-            </button>
-          )}
+          {session?.previousConversation?.enabled &&
+            session.previousConversation.availability !== "editor" && (
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPreviousConversation((prev) => !prev)
+                }
+                aria-pressed={showPreviousConversation}
+                aria-label="Conversation"
+                title={`View Stage ${session.previousConversation.stageNumber} conversation`}
+                className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-1 ${
+                  showPreviousConversation
+                    ? "text-blue-700 bg-blue-50 border-blue-300 hover:bg-blue-100"
+                    : "text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">Conversation</span>
+              </button>
+            )}
+
+          {session?.previousSubmittedSolution?.enabled &&
+            session.previousSubmittedSolution.availability !== "editor" && (
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPreviousSubmittedSolution((prev) => !prev)
+                }
+                aria-pressed={showPreviousSubmittedSolution}
+                aria-label="Submitted solution"
+                title={`View Stage ${session.previousSubmittedSolution.stageNumber} submitted solution`}
+                className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-1 ${
+                  showPreviousSubmittedSolution
+                    ? "text-blue-700 bg-blue-50 border-blue-300 hover:bg-blue-100"
+                    : "text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                <DocumentTextIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">Submitted solution</span>
+              </button>
+            )}
 
           {hasStudentInfographic && (
             <button
@@ -1522,12 +1566,25 @@ const ChatSession = () => {
       {showPreviousConversation &&
         !dataUsageConsentPending &&
         sessionId &&
-        session?.previousConversation?.enabled && (
+        session?.previousConversation?.enabled &&
+        session.previousConversation.availability !== "editor" && (
           <PreviousConversationWidget
             sessionId={sessionId}
             stageNumber={session.previousConversation.stageNumber}
             view="chat"
             onClose={() => setShowPreviousConversation(false)}
+          />
+        )}
+      {showPreviousSubmittedSolution &&
+        !dataUsageConsentPending &&
+        sessionId &&
+        session?.previousSubmittedSolution?.enabled &&
+        session.previousSubmittedSolution.availability !== "editor" && (
+          <PreviousSubmittedSolutionWidget
+            sessionId={sessionId}
+            stageNumber={session.previousSubmittedSolution.stageNumber}
+            view="chat"
+            onClose={() => setShowPreviousSubmittedSolution(false)}
           />
         )}
       {/* Widget side panel — text mode only. Luke mode renders its own

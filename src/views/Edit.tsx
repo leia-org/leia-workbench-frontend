@@ -11,8 +11,10 @@ import { ActivityCompletion, ActivityEvaluation, ConversationViewerLink } from "
 import type { RubricEvaluationResult } from "../components/RubricEvaluationView";
 import NotesWidget from "../widgets/NotesWidget";
 import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
+import PreviousSubmittedSolutionWidget from "../widgets/PreviousSubmittedSolutionWidget";
 import {
   ChatBubbleLeftRightIcon,
+  DocumentTextIcon,
   PencilSquareIcon,
 } from "@heroicons/react/24/outline";
 mermaid.initialize({
@@ -172,9 +174,13 @@ interface HeaderProps {
   showPreviousConversation?: boolean;
   previousConversationStageNumber?: number;
   onPreviousConversationToggle?: () => void;
+  canShowPreviousSubmittedSolution?: boolean;
+  showPreviousSubmittedSolution?: boolean;
+  previousSubmittedSolutionStageNumber?: number;
+  onPreviousSubmittedSolutionToggle?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = memo(({ progress, submitting, onBackToCompletion, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle, canShowPreviousConversation, showPreviousConversation, previousConversationStageNumber, onPreviousConversationToggle }) => (
+const Header: React.FC<HeaderProps> = memo(({ progress, submitting, onBackToCompletion, onAlert, sessionTime, sessionStartedAt, onTimerExpire, onNotesToggle, canShowPreviousConversation, showPreviousConversation, previousConversationStageNumber, onPreviousConversationToggle, canShowPreviousSubmittedSolution, showPreviousSubmittedSolution, previousSubmittedSolutionStageNumber, onPreviousSubmittedSolutionToggle }) => (
   <header className="bg-white border-b px-4 py-3">
     <div className="flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap">
       <div className="flex w-full min-w-0 items-center gap-3">
@@ -222,6 +228,27 @@ const Header: React.FC<HeaderProps> = memo(({ progress, submitting, onBackToComp
           >
             <ChatBubbleLeftRightIcon className="w-4 h-4" />
             <span className="hidden sm:inline">Conversation</span>
+          </button>
+        )}
+        {canShowPreviousSubmittedSolution && (
+          <button
+            type="button"
+            onClick={onPreviousSubmittedSolutionToggle}
+            aria-pressed={showPreviousSubmittedSolution}
+            aria-label="Submitted solution"
+            title={
+              previousSubmittedSolutionStageNumber
+                ? `View Stage ${previousSubmittedSolutionStageNumber} submitted solution`
+                : "View previous submitted solution"
+            }
+            className={`px-3 py-1.5 text-sm border rounded-md flex items-center gap-1 ${
+              showPreviousSubmittedSolution
+                ? "text-blue-700 bg-blue-50 border-blue-300 hover:bg-blue-100"
+                : "text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
+            }`}
+          >
+            <DocumentTextIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">Submitted solution</span>
           </button>
         )}
         {onBackToCompletion ? (
@@ -327,9 +354,15 @@ export const Edit = () => {
   const [previousConversation, setPreviousConversation] = useState<{
     enabled: boolean;
     stageNumber: number;
-    availability: "chat" | "both";
+    availability: "chat" | "editor" | "both";
   } | null>(null);
   const [showPreviousConversation, setShowPreviousConversation] = useState<boolean>(false);
+  const [previousSubmittedSolution, setPreviousSubmittedSolution] = useState<{
+    enabled: boolean;
+    stageNumber: number;
+    availability: "chat" | "editor" | "both";
+  } | null>(null);
+  const [showPreviousSubmittedSolution, setShowPreviousSubmittedSolution] = useState<boolean>(false);
   const codeRef = useRef(code);
   codeRef.current = code;
   // Load initial data from localStorage
@@ -379,6 +412,9 @@ export const Edit = () => {
       }
       if (parsedSession.previousConversation?.enabled) {
         setPreviousConversation(parsedSession.previousConversation);
+      }
+      if (parsedSession.previousSubmittedSolution?.enabled) {
+        setPreviousSubmittedSolution(parsedSession.previousSubmittedSolution);
       }
     }
     if (savedExercise) {
@@ -605,18 +641,40 @@ export const Edit = () => {
     );
   }
 
+  const canShowPreviousConversation = Boolean(
+    previousConversation?.enabled &&
+      (previousConversation.availability === "editor" ||
+        previousConversation.availability === "both"),
+  );
+  const canShowPreviousSubmittedSolution = Boolean(
+    previousSubmittedSolution?.enabled &&
+      (previousSubmittedSolution.availability === "editor" ||
+        previousSubmittedSolution.availability === "both"),
+  );
+
   return (
     <div className="flex flex-col h-screen bg-white">
       {showNotes && <NotesWidget />}
       {showPreviousConversation &&
         sessionId &&
-        previousConversation?.enabled &&
-        previousConversation.availability === "both" && (
+        canShowPreviousConversation &&
+        previousConversation && (
           <PreviousConversationWidget
             sessionId={sessionId}
             stageNumber={previousConversation.stageNumber}
             view="editor"
             onClose={() => setShowPreviousConversation(false)}
+          />
+        )}
+      {showPreviousSubmittedSolution &&
+        sessionId &&
+        canShowPreviousSubmittedSolution &&
+        previousSubmittedSolution && (
+          <PreviousSubmittedSolutionWidget
+            sessionId={sessionId}
+            stageNumber={previousSubmittedSolution.stageNumber}
+            view="editor"
+            onClose={() => setShowPreviousSubmittedSolution(false)}
           />
         )}
       <Header
@@ -628,14 +686,17 @@ export const Edit = () => {
         sessionStartedAt={sessionStartedAt}
         onTimerExpire={handleTimerExpire}
         onNotesToggle={() => setShowNotes((prev) => !prev)}
-        canShowPreviousConversation={Boolean(
-          previousConversation?.enabled &&
-            previousConversation.availability === "both",
-        )}
+        canShowPreviousConversation={canShowPreviousConversation}
         showPreviousConversation={showPreviousConversation}
         previousConversationStageNumber={previousConversation?.stageNumber}
         onPreviousConversationToggle={() =>
           setShowPreviousConversation((prev) => !prev)
+        }
+        canShowPreviousSubmittedSolution={canShowPreviousSubmittedSolution}
+        showPreviousSubmittedSolution={showPreviousSubmittedSolution}
+        previousSubmittedSolutionStageNumber={previousSubmittedSolution?.stageNumber}
+        onPreviousSubmittedSolutionToggle={() =>
+          setShowPreviousSubmittedSolution((prev) => !prev)
         }
       />
 

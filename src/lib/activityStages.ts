@@ -2,6 +2,7 @@ import type {
   StageOutput,
   StageOutputSources,
   StagePreviousConversationConfig,
+  StagePreviousResourceConfig,
 } from "../views/replication/types";
 
 export interface ActivityOrchestration {
@@ -16,6 +17,7 @@ export interface ActivityStage {
   id: string;
   outputSources?: StageOutputSources;
   previousConversation?: StagePreviousConversationConfig;
+  previousSubmittedSolution?: StagePreviousResourceConfig;
   orchestration?: ActivityOrchestration;
 }
 
