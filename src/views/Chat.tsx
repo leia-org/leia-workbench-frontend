@@ -894,6 +894,7 @@ const ChatSession = () => {
   const showPartialRound = Boolean(
     partialRound && partialRound.turnId !== dismissedPartialTurnId,
   );
+  let nudgeTimerId:number|null=null;
 
   // Runs a single user turn against the backend, looping while the model
   // returns tool calls. Each call is executed via the local tools
@@ -974,6 +975,8 @@ const ChatSession = () => {
             }
             if (typeof data.nudge === "string" && data.nudge.trim()) {
               setNudge(data.nudge.trim());
+              if(nudgeTimerId) clearTimeout(nudgeTimerId);
+              nudgeTimerId=setTimeout(()=>setNudge(null),15000);
             }
             return;
           }
@@ -999,6 +1002,8 @@ const ChatSession = () => {
       const captureNudge = (resp: { data?: { nudge?: unknown } }) => {
         if (typeof resp.data?.nudge === "string" && resp.data.nudge.trim()) {
           setNudge(resp.data.nudge.trim());
+          if(nudgeTimerId) clearTimeout(nudgeTimerId);
+          nudgeTimerId=setTimeout(()=>setNudge(null),15000);
         }
       };
 
@@ -1096,6 +1101,8 @@ const ChatSession = () => {
 
     setMessages((prev) => [...prev, newMessage]);
     setSendingMessage(true);
+
+    setNudge(null); //If student sends a message, nudge dissapears
     // Auto-scroll disabled
     // scrollToBottom();
 
@@ -1923,7 +1930,11 @@ const ChatSession = () => {
                   <p className="text-sm text-amber-900 flex-1">{nudge}</p>
                   <button
                     type="button"
-                    onClick={() => setNudge(null)}
+                    onClick={() => {
+                      setNudge(null);
+                      clearTimeout(nudgeTimerId!)
+                    }
+                    }
                     className="text-amber-400 hover:text-amber-600 flex-shrink-0"
                     aria-label="Dismiss"
                   >
