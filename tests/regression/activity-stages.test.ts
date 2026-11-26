@@ -13,11 +13,15 @@ const makeLeia = (
   id: string,
   stageId: string,
   description: string,
-  { mode = 'standard', evaluationPrompt }: { mode?: string; evaluationPrompt?: string } = {},
+  {
+    mode = 'standard',
+    evaluationPrompt,
+    data,
+  }: { mode?: string; evaluationPrompt?: string; data?: { messages?: Array<{ text?: string }>; link?: string } } = {},
 ) => ({
   id,
   stageId,
-  configuration: { mode },
+  configuration: { mode, ...(data ? { data } : {}) },
   leia: {
     id,
     metadata: { name: id },
@@ -102,5 +106,45 @@ describe('getActivityReplicationBlocker', () => {
     };
 
     expect(getActivityReplicationBlocker(valid)).toBeNull();
+  });
+
+  test('blocks transcription source stages for conversation only when transcription chat messages are empty', () => {
+    const stages = [
+      { id: 's1', outputSources: { conversation: null, submitedSolution: null, problem: null }, orchestration },
+      { id: 's2', outputSources: { conversation: 's1', submitedSolution: null, problem: null }, orchestration },
+    ];
+    const emptyTranscript: ReplicableExperiment = {
+      stages,
+      leias: [
+        makeLeia('l1', 's1', 'Stage 1', { mode: 'transcription', data: { messages: [] } }),
+        makeLeia('l2', 's2', 'Review {{previousStage.outputs.conversation}}'),
+      ],
+    };
+    expect(getActivityReplicationBlocker(emptyTranscript)).toBe(
+      'Stage 1 requires non-empty transcription chat messages because stage 2 uses its conversation',
+    );
+
+    const linkOnlyTranscript: ReplicableExperiment = {
+      stages,
+      leias: [
+        makeLeia('l1', 's1', 'Stage 1', { mode: 'transcription', data: { link: 'https://example.com/t' } }),
+        makeLeia('l2', 's2', 'Review {{previousStage.outputs.conversation}}'),
+      ],
+    };
+    expect(getActivityReplicationBlocker(linkOnlyTranscript)).toBe(
+      'Stage 1 requires non-empty transcription chat messages because stage 2 uses its conversation',
+    );
+
+    const populatedTranscript: ReplicableExperiment = {
+      stages,
+      leias: [
+        makeLeia('l1', 's1', 'Stage 1', {
+          mode: 'transcription',
+          data: { messages: [{ text: 'Hello transcript' }] },
+        }),
+        makeLeia('l2', 's2', 'Review {{previousStage.outputs.conversation}}'),
+      ],
+    };
+    expect(getActivityReplicationBlocker(populatedTranscript)).toBeNull();
   });
 });

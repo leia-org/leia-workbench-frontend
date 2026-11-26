@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ThemeProvider } from "@mui/material/styles";
 import { ArrowRightIcon, CheckCircleIcon } from "@heroicons/react/24/outline";
 import ReactMarkdown from "react-markdown";
@@ -76,6 +76,40 @@ export function ActivityEvaluation({ evaluation, rubricEvaluation }: {
   );
 }
 
+export function ConversationViewerLink({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 p-4">
+      <label htmlFor="conversation-viewer-link" className="block font-medium">
+        Conversation viewer link (valid for 1 year)
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="conversation-viewer-link"
+          readOnly
+          value={url}
+          className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+        <button
+          type="button"
+          className="rounded-md bg-blue-50 px-3 py-2 font-medium text-blue-700"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(url);
+              setCopied(true);
+            } catch {
+              document.getElementById("conversation-viewer-link")?.focus();
+            }
+          }}
+        >
+          {copied ? "Copied" : "Copy link"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface ActivityCompletionProps {
   progress: ActivityProgressProps;
   sessionId?: string;
@@ -98,13 +132,18 @@ export function ActivityCompletion({ progress, sessionId, formUrl, onHome, notic
       subtitle={nextStage ? `Stage ${nextStage} is next.` : undefined}
       progress={progress}
     >
-      {!nextStage && (
-        <div className="flex shrink-0 items-center gap-3 rounded-lg bg-green-50 p-4 text-green-900">
+      {!nextStage ? (
+        <div role="status" className="flex shrink-0 items-center gap-3 rounded-lg bg-green-50 p-4 text-green-900">
           <CheckCircleIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
-          <p>Thank you for completing the activity.</p>
+          <p>
+            {notice
+              ? `Thank you for completing the activity. ${notice}`
+              : "Thank you for completing the activity."}
+          </p>
         </div>
+      ) : (
+        notice && <p role="status" className="shrink-0 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">{notice}</p>
       )}
-      {notice && <p role="status" className="shrink-0 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">{notice}</p>}
       {children}
       <div className="flex shrink-0 flex-col gap-4">
         {footerContent}
@@ -112,7 +151,7 @@ export function ActivityCompletion({ progress, sessionId, formUrl, onHome, notic
           <footer className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-start sm:justify-end">
             {reviewAction && (
               <button type="button" onClick={reviewAction.onClick}
-                className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50">
+                className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                 {reviewAction.label}
               </button>
             )}
@@ -122,12 +161,18 @@ export function ActivityCompletion({ progress, sessionId, formUrl, onHome, notic
           <footer className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
             {feedbackUrl && (
               <a href={feedbackUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700">
+                className="inline-flex min-h-10 items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
                 Open feedback form <ArrowRightIcon className="h-4 w-4" aria-hidden="true" />
               </a>
             )}
+            {reviewAction && (
+              <button type="button" onClick={reviewAction.onClick}
+                className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                {reviewAction.label}
+              </button>
+            )}
             <button type="button" onClick={onHome}
-              className="rounded-md border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50">
+              className="min-h-10 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Back to home
             </button>
           </footer>

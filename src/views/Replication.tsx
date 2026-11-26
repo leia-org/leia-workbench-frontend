@@ -19,6 +19,7 @@ import { DataUsageSection } from "./replication/sections/DataUsageSection";
 import { ConversationsPlaceholder } from "./replication/sections/ConversationsPlaceholder";
 import { LivePlaceholder } from "./replication/sections/LivePlaceholder";
 import type {
+  LeiaPreviousStageViewUpdate,
   ReplicationData,
   StagePreviousConversationConfig,
 } from "./replication/types";
@@ -733,6 +734,61 @@ export const Replication: React.FC = () => {
     }
   };
 
+  const updateLeiaPreviousStageView = async (
+    leiaId: string,
+    payload: LeiaPreviousStageViewUpdate
+  ) => {
+    if (!replication) return;
+    try {
+      const resp = await axios.patch<ReplicationData>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/leia/${leiaId}/previous-stage-view`,
+        payload,
+        buildRequestConfig()
+      );
+      setReplication(resp.data);
+      setLocalReplication((prev) => {
+        if (!prev) return structuredClone(resp.data);
+        const next = structuredClone(prev);
+        const serverLeiasById = new Map(
+          resp.data.experiment.leias.map((entry) => [entry.id, entry])
+        );
+        next.experiment.leias = next.experiment.leias.map((entry) => {
+          const updated = serverLeiasById.get(entry.id);
+          if (!updated) return entry;
+          return {
+            ...entry,
+            configuration: {
+              ...entry.configuration,
+              previousConversation: updated.configuration.previousConversation,
+              previousSubmittedSolution:
+                updated.configuration.previousSubmittedSolution,
+            },
+          };
+        });
+        next.experiment.stages = structuredClone(resp.data.experiment.stages);
+        return next;
+      });
+      toast.success(
+        payload.applyToStage
+          ? "Previous stage visibility applied to all LEIAs in stage"
+          : "Previous stage visibility updated",
+        {
+          position: "bottom-right",
+          autoClose: 5000,
+        }
+      );
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, "Error updating previous stage visibility settings"),
+        {
+          position: "bottom-right",
+          autoClose: 5000,
+        }
+      );
+      console.error("Update error:", err);
+    }
+  };
+
   const handleLocalLeiaChange = (idx: number, key: string, value: unknown) => {
     setLocalReplication((prev) => {
       if (!prev) return prev;
@@ -961,6 +1017,7 @@ export const Replication: React.FC = () => {
             onUpdateEvaluationMode={updateEvaluationMode}
             onToggleShowSolution={toggleShowSolution}
             onUpdateStagePreviousConversation={updateStagePreviousConversation}
+            onUpdateLeiaPreviousStageView={updateLeiaPreviousStageView}
             onStartTestSession={startTestSession}
             startingSessionLeiaId={startingSessionLeiaId}
             invalidLeiaFields={invalidLeiaFields}

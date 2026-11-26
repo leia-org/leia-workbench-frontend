@@ -11,6 +11,8 @@ export interface ReplicationLeia {
     evaluateSolution: boolean;
     evaluationMode?: EvaluationMode;
     showSolution?: boolean;
+    previousConversation?: StagePreviousResourceConfig;
+    previousSubmittedSolution?: StagePreviousResourceConfig;
   };
   leia: {
     id: unknown;
@@ -71,12 +73,21 @@ export interface StageOutputSources {
   problem?: string | null;
 }
 
-export type PreviousConversationAvailability = "chat" | "both";
+export type PreviousStageViewAvailability = "chat" | "editor" | "both";
+export type PreviousConversationAvailability = PreviousStageViewAvailability;
 
-export interface StagePreviousConversationConfig {
+export interface StagePreviousResourceConfig {
   enabled: boolean;
   sourceStageId: string | null;
-  availability: PreviousConversationAvailability;
+  availability: PreviousStageViewAvailability;
+}
+
+export type StagePreviousConversationConfig = StagePreviousResourceConfig;
+
+export interface LeiaPreviousStageViewUpdate {
+  previousConversation?: StagePreviousResourceConfig;
+  previousSubmittedSolution?: StagePreviousResourceConfig;
+  applyToStage?: boolean;
 }
 
 export interface ReplicationData {
@@ -105,6 +116,7 @@ export interface ReplicationData {
       id: string;
       outputSources?: StageOutputSources;
       previousConversation?: StagePreviousConversationConfig;
+      previousSubmittedSolution?: StagePreviousResourceConfig;
       orchestration: ActivityOrchestration;
     }[];
   };

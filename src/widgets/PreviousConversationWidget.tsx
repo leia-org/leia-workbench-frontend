@@ -31,7 +31,7 @@ export interface PreviousConversationPayload {
     number: number;
     total: number;
   };
-  availability: "chat" | "both";
+  availability: "chat" | "editor" | "both";
   interactionMode: "single" | "multi";
   mode: string;
   audioMode?: "realtime" | "luke" | null;

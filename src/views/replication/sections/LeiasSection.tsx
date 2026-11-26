@@ -36,14 +36,18 @@ import {
 } from "../../../lib/avatar";
 import type {
   EvaluationMode,
-  PreviousConversationAvailability,
+  LeiaPreviousStageViewUpdate,
+  PreviousStageViewAvailability,
   ReplicationData,
   ReplicationLeia,
   StagePreviousConversationConfig,
+  StagePreviousResourceConfig,
 } from "../types";
 import {
   getDependentStagesForSubmittedSolution,
+  getEffectiveLeiaPreviousResourceConfig,
   rubricRequiresSubmittedSolution,
+  stageHasAskSolutionEnabled,
 } from "../stageOutputs";
 import type { ApiKey } from "../../../models/ApiKeys";
 import openAiIcon from "../../../assets/providers/openai.svg";
@@ -143,6 +147,10 @@ interface LeiasSectionProps {
   onUpdateStagePreviousConversation?: (
     stageId: string,
     config: StagePreviousConversationConfig,
+  ) => Promise<void>;
+  onUpdateLeiaPreviousStageView?: (
+    leiaId: string,
+    payload: LeiaPreviousStageViewUpdate,
   ) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
@@ -252,7 +260,8 @@ interface LeiaEditorProps {
   problemLeiaName?: string;
   stages?: ReplicationData["experiment"]["stages"];
   stageIndex: number;
-  stageLeiaCount: number;
+  stageEntries: ReplicationLeia[];
+  experiment: ReplicationData["experiment"];
   allLeias: ReplicationLeia[];
   item: ReplicationLeia;
   serverItem: ReplicationLeia;
@@ -260,6 +269,7 @@ interface LeiaEditorProps {
   apiKeyProvidersMapped: Record<string, string[]>;
   providerProviderModuleMap: Record<string, string>;
   userRole?: string;
+  onLeiaSelect: (leiaId: string) => void;
   onLocalLeiaChange: (idx: number, key: string, value: unknown) => void;
   onLocalLeiaReset: (idx: number) => void;
   onLeiaUpdate: (idx: number) => Promise<boolean>;
@@ -270,6 +280,10 @@ interface LeiaEditorProps {
   onUpdateStagePreviousConversation?: (
     stageId: string,
     config: StagePreviousConversationConfig,
+  ) => Promise<void>;
+  onUpdateLeiaPreviousStageView?: (
+    leiaId: string,
+    payload: LeiaPreviousStageViewUpdate,
   ) => Promise<void>;
   onStartTestSession: (
     leiaId: string | null,
@@ -293,7 +307,8 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   problemLeiaName,
   stages,
   stageIndex,
-  stageLeiaCount,
+  stageEntries,
+  experiment,
   allLeias,
   item,
   serverItem,
@@ -301,6 +316,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   apiKeyProvidersMapped,
   providerProviderModuleMap,
   userRole,
+  onLeiaSelect,
   onLocalLeiaChange,
   onLocalLeiaReset,
   onLeiaUpdate,
@@ -309,6 +325,7 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
   onUpdateEvaluationMode,
   onToggleShowSolution,
   onUpdateStagePreviousConversation,
+  onUpdateLeiaPreviousStageView,
   onStartTestSession,
   replicationId,
   startingSessionLeiaId,
@@ -749,31 +766,163 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
         const currentStage = stages[stageIndex];
         if (!currentStage) return null;
         const earlierStages = stages.slice(0, stageIndex);
-        const prevConvConfig = currentStage.previousConversation;
-        const prevConvEnabled = Boolean(prevConvConfig?.enabled);
         const defaultSourceStageId =
           earlierStages[earlierStages.length - 1]?.id ?? null;
-        const selectedSourceStageId =
-          prevConvConfig?.sourceStageId &&
-          earlierStages.some((s) => s.id === prevConvConfig.sourceStageId)
-            ? prevConvConfig.sourceStageId
-            : defaultSourceStageId;
-        const prevConvAvailability: PreviousConversationAvailability =
-          prevConvConfig?.availability === "chat" ? "chat" : "both";
+        const eligibleSolutionStages = earlierStages.filter((earlierStage) =>
+          stageHasAskSolutionEnabled(experiment, earlierStage.id),
+        );
 
-        const applyStagePreviousConversation = async (
-          nextConfig: StagePreviousConversationConfig,
+        type VisibilityMode = "off" | PreviousStageViewAvailability;
+
+        const isEarlierStageId = (
+          stageId: string | null | undefined,
+        ): stageId is string =>
+          Boolean(stageId && earlierStages.some((s) => s.id === stageId));
+
+        const resolveLeiaViewState = (targetLeia: ReplicationLeia) => {
+          const convConfig = getEffectiveLeiaPreviousResourceConfig(
+            experiment,
+            currentStage.id,
+            targetLeia,
+            "previousConversation",
+          );
+          const solConfig = getEffectiveLeiaPreviousResourceConfig(
+            experiment,
+            currentStage.id,
+            targetLeia,
+            "previousSubmittedSolution",
+          );
+          const normalizeAvailability = (
+            value: PreviousStageViewAvailability | undefined,
+          ): PreviousStageViewAvailability =>
+            value === "chat" || value === "editor" || value === "both"
+              ? value
+              : "both";
+          const convAvailability = normalizeAvailability(
+            convConfig?.availability,
+          );
+          const solAvailability = normalizeAvailability(
+            solConfig?.availability,
+          );
+          const convMode: VisibilityMode = convConfig?.enabled
+            ? convAvailability
+            : "off";
+          const solMode: VisibilityMode = solConfig?.enabled
+            ? solAvailability
+            : "off";
+
+          const sourceStageId =
+            (convConfig?.enabled && isEarlierStageId(convConfig.sourceStageId)
+              ? convConfig.sourceStageId
+              : null) ??
+            (solConfig?.enabled && isEarlierStageId(solConfig.sourceStageId)
+              ? solConfig.sourceStageId
+              : null) ??
+            (isEarlierStageId(convConfig?.sourceStageId)
+              ? convConfig.sourceStageId
+              : null) ??
+            (isEarlierStageId(solConfig?.sourceStageId)
+              ? solConfig.sourceStageId
+              : null) ??
+            defaultSourceStageId;
+
+          return {
+            sourceStageId,
+            conv: {
+              config: convConfig,
+              mode: convMode,
+              availability: convAvailability,
+            },
+            sol: {
+              config: solConfig,
+              mode: solMode,
+              availability: solAvailability,
+            },
+          };
+        };
+
+        const currentView = resolveLeiaViewState(item);
+        const selectedSourceStageIndex = currentView.sourceStageId
+          ? earlierStages.findIndex((s) => s.id === currentView.sourceStageId)
+          : -1;
+        const selectedSourceHasAskSolution = stageHasAskSolutionEnabled(
+          experiment,
+          currentView.sourceStageId ?? undefined,
+        );
+
+        const canEditPreviousStageView = Boolean(
+          onUpdateLeiaPreviousStageView || onUpdateStagePreviousConversation,
+        );
+
+        const applyLeiaPreviousStageView = async (
+          targetLeiaId: string,
+          payload: LeiaPreviousStageViewUpdate,
         ) => {
-          if (!onUpdateStagePreviousConversation) return;
-          setUpdatingPreviousConversation(true);
-          try {
-            await onUpdateStagePreviousConversation(currentStage.id, nextConfig);
-          } finally {
-            setUpdatingPreviousConversation(false);
+          if (onUpdateLeiaPreviousStageView) {
+            setUpdatingPreviousConversation(true);
+            try {
+              await onUpdateLeiaPreviousStageView(targetLeiaId, payload);
+            } finally {
+              setUpdatingPreviousConversation(false);
+            }
+            return;
+          }
+          if (
+            onUpdateStagePreviousConversation &&
+            payload.previousConversation
+          ) {
+            setUpdatingPreviousConversation(true);
+            try {
+              await onUpdateStagePreviousConversation(
+                currentStage.id,
+                payload.previousConversation,
+              );
+            } finally {
+              setUpdatingPreviousConversation(false);
+            }
           }
         };
 
-        const formatStageOptionLabel = (earlierStageId: string, earlierIdx: number) => {
+        const buildResourcePayload = (
+          nextMode: VisibilityMode,
+          currentAvailability: PreviousStageViewAvailability,
+          sourceStageId: string | null,
+        ): StagePreviousResourceConfig => ({
+          enabled: nextMode !== "off",
+          sourceStageId,
+          availability: nextMode === "off" ? currentAvailability : nextMode,
+        });
+
+        const buildSharedSourceUpdate = (
+          viewState: ReturnType<typeof resolveLeiaViewState>,
+          nextSourceStageId: string,
+        ): LeiaPreviousStageViewUpdate => {
+          const nextHasAsk = stageHasAskSolutionEnabled(
+            experiment,
+            nextSourceStageId,
+          );
+          const nextSolMode: VisibilityMode =
+            viewState.sol.mode !== "off" && !nextHasAsk
+              ? "off"
+              : viewState.sol.mode;
+          return {
+            previousConversation: buildResourcePayload(
+              viewState.conv.mode,
+              viewState.conv.availability,
+              nextSourceStageId,
+            ),
+            previousSubmittedSolution: buildResourcePayload(
+              nextSolMode,
+              viewState.sol.availability,
+              nextSourceStageId,
+            ),
+          };
+        };
+
+        const formatStageOptionLabel = (
+          earlierStageId: string,
+          earlierIdx: number,
+        ) => {
           const names = allLeias
             .filter((entry) => entry.stageId === earlierStageId)
             .map((entry) => entry.leia?.metadata?.name)
@@ -783,127 +932,513 @@ const LeiaEditor: React.FC<LeiaEditorProps> = ({
             : `Stage ${earlierIdx + 1}`;
         };
 
+        const showVariabilityMatrix =
+          !stageIsMulti &&
+          stageEntries.length > 1 &&
+          Boolean(onUpdateLeiaPreviousStageView);
+
+        const currentAskSolutionOff = !item.configuration.askSolution;
+
         return (
           <>
             <SectionLabel>
-              Stage {stageIndex + 1} · Previous conversation
+              Stage {stageIndex + 1} · Previous stage buttons
             </SectionLabel>
-            {stageLeiaCount > 1 && (
-              <Typography
-                variant="caption"
-                sx={{ display: "block", color: "text.secondary", mb: 1 }}
-              >
-                Applies to all LEIAs in Stage {stageIndex + 1}.
-              </Typography>
-            )}
-            <FieldRow
-              label="Conversation button"
-              helper="Show a Conversation button next to Notes so students can consult their conversation from an earlier stage."
+            <Typography
+              variant="caption"
+              sx={{ display: "block", color: "text.secondary", mb: 1 }}
             >
-              <Switch
-                size="small"
-                checked={prevConvEnabled}
-                disabled={
-                  updatingPreviousConversation || !onUpdateStagePreviousConversation
-                }
-                slotProps={{ input: { "aria-label": "Show Conversation button" } }}
-                onChange={(_, checked) => {
-                  void applyStagePreviousConversation({
-                    enabled: checked,
-                    sourceStageId: checked
-                      ? selectedSourceStageId
-                      : (prevConvConfig?.sourceStageId ?? null),
-                    availability: prevConvAvailability,
-                  });
-                }}
-              />
-            </FieldRow>
+              {stageIsMulti
+                ? `Applies to Stage ${stageIndex + 1} (managed on the shared problem LEIA${problemLeiaName ? `, ${problemLeiaName}` : ""}).`
+                : stageEntries.length > 1
+                  ? `Configured per LEIA so you can vary visibility across LEIAs in Stage ${stageIndex + 1}.`
+                  : `Show earlier stage references next to Notes during Stage ${stageIndex + 1}.`}
+            </Typography>
 
-            {prevConvEnabled && (
-              <>
-                <FieldRow
-                  label="Source stage"
-                  helper="Earlier stage whose conversation the student can view."
-                >
-                  <FormControl size="small" sx={{ minWidth: 240 }}>
-                    <Select
-                      value={selectedSourceStageId ?? ""}
-                      disabled={
-                        updatingPreviousConversation ||
-                        !onUpdateStagePreviousConversation
+            <FieldRow
+              label="Source stage"
+              helper="Earlier stage shared by both the Conversation and Submitted solution buttons."
+            >
+              <Stack direction="column" alignItems="flex-start" gap={0.75}>
+                <FormControl size="small" sx={{ minWidth: 240 }}>
+                  <Select
+                    value={currentView.sourceStageId ?? ""}
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !canEditPreviousStageView
+                    }
+                    SelectDisplayProps={{
+                      "aria-label": "Previous stage source",
+                    }}
+                    onChange={(e) => {
+                      const nextSourceId = e.target.value;
+                      if (
+                        !nextSourceId ||
+                        nextSourceId === currentView.sourceStageId
+                      ) {
+                        return;
                       }
-                      SelectDisplayProps={{
-                        "aria-label": "Previous conversation source stage",
-                      }}
-                      onChange={(e) => {
-                        const nextSourceId = e.target.value;
-                        if (!nextSourceId || nextSourceId === selectedSourceStageId) {
-                          return;
-                        }
-                        void applyStagePreviousConversation({
-                          enabled: true,
-                          sourceStageId: nextSourceId,
-                          availability: prevConvAvailability,
-                        });
-                      }}
-                      sx={{ fontSize: 13 }}
-                    >
-                      {earlierStages.map((earlierStage, earlierIdx) => (
+                      void applyLeiaPreviousStageView(
+                        item.id,
+                        buildSharedSourceUpdate(currentView, nextSourceId),
+                      );
+                    }}
+                    sx={{ fontSize: 13 }}
+                  >
+                    {earlierStages.map((earlierStage, earlierIdx) => {
+                      const hasAsk = stageHasAskSolutionEnabled(
+                        experiment,
+                        earlierStage.id,
+                      );
+                      return (
                         <MenuItem
                           key={earlierStage.id}
                           value={earlierStage.id}
                           sx={{ fontSize: 13 }}
                         >
                           {formatStageOptionLabel(earlierStage.id, earlierIdx)}
+                          {!hasAsk ? " (no student solution)" : ""}
                         </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </FieldRow>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+                {isSecondaryMultiActor && (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Managed on the shared problem LEIA
+                    {problemLeiaName ? ` (${problemLeiaName})` : ""}.
+                  </Typography>
+                )}
+              </Stack>
+            </FieldRow>
 
-                <FieldRow
-                  label="Available in"
-                  helper="Choose whether students can access the conversation only in Chat or in both Chat and Editor."
+            <FieldRow
+              label="Conversation button"
+              helper="Let students consult their conversation from the selected earlier stage."
+            >
+              <Stack direction="column" alignItems="flex-start" gap={0.75}>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={currentView.conv.mode}
+                  aria-label="Conversation button availability"
+                  onChange={(_, nextMode: VisibilityMode | null) => {
+                    if (!nextMode || nextMode === currentView.conv.mode) return;
+                    void applyLeiaPreviousStageView(item.id, {
+                      previousConversation: buildResourcePayload(
+                        nextMode,
+                        currentView.conv.availability,
+                        currentView.sourceStageId,
+                      ),
+                    });
+                  }}
                 >
-                  <ToggleButtonGroup
+                  <ToggleButton
+                    value="off"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !canEditPreviousStageView
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Off
+                  </ToggleButton>
+                  <ToggleButton
+                    value="chat"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !canEditPreviousStageView
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Chat
+                  </ToggleButton>
+                  <ToggleButton
+                    value="editor"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !canEditPreviousStageView
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Editor
+                  </ToggleButton>
+                  <ToggleButton
+                    value="both"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !canEditPreviousStageView
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Chat &amp; Editor
+                  </ToggleButton>
+                </ToggleButtonGroup>
+
+                {isSecondaryMultiActor ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Managed on the shared problem LEIA
+                    {problemLeiaName ? ` (${problemLeiaName})` : ""}.
+                  </Typography>
+                ) : (
+                  currentAskSolutionOff &&
+                  (currentView.conv.mode === "editor" ||
+                    currentView.conv.mode === "both") && (
+                    <Typography variant="caption" sx={{ color: "warning.main" }}>
+                      Editor is only shown when &quot;Ask for student solution&quot; is enabled for this LEIA.
+                    </Typography>
+                  )
+                )}
+              </Stack>
+            </FieldRow>
+
+            <FieldRow
+              label="Submitted solution button"
+              helper="Let students consult the solution they submitted in the selected earlier stage."
+            >
+              <Stack direction="column" alignItems="flex-start" gap={0.75}>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={currentView.sol.mode}
+                  aria-label="Submitted solution button availability"
+                  onChange={(_, nextMode: VisibilityMode | null) => {
+                    if (!nextMode || nextMode === currentView.sol.mode) return;
+                    void applyLeiaPreviousStageView(item.id, {
+                      previousSubmittedSolution: buildResourcePayload(
+                        nextMode,
+                        currentView.sol.availability,
+                        currentView.sourceStageId,
+                      ),
+                    });
+                  }}
+                >
+                  <ToggleButton
+                    value="off"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !onUpdateLeiaPreviousStageView
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Off
+                  </ToggleButton>
+                  <ToggleButton
+                    value="chat"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !onUpdateLeiaPreviousStageView ||
+                      (!selectedSourceHasAskSolution &&
+                        currentView.sol.mode === "off")
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Chat
+                  </ToggleButton>
+                  <ToggleButton
+                    value="editor"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !onUpdateLeiaPreviousStageView ||
+                      (!selectedSourceHasAskSolution &&
+                        currentView.sol.mode === "off")
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Editor
+                  </ToggleButton>
+                  <ToggleButton
+                    value="both"
+                    disabled={
+                      isSecondaryMultiActor ||
+                      updatingPreviousConversation ||
+                      !onUpdateLeiaPreviousStageView ||
+                      (!selectedSourceHasAskSolution &&
+                        currentView.sol.mode === "off")
+                    }
+                    sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
+                  >
+                    Chat &amp; Editor
+                  </ToggleButton>
+                </ToggleButtonGroup>
+
+                {isSecondaryMultiActor ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Managed on the shared problem LEIA
+                    {problemLeiaName ? ` (${problemLeiaName})` : ""}.
+                  </Typography>
+                ) : !selectedSourceHasAskSolution ? (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    {eligibleSolutionStages.length === 0
+                      ? 'Enable "Ask for student solution" on an earlier stage to show its submitted solution.'
+                      : `Stage ${selectedSourceStageIndex + 1} has "Ask for student solution" off. Select another source stage above or enable it in Stage ${selectedSourceStageIndex + 1}.`}
+                  </Typography>
+                ) : (
+                  currentAskSolutionOff &&
+                  (currentView.sol.mode === "editor" ||
+                    currentView.sol.mode === "both") && (
+                    <Typography variant="caption" sx={{ color: "warning.main" }}>
+                      Editor is only shown when &quot;Ask for student solution&quot; is enabled for this LEIA.
+                    </Typography>
+                  )
+                )}
+              </Stack>
+            </FieldRow>
+
+            {showVariabilityMatrix && (
+              <Box
+                sx={{
+                  mt: 1.5,
+                  mb: 1,
+                  p: 1.5,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 1.5,
+                  bgcolor: "surfaces.subtle",
+                }}
+              >
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  justifyContent="space-between"
+                  alignItems={{ sm: "center" }}
+                  gap={1}
+                  sx={{ mb: 1.25 }}
+                >
+                  <Box>
+                    <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+                      Stage {stageIndex + 1} variability
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary", display: "block" }}
+                    >
+                      Compare and adjust both buttons across every LEIA in this stage.
+                    </Typography>
+                  </Box>
+                  <Button
                     size="small"
-                    exclusive
-                    value={prevConvAvailability}
-                    aria-label="Previous conversation availability"
-                    onChange={(_, nextAvailability: PreviousConversationAvailability | null) => {
-                      if (!nextAvailability || nextAvailability === prevConvAvailability) {
-                        return;
-                      }
-                      void applyStagePreviousConversation({
-                        enabled: true,
-                        sourceStageId: selectedSourceStageId,
-                        availability: nextAvailability,
+                    variant="outlined"
+                    color="inherit"
+                    disabled={updatingPreviousConversation}
+                    onClick={() => {
+                      void applyLeiaPreviousStageView(item.id, {
+                        previousConversation: buildResourcePayload(
+                          currentView.conv.mode,
+                          currentView.conv.availability,
+                          currentView.sourceStageId,
+                        ),
+                        previousSubmittedSolution: buildResourcePayload(
+                          currentView.sol.mode,
+                          currentView.sol.availability,
+                          currentView.sourceStageId,
+                        ),
+                        applyToStage: true,
                       });
                     }}
+                    sx={{
+                      borderColor: "divider",
+                      color: "text.primary",
+                      textTransform: "none",
+                      fontSize: 12,
+                      flexShrink: 0,
+                    }}
                   >
-                    <ToggleButton
-                      value="chat"
-                      disabled={
-                        updatingPreviousConversation ||
-                        !onUpdateStagePreviousConversation
-                      }
-                      sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
-                    >
-                      Chat only
-                    </ToggleButton>
-                    <ToggleButton
-                      value="both"
-                      disabled={
-                        updatingPreviousConversation ||
-                        !onUpdateStagePreviousConversation
-                      }
-                      sx={{ textTransform: "none", fontSize: 12, px: 1.5 }}
-                    >
-                      Chat &amp; Editor
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                </FieldRow>
-              </>
+                    Apply current to all in Stage {stageIndex + 1}
+                  </Button>
+                </Stack>
+
+                <Stack spacing={0.75}>
+                  {stageEntries.map((entry) => {
+                    const entryView = resolveLeiaViewState(entry);
+                    const entrySourceHasAsk = stageHasAskSolutionEnabled(
+                      experiment,
+                      entryView.sourceStageId ?? undefined,
+                    );
+                    const isCurrent = entry.id === item.id;
+                    return (
+                      <Box
+                        key={entry.id}
+                        sx={{
+                          display: "grid",
+                          gridTemplateColumns: {
+                            xs: "1fr",
+                            sm:
+                              earlierStages.length > 1
+                                ? "minmax(120px, 1fr) 96px 132px 140px"
+                                : "minmax(140px, 1fr) 150px 150px",
+                          },
+                          alignItems: "center",
+                          gap: 1,
+                          px: 1.25,
+                          py: 0.75,
+                          borderRadius: 1,
+                          bgcolor: isCurrent ? "background.paper" : "transparent",
+                          border: "1px solid",
+                          borderColor: isCurrent ? "primary.light" : "divider",
+                        }}
+                      >
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          gap={0.75}
+                          sx={{ minWidth: 0 }}
+                        >
+                          <MuiLink
+                            component="button"
+                            type="button"
+                            underline="hover"
+                            onClick={() => onLeiaSelect(entry.id)}
+                            sx={{
+                              fontSize: 13,
+                              fontWeight: isCurrent ? 600 : 500,
+                              color: "text.primary",
+                              textAlign: "left",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {entry.leia.metadata.name}
+                          </MuiLink>
+                          {isCurrent && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: "primary.main",
+                                fontWeight: 600,
+                                flexShrink: 0,
+                              }}
+                            >
+                              (editing)
+                            </Typography>
+                          )}
+                        </Stack>
+
+                        {earlierStages.length > 1 && (
+                          <FormControl size="small" fullWidth>
+                            <Select
+                              value={entryView.sourceStageId ?? ""}
+                              disabled={updatingPreviousConversation}
+                              SelectDisplayProps={{
+                                "aria-label": `${entry.leia.metadata.name} source stage`,
+                              }}
+                              onChange={(e) => {
+                                const nextSourceId = e.target.value;
+                                if (
+                                  !nextSourceId ||
+                                  nextSourceId === entryView.sourceStageId
+                                ) {
+                                  return;
+                                }
+                                void applyLeiaPreviousStageView(
+                                  entry.id,
+                                  buildSharedSourceUpdate(
+                                    entryView,
+                                    nextSourceId,
+                                  ),
+                                );
+                              }}
+                              sx={{ fontSize: 12 }}
+                            >
+                              {earlierStages.map((earlierStage, earlierIdx) => (
+                                <MenuItem
+                                  key={earlierStage.id}
+                                  value={earlierStage.id}
+                                  sx={{ fontSize: 12 }}
+                                >
+                                  Stage {earlierIdx + 1}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        )}
+
+                        <FormControl size="small" fullWidth>
+                          <Select
+                            value={entryView.conv.mode}
+                            disabled={updatingPreviousConversation}
+                            SelectDisplayProps={{
+                              "aria-label": `${entry.leia.metadata.name} conversation button`,
+                            }}
+                            onChange={(e) => {
+                              const nextMode = e.target.value as VisibilityMode;
+                              if (nextMode === entryView.conv.mode) return;
+                              void applyLeiaPreviousStageView(entry.id, {
+                                previousConversation: buildResourcePayload(
+                                  nextMode,
+                                  entryView.conv.availability,
+                                  entryView.sourceStageId,
+                                ),
+                              });
+                            }}
+                            sx={{ fontSize: 12 }}
+                          >
+                            <MenuItem value="off" sx={{ fontSize: 12 }}>
+                              Conv: Off
+                            </MenuItem>
+                            <MenuItem value="chat" sx={{ fontSize: 12 }}>
+                              Conv: Chat
+                            </MenuItem>
+                            <MenuItem value="editor" sx={{ fontSize: 12 }}>
+                              Conv: Editor
+                            </MenuItem>
+                            <MenuItem value="both" sx={{ fontSize: 12 }}>
+                              Conv: Both
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+
+                        <FormControl size="small" fullWidth>
+                          <Select
+                            value={entryView.sol.mode}
+                            disabled={
+                              updatingPreviousConversation ||
+                              (!entrySourceHasAsk &&
+                                entryView.sol.mode === "off")
+                            }
+                            SelectDisplayProps={{
+                              "aria-label": `${entry.leia.metadata.name} submitted solution button`,
+                            }}
+                            onChange={(e) => {
+                              const nextMode = e.target.value as VisibilityMode;
+                              if (nextMode === entryView.sol.mode) return;
+                              void applyLeiaPreviousStageView(entry.id, {
+                                previousSubmittedSolution: buildResourcePayload(
+                                  nextMode,
+                                  entryView.sol.availability,
+                                  entryView.sourceStageId,
+                                ),
+                              });
+                            }}
+                            sx={{ fontSize: 12 }}
+                          >
+                            <MenuItem value="off" sx={{ fontSize: 12 }}>
+                              Solution: Off
+                            </MenuItem>
+                            <MenuItem value="chat" sx={{ fontSize: 12 }}>
+                              Solution: Chat
+                            </MenuItem>
+                            <MenuItem value="editor" sx={{ fontSize: 12 }}>
+                              Solution: Editor
+                            </MenuItem>
+                            <MenuItem value="both" sx={{ fontSize: 12 }}>
+                              Solution: Both
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              </Box>
             )}
           </>
         );
@@ -1504,6 +2039,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
   onUpdateEvaluationMode,
   onToggleShowSolution,
   onUpdateStagePreviousConversation,
+  onUpdateLeiaPreviousStageView,
   onStartTestSession,
   startingSessionLeiaId,
   invalidLeiaFields,
@@ -1621,7 +2157,8 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         problemLeiaName={effectiveProblemLeia?.leia.metadata.name}
         stages={stages}
         stageIndex={stageIndex}
-        stageLeiaCount={stageEntries.length}
+        stageEntries={stageEntries}
+        experiment={localReplication.experiment}
         allLeias={leias}
         item={item}
         serverItem={serverItem}
@@ -1629,6 +2166,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         apiKeyProvidersMapped={apiKeyProvidersMapped}
         providerProviderModuleMap={providerProviderModuleMap}
         userRole={userRole}
+        onLeiaSelect={onLeiaSelect}
         onLocalLeiaChange={onLocalLeiaChange}
         onLocalLeiaReset={onLocalLeiaReset}
         onLeiaUpdate={onLeiaUpdate}
@@ -1637,6 +2175,7 @@ export const LeiasSection: React.FC<LeiasSectionProps> = ({
         onUpdateEvaluationMode={onUpdateEvaluationMode}
         onToggleShowSolution={onToggleShowSolution}
         onUpdateStagePreviousConversation={onUpdateStagePreviousConversation}
+        onUpdateLeiaPreviousStageView={onUpdateLeiaPreviousStageView}
         onStartTestSession={onStartTestSession}
         replicationId={replication.id}
         pronouns= {pronouns}

@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import axios from "axios";
 import { LeiasSection } from "../../src/views/replication/sections/LeiasSection";
 import PreviousConversationWidget from "../../src/widgets/PreviousConversationWidget";
+import PreviousSubmittedSolutionWidget from "../../src/widgets/PreviousSubmittedSolutionWidget";
 import { Chat } from "../../src/views/Chat";
 import { Edit } from "../../src/views/Edit";
 import type {
   ReplicationData,
   StagePreviousConversationConfig,
+  StagePreviousResourceConfig,
 } from "../../src/views/replication/types";
 
 test("keeps the solution within its stage and shows a separate task before the final stage", async () => {
@@ -77,7 +79,10 @@ test("keeps the solution within its stage and shows a separate task before the f
     }
     if (url.endsWith("/task-1/next-stage")) return { status: 201, data: { sessionId: "task-2" } };
     if (url.endsWith("/task-2/finish")) {
-      finishedStages.set(2, { finishedAt: completedAt });
+      finishedStages.set(2, {
+        finishedAt: completedAt,
+        spectateUrl: "https://example.test/final-conversation",
+      });
       return { status: 200, data: session(2) };
     }
     throw new Error(`Unexpected POST ${url}`);
@@ -116,13 +121,11 @@ test("keeps the solution within its stage and shows a separate task before the f
   const continueStage = screen.getByRole("button", { name: "Continue to Stage 2" });
   const actions = review.closest("footer");
   expect(continueStage.closest("footer")).toBe(actions);
-  const viewer = screen.getByLabelText("Conversation viewer link (valid for 1 year)");
+  expect(screen.queryByLabelText("Conversation viewer link (valid for 1 year)")).toBeNull();
   const rubric = await screen.findByRole("region", { name: "Evaluation" });
   expect(within(rubric).getByText("Stage 1 rubric")).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Evaluation" })).toBeNull();
-  expect(rubric.contains(viewer)).toBe(false);
   expect(rubric.contains(continueStage)).toBe(false);
-  expect(viewer.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(review);
   fireEvent.click(screen.getByRole("button", { name: "Back to completion" }));
   fireEvent.click(screen.getByRole("button", { name: "Continue to Stage 2" }));
@@ -135,6 +138,8 @@ test("keeps the solution within its stage and shows a separate task before the f
   fireEvent.click(screen.getByRole("button", { name: "Finish Stage 2" }));
   await screen.findByRole("heading", { name: "Activity complete" });
   expect(screen.getByText("Thank you for completing the activity.")).toBeTruthy();
+  const finalViewer = screen.getByLabelText("Conversation viewer link (valid for 1 year)") as HTMLInputElement;
+  expect(finalViewer.value).toBe("https://example.test/final-conversation");
   const evaluation = await screen.findByText("Clear analysis of the transcript.");
   const backToHome = screen.getByRole("button", { name: "Back to home" });
   expect(evaluation.compareDocumentPosition(backToHome) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -165,7 +170,11 @@ vi.mock("../../src/components/FormatEditor", () => ({
 }));
 
 vi.mock("../../src/components/FormatPreview", () => ({
-  FormatPreview: () => <div data-testid="format-preview" />,
+  FormatPreview: ({ code, format }: { code: string; format: string }) => (
+    <div data-testid="format-preview" data-format={format}>
+      {code}
+    </div>
+  ),
 }));
 
 const singleOrchestration = {
@@ -268,12 +277,13 @@ const commonLeiasProps = {
 beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
   vi.stubEnv("VITE_APP_BACKEND", "http://backend.test");
 });
 
-describe("LeiasSection previous conversation stage configuration", () => {
-  test("hides configuration on Stage 1 and renders stage-level controls on stages n>1 (including secondary MultiLEIA actors)", async () => {
-    const onUpdateStagePreviousConversation = vi.fn().mockResolvedValue(undefined);
+describe("LeiasSection previous stage buttons and variability configuration", () => {
+  test("hides configuration on Stage 1, locks secondary MultiLEIA actors, and lets the shared problem LEIA configure both buttons", async () => {
+    const onUpdateLeiaPreviousStageView = vi.fn().mockResolvedValue(undefined);
     const rep = buildStagedReplication();
 
     const { rerender } = render(
@@ -283,16 +293,19 @@ describe("LeiasSection previous conversation stage configuration", () => {
           replication={rep}
           localReplication={rep}
           activeLeiaId="l1"
-          onUpdateStagePreviousConversation={onUpdateStagePreviousConversation}
+          onUpdateLeiaPreviousStageView={onUpdateLeiaPreviousStageView}
         />
       </MemoryRouter>,
     );
 
     expect(
-      screen.queryByRole("switch", { name: "Show Conversation button" }),
+      screen.queryByRole("group", { name: "Conversation button availability" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("group", { name: "Submitted solution button availability" }),
     ).toBeNull();
 
-    // Stage 2 secondary MultiLEIA actor still sees and can edit the Stage 2 setting.
+    // Stage 2 secondary MultiLEIA actor sees disabled controls managed on shared problem LEIA.
     rerender(
       <MemoryRouter>
         <LeiasSection
@@ -300,35 +313,75 @@ describe("LeiasSection previous conversation stage configuration", () => {
           replication={rep}
           localReplication={rep}
           activeLeiaId="l2b"
-          onUpdateStagePreviousConversation={onUpdateStagePreviousConversation}
+          onUpdateLeiaPreviousStageView={onUpdateLeiaPreviousStageView}
         />
       </MemoryRouter>,
     );
 
-    expect(screen.getByText(/Applies to all LEIAs in Stage 2/i)).toBeTruthy();
-    const toggle = screen.getByRole("switch", {
-      name: "Show Conversation button",
-    }) as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
-    expect(toggle.disabled).toBe(false);
+    const convGroupSecondary = screen.getByRole("group", {
+      name: "Conversation button availability",
+    });
+    expect(
+      (within(convGroupSecondary).getByRole("button", { name: "Chat" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
 
-    fireEvent.click(toggle);
+    // Stage 2 shared problem LEIA can configure both buttons including Editor only.
+    rerender(
+      <MemoryRouter>
+        <LeiasSection
+          {...commonLeiasProps}
+          replication={rep}
+          localReplication={rep}
+          activeLeiaId="l2a"
+          onUpdateLeiaPreviousStageView={onUpdateLeiaPreviousStageView}
+        />
+      </MemoryRouter>,
+    );
+
+    const convGroup = screen.getByRole("group", {
+      name: "Conversation button availability",
+    });
+    fireEvent.click(within(convGroup).getByRole("button", { name: "Chat & Editor" }));
     await waitFor(() =>
-      expect(onUpdateStagePreviousConversation).toHaveBeenCalledWith("s2", {
-        enabled: true,
-        sourceStageId: "s1",
-        availability: "both",
+      expect(onUpdateLeiaPreviousStageView).toHaveBeenCalledWith("l2a", {
+        previousConversation: {
+          enabled: true,
+          sourceStageId: "s1",
+          availability: "both",
+        },
+      }),
+    );
+
+    const solGroup = screen.getByRole("group", {
+      name: "Submitted solution button availability",
+    });
+    fireEvent.click(within(solGroup).getByRole("button", { name: "Editor" }));
+    await waitFor(() =>
+      expect(onUpdateLeiaPreviousStageView).toHaveBeenCalledWith("l2a", {
+        previousSubmittedSolution: {
+          enabled: true,
+          sourceStageId: "s1",
+          availability: "editor",
+        },
       }),
     );
   });
 
-  test("lets instructors pick an earlier source stage and toggle Chat only vs Chat & Editor on Stage 3", async () => {
-    const onUpdateStagePreviousConversation = vi.fn().mockResolvedValue(undefined);
+  test("lets instructors configure A/B variability across LEIAs in a single stage and apply to all", async () => {
+    const onUpdateLeiaPreviousStageView = vi.fn().mockResolvedValue(undefined);
     const rep = buildStagedReplication(undefined, {
       enabled: true,
       sourceStageId: "s2",
       availability: "both",
     });
+    // Add a second LEIA in Stage 3 (single mode) to exercise per-LEIA A/B variability.
+    rep.experiment.leias.push(makeLeia("l3b", "Synthesizer B", "s3"));
+    rep.experiment.leias[3].configuration.previousSubmittedSolution = {
+      enabled: true,
+      sourceStageId: "s2",
+      availability: "editor",
+    } satisfies StagePreviousResourceConfig;
 
     render(
       <MemoryRouter>
@@ -337,25 +390,33 @@ describe("LeiasSection previous conversation stage configuration", () => {
           replication={rep}
           localReplication={rep}
           activeLeiaId="l3"
-          onUpdateStagePreviousConversation={onUpdateStagePreviousConversation}
+          onUpdateLeiaPreviousStageView={onUpdateLeiaPreviousStageView}
         />
       </MemoryRouter>,
     );
 
-    const chatOnlyButton = screen.getByRole("button", { name: "Chat only" });
-    fireEvent.click(chatOnlyButton);
+    // Single shared Source stage selector for both buttons.
+    expect(screen.getAllByRole("combobox", { name: "Previous stage source" })).toHaveLength(1);
+    expect(screen.queryByRole("combobox", { name: "Previous conversation source stage" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Previous submitted solution source stage" })).toBeNull();
 
+    const convGroup = screen.getByRole("group", {
+      name: "Conversation button availability",
+    });
+    fireEvent.click(within(convGroup).getByRole("button", { name: "Chat" }));
     await waitFor(() =>
-      expect(onUpdateStagePreviousConversation).toHaveBeenCalledWith("s3", {
-        enabled: true,
-        sourceStageId: "s2",
-        availability: "chat",
+      expect(onUpdateLeiaPreviousStageView).toHaveBeenCalledWith("l3", {
+        previousConversation: {
+          enabled: true,
+          sourceStageId: "s2",
+          availability: "chat",
+        },
       }),
     );
 
-    // Change source stage via MUI Select listbox to Stage 1.
+    // Changing the single shared Source stage updates both buttons together.
     const selectButton = screen.getByRole("combobox", {
-      name: "Previous conversation source stage",
+      name: "Previous stage source",
     });
     fireEvent.mouseDown(selectButton);
     const stage1Option = await screen.findByRole("option", {
@@ -364,12 +425,107 @@ describe("LeiasSection previous conversation stage configuration", () => {
     fireEvent.click(stage1Option);
 
     await waitFor(() =>
-      expect(onUpdateStagePreviousConversation).toHaveBeenCalledWith("s3", {
-        enabled: true,
-        sourceStageId: "s1",
-        availability: "both",
+      expect(onUpdateLeiaPreviousStageView).toHaveBeenCalledWith("l3", {
+        previousConversation: {
+          enabled: true,
+          sourceStageId: "s1",
+          availability: "both",
+        },
+        previousSubmittedSolution: {
+          enabled: true,
+          sourceStageId: "s1",
+          availability: "editor",
+        },
       }),
     );
+
+    // Variability matrix lets instructor update Synthesizer B directly and apply current to all.
+    expect(screen.getByText("Stage 3 variability")).toBeTruthy();
+    const synthBSolutionSelect = screen.getByRole("combobox", {
+      name: "Synthesizer B submitted solution button",
+    });
+    fireEvent.mouseDown(synthBSolutionSelect);
+    fireEvent.click(await screen.findByRole("option", { name: /Solution: Chat/ }));
+    await waitFor(() =>
+      expect(onUpdateLeiaPreviousStageView).toHaveBeenCalledWith("l3b", {
+        previousSubmittedSolution: {
+          enabled: true,
+          sourceStageId: "s2",
+          availability: "chat",
+        },
+      }),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply current to all in Stage 3" }),
+    );
+    await waitFor(() =>
+      expect(onUpdateLeiaPreviousStageView).toHaveBeenCalledWith("l3", {
+        previousConversation: {
+          enabled: true,
+          sourceStageId: "s2",
+          availability: "both",
+        },
+        previousSubmittedSolution: {
+          enabled: true,
+          sourceStageId: "s2",
+          availability: "editor",
+        },
+        applyToStage: true,
+      }),
+    );
+  });
+
+  test("disables enabling Submitted solution when no earlier stage asks for solution, and locks Ask for student solution on the source stage when used", () => {
+    const onUpdateLeiaPreviousStageView = vi.fn().mockResolvedValue(undefined);
+    const repNoAsk = buildStagedReplication();
+    repNoAsk.experiment.leias[0].configuration.askSolution = false;
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <LeiasSection
+          {...commonLeiasProps}
+          replication={repNoAsk}
+          localReplication={repNoAsk}
+          activeLeiaId="l2a"
+          onUpdateLeiaPreviousStageView={onUpdateLeiaPreviousStageView}
+        />
+      </MemoryRouter>,
+    );
+
+    const solGroup = screen.getByRole("group", {
+      name: "Submitted solution button availability",
+    });
+    expect(
+      (within(solGroup).getByRole("button", { name: "Chat" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText(/Enable "Ask for student solution" on an earlier stage/i),
+    ).toBeTruthy();
+
+    // When Stage 2 enables previousSubmittedSolution from Stage 1, Stage 1's Ask for student solution is locked.
+    const repUsed = buildStagedReplication();
+    repUsed.experiment.leias[1].configuration.previousSubmittedSolution = {
+      enabled: true,
+      sourceStageId: "s1",
+      availability: "both",
+    };
+    rerender(
+      <MemoryRouter>
+        <LeiasSection
+          {...commonLeiasProps}
+          replication={repUsed}
+          localReplication={repUsed}
+          activeLeiaId="l1"
+          onUpdateLeiaPreviousStageView={onUpdateLeiaPreviousStageView}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByText(/Locked because Stage 2 uses this stage's submitted solution/i),
+    ).toBeTruthy();
   });
 });
 
@@ -631,6 +787,258 @@ describe("Student Conversation button in Chat and Edit views", () => {
     ).toBeTruthy();
     expect(getSpy).toHaveBeenCalledWith(
       "http://backend.test/api/v1/interactions/sess-2/previous-conversation",
+      { params: { view: "editor" } },
+    );
+  });
+
+  test("Edit renders review solution action as a footer button on the final stage", async () => {
+    vi.spyOn(axios, "get").mockResolvedValue({
+      status: 200,
+      data: { solution: "Reference solution", solutionFormat: "text" },
+    });
+
+    localStorage.setItem("sessionId", "sess-final");
+    localStorage.setItem(
+      "configuration",
+      JSON.stringify({ mode: "standard", askSolution: true, evaluateSolution: false, showSolution: true }),
+    );
+    localStorage.setItem("showReferenceSolution", JSON.stringify(true));
+    localStorage.setItem("replication", JSON.stringify({ duration: null, form: null }));
+    localStorage.setItem(
+      "exercise",
+      JSON.stringify({ description: "Final task", solutionFormat: "text", initialSolution: "" }),
+    );
+    localStorage.setItem(
+      "session",
+      JSON.stringify({
+        id: "sess-final",
+        stage: { number: 2, total: 2, hasNext: false },
+        startedAt: "2026-11-25T12:00:00Z",
+        finishedAt: "2026-11-25T12:10:00Z",
+        result: "Final submitted answer",
+        spectateUrl: "https://example.test/final-spectate",
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <Edit />
+      </MemoryRouter>,
+    );
+
+    const reviewBtn = await screen.findByRole("button", {
+      name: "Review your solution and the reference",
+    });
+    const backHomeBtn = screen.getByRole("button", { name: "Back to home" });
+    expect(reviewBtn.closest("footer")).toBe(backHomeBtn.closest("footer"));
+    expect(reviewBtn.className).not.toContain("underline");
+    expect(reviewBtn.className).toContain("border");
+    expect(
+      screen.getByText("Thank you for completing the activity. Your solution was submitted."),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+});
+
+describe("PreviousSubmittedSolutionWidget and Submitted solution button in Chat and Edit", () => {
+  test("PreviousSubmittedSolutionWidget fetches solution, renders via FormatPreview, handles empty/error, and closes", async () => {
+    const getSpy = vi
+      .spyOn(axios, "get")
+      .mockRejectedValueOnce(new Error("Temporary failure"))
+      .mockResolvedValueOnce({
+        data: {
+          stage: { number: 1, total: 2 },
+          availability: "both",
+          solution: "classDiagram\n  A --> B",
+          solutionFormat: "mermaid",
+          submittedAt: "2026-11-24T10:05:00Z",
+        },
+      });
+    const onClose = vi.fn();
+
+    render(
+      <PreviousSubmittedSolutionWidget
+        sessionId="sess-2"
+        stageNumber={1}
+        view="editor"
+        onClose={onClose}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Could not load the previous submitted solution."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    const preview = await screen.findByTestId("format-preview");
+    expect(preview.getAttribute("data-format")).toBe("mermaid");
+    expect(preview.textContent).toContain("classDiagram");
+    expect(screen.getByText("Submitted solution · Stage 1")).toBeTruthy();
+    expect(getSpy).toHaveBeenLastCalledWith(
+      "http://backend.test/api/v1/interactions/sess-2/previous-submitted-solution",
+      { params: { view: "editor" } },
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close submitted solution" }),
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  test("Chat hides editor-only buttons and opens Submitted solution when chat-enabled", async () => {
+    vi.spyOn(axios, "get").mockImplementation(async (url) => {
+      if (url.endsWith("/api/v1/interactions/sess-2")) {
+        return {
+          status: 200,
+          data: {
+            session: {
+              id: "sess-2",
+              runId: "run-1",
+              isTest: false,
+              startedAt: "2026-11-24T11:00:00Z",
+              finishedAt: null,
+              isRunnerInitialized: true,
+              stage: { number: 2, total: 2, hasNext: false },
+              previousConversation: {
+                enabled: true,
+                stageNumber: 1,
+                availability: "editor",
+              },
+              previousSubmittedSolution: {
+                enabled: true,
+                stageNumber: 1,
+                availability: "chat",
+              },
+            },
+            replication: {
+              name: "Rep",
+              duration: 0,
+              isActive: true,
+              isRepeatable: false,
+              code: "ABC",
+              form: "",
+            },
+            leia: {
+              id: "l2",
+              configuration: {
+                mode: "standard",
+                askSolution: true,
+                evaluateSolution: false,
+                data: {},
+              },
+              leia: {
+                id: "doc-2",
+                spec: {
+                  persona: { spec: { firstName: "Marco" } },
+                  problem: { spec: { description: "Stage 2 task" } },
+                  behaviour: { spec: {} },
+                },
+              },
+            },
+            messages: [],
+          },
+        };
+      }
+      return {
+        status: 200,
+        data: {
+          stage: { number: 1, total: 2 },
+          availability: "chat",
+          solution: "Stage 1 student solution text",
+          solutionFormat: "text",
+        },
+      };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/chat/sess-2"]}>
+        <Routes>
+          <Route path="/chat/:sessionId" element={<Chat />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Start Stage 2" }, { timeout: 3000 }),
+    );
+
+    // Editor-only conversation button must not appear in Chat.
+    expect(screen.queryByRole("button", { name: "Conversation" })).toBeNull();
+
+    const solutionButton = await screen.findByRole(
+      "button",
+      { name: "Submitted solution" },
+      { timeout: 3000 },
+    );
+    fireEvent.click(solutionButton);
+
+    expect(
+      await screen.findByText("Stage 1 student solution text"),
+    ).toBeTruthy();
+  });
+
+  test("Edit shows Submitted solution button when availability is editor and hides when chat-only", async () => {
+    const getSpy = vi.spyOn(axios, "get").mockResolvedValue({
+      status: 200,
+      data: {
+        stage: { number: 1, total: 2 },
+        availability: "editor",
+        solution: "Editor-only previous solution",
+        solutionFormat: "markdown",
+      },
+    });
+
+    localStorage.setItem("sessionId", "sess-2");
+    localStorage.setItem("exercise", JSON.stringify({ solutionFormat: "text" }));
+    localStorage.setItem(
+      "session",
+      JSON.stringify({
+        id: "sess-2",
+        stage: { number: 2, total: 2, hasNext: false },
+        previousSubmittedSolution: {
+          enabled: true,
+          stageNumber: 1,
+          availability: "chat",
+        },
+      }),
+    );
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <Edit />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Submitted solution" })).toBeNull();
+    unmount();
+
+    localStorage.setItem(
+      "session",
+      JSON.stringify({
+        id: "sess-2",
+        stage: { number: 2, total: 2, hasNext: false },
+        previousSubmittedSolution: {
+          enabled: true,
+          stageNumber: 1,
+          availability: "editor",
+        },
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <Edit />
+      </MemoryRouter>,
+    );
+
+    const solButton = await screen.findByRole("button", {
+      name: "Submitted solution",
+    });
+    fireEvent.click(solButton);
+
+    expect(await screen.findByText("Editor-only previous solution")).toBeTruthy();
+    expect(getSpy).toHaveBeenCalledWith(
+      "http://backend.test/api/v1/interactions/sess-2/previous-submitted-solution",
       { params: { view: "editor" } },
     );
   });
