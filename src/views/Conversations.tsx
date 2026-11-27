@@ -32,8 +32,21 @@ import {
 import StatusDot from "../components/admin/StatusDot";
 import { formatTimeAgo } from "../components/admin/RelativeTime";
 import { writeReplicationName } from "../lib/replicationNames";
-import { mergeTimeline, type TestRunRecord } from "../lib/testRuns";
-import { TestRunMarker, TestRunsSection } from "../components/admin/TestRunsSection";
+import {
+  buildTimeline,
+  hasAnyEvents,
+  markerTargetId,
+  sumEventCounts,
+  type EventCounts,
+  type SessionEventRecord,
+} from "../lib/events";
+import { isPreviewHost } from "../lib/features";
+import {
+  EventCountsBadge,
+  EventMarker,
+  EventsSection,
+} from "../components/admin/EventsSection";
+import { useSessionEventList } from "../components/admin/useSessionEventList";
 import { useAuth } from "../context";
 import {
   groupSessionsByRun,
@@ -80,8 +93,9 @@ interface Session {
   messages: Message[];
   user: { email: string } | null;
   supervisorFlags?: SupervisorFlag[] | null;
-  /** Code editor test runs, without the code snapshots (loaded on demand). */
-  testRuns?: TestRunRecord[] | null;
+  /** Number of tracked events (test runs, clipboard, leaving the page) by
+   *  type. The events themselves are loaded when the session is selected. */
+  eventCounts?: EventCounts | null;
   replicationConfig?: unknown | null;
   dataUsage?: {
     config: {
@@ -294,10 +308,11 @@ export const Conversations: React.FC = () => {
     fetch();
   }, [id, navigate, replicationToken, tokenReady, buildRequestConfig]);
 
-  // Two exports: the transcript ("conversations", one row per message) and
-  // the code editor's test runs ("test-runs", one row per run). `kind` is both
-  // the path segment and the file suffix.
-  const downloadCSV = async (kind: "conversations" | "test-runs") => {
+  // Three exports: the transcript ("conversations", one row per message), the
+  // code editor's test runs ("test-runs", one row per run) and every tracked
+  // event ("events", one row per event). `kind` is both the path segment and
+  // the file suffix.
+  const downloadCSV = async (kind: "conversations" | "test-runs" | "events") => {
     try {
       const response = await axios.get(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/${kind}/csv`,
@@ -318,20 +333,34 @@ export const Conversations: React.FC = () => {
     } catch (err) {
       console.error("Download error:", err);
       if (kind === "test-runs") alert("The test runs CSV could not be downloaded");
+      if (kind === "events") alert("The events CSV could not be downloaded");
     }
   };
 
   const handleDownloadCSV = () => downloadCSV("conversations");
 
-  // Full test runs of a session, including the code at each run. Fetched
-  // only when the instructor opens a code snapshot.
-  const loadSessionTestRuns = useCallback(
-    async (sessionId: string): Promise<TestRunRecord[]> => {
-      const response = await axios.get<{ testRuns: TestRunRecord[] }>(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/sessions/${sessionId}/test-runs`,
+  // Events of a session, without their content. The list of conversations
+  // only brings counters, so these are fetched when a session is selected.
+  const loadSessionEvents = useCallback(
+    async (sessionId: string): Promise<SessionEventRecord[]> => {
+      const response = await axios.get<{ events: SessionEventRecord[]; total: number }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/sessions/${sessionId}/events`,
         buildRequestConfig()
       );
-      return response.data.testRuns ?? [];
+      return Array.isArray(response.data?.events) ? response.data.events : [];
+    },
+    [id, buildRequestConfig]
+  );
+
+  // One event with its content (the code of a test run or a clipboard text).
+  // Fetched only when the instructor opens it.
+  const loadSessionEvent = useCallback(
+    async (sessionId: string, eventId: string): Promise<SessionEventRecord> => {
+      const response = await axios.get<{ event: SessionEventRecord }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${id}/sessions/${sessionId}/events/${eventId}`,
+        buildRequestConfig()
+      );
+      return response.data.event;
     },
     [id, buildRequestConfig]
   );
@@ -423,11 +452,13 @@ export const Conversations: React.FC = () => {
     setScoreValue("");
   }, [selected?.id]);
 
+  // Event tracking is only switched on in preview, and so are its exports.
+  const showEventsExport = isPreviewHost();
   // Offered when the activity has a code editor, or when runs exist anyway
   // (e.g. the widget was removed from the activity afterwards).
   const showTestRunsExport =
-    /^pre(?:-\d+)?\.workbench\.leia\.ovh$/.test(window.location.hostname) &&
-    (hasCodeEditor || conversations.some((c) => (c.testRuns?.length ?? 0) > 0));
+    isPreviewHost() &&
+    (hasCodeEditor || conversations.some((c) => (c.eventCounts?.test_run ?? 0) > 0));
 
   const headerActions = (
     <Stack direction="row" gap={1}>
@@ -451,6 +482,18 @@ export const Conversations: React.FC = () => {
           sx={{ borderColor: "divider", color: "text.primary" }}
         >
           Download tests CSV
+        </Button>
+      )}
+      {showEventsExport && (
+        <Button
+          variant="outlined"
+          color="inherit"
+          size="small"
+          startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+          onClick={() => downloadCSV("events")}
+          sx={{ borderColor: "divider", color: "text.primary" }}
+        >
+          Download events CSV
         </Button>
       )}
       <Button
@@ -560,7 +603,8 @@ export const Conversations: React.FC = () => {
                 setScoreValue("");
               }}
               formatDate={formatDate}
-              loadTestRuns={loadSessionTestRuns}
+              loadEvents={loadSessionEvents}
+              loadEvent={loadSessionEvent}
             />
           ) : (
             <MasterDetailEmptyState
@@ -596,6 +640,8 @@ const SessionRow: React.FC<{
     group.isStaged && group.stageTotal && group.stageTotal > 1
       ? `Stage ${group.currentSession.stageNumber ?? group.sessions.length}/${group.stageTotal}`
       : null;
+  // Tracked events of every stage of the attempt.
+  const eventCounts = sumEventCounts(group.sessions.map((s) => s.eventCounts));
 
   return (
     <ButtonBase
@@ -676,6 +722,7 @@ const SessionRow: React.FC<{
         <Typography variant="caption" sx={{ color: "text.disabled" }}>
           {formatTimeAgo(group.startedAt)}
         </Typography>
+        <EventCountsBadge counts={eventCounts} />
       </Box>
     </ButtonBase>
   );
@@ -712,7 +759,8 @@ const SessionDetail: React.FC<{
   onSaveScore: () => void;
   onCancelEditScore: () => void;
   formatDate: (s: string) => string;
-  loadTestRuns: (sessionId: string) => Promise<TestRunRecord[]>;
+  loadEvents: (sessionId: string) => Promise<SessionEventRecord[]>;
+  loadEvent: (sessionId: string, eventId: string) => Promise<SessionEventRecord>;
 }> = ({
   group,
   session,
@@ -727,19 +775,27 @@ const SessionDetail: React.FC<{
   onSaveScore,
   onCancelEditScore,
   formatDate,
-  loadTestRuns,
+  loadEvents,
+  loadEvent,
 }) => {
   const [detailView, setDetailView] = useState<"conversation" | "configuration" | "dataUsage">("conversation");
-  // Test run a transcript marker asked to bring into view.
-  const [focusedRun, setFocusedRun] = useState<{ id: string; at: number } | null>(null);
-  const testRuns = useMemo(() => session.testRuns ?? [], [session.testRuns]);
-  // Transcript with a marker at the moment of each test run.
-  const timeline = useMemo(
-    () => mergeTimeline(session.messages, testRuns),
-    [session.messages, testRuns]
-  );
+  // Event a transcript marker asked to bring into view.
+  const [focusedEvent, setFocusedEvent] = useState<{ id: string; at: number } | null>(null);
   const sessionId = session.id;
-  const loadSessionCode = useCallback(() => loadTestRuns(sessionId), [loadTestRuns, sessionId]);
+  // Requested only when the list says the session has events.
+  const hasEvents = hasAnyEvents(session.eventCounts);
+  const eventList = useSessionEventList(sessionId, hasEvents, loadEvents);
+  const events = eventList.events;
+  // Transcript with a marker at the moment of each test run, clipboard event
+  // and absence worth noting.
+  const timeline = useMemo(
+    () => buildTimeline(session.messages, events),
+    [session.messages, events]
+  );
+  const loadEventContent = useCallback(
+    (eventId: string) => loadEvent(sessionId, eventId),
+    [loadEvent, sessionId]
+  );
   const resultIsMermaid =
     Boolean(session.result) &&
     (solutionFormat === "mermaid" || looksLikeMermaid(session.result ?? ""));
@@ -749,7 +805,7 @@ const SessionDetail: React.FC<{
 
   useEffect(() => {
     setDetailView("conversation");
-    setFocusedRun(null);
+    setFocusedEvent(null);
   }, [session.id]);
 
   return (
@@ -928,13 +984,15 @@ const SessionDetail: React.FC<{
         {timeline.length > 0 && (
           <Stack gap={1.25}>
             {timeline.map((item) => {
-              if (item.kind === "testRun") {
+              if (item.kind !== "message") {
                 return (
-                  <TestRunMarker
+                  <EventMarker
                     key={item.key}
-                    run={item.run}
+                    marker={item}
                     formatDate={formatDate}
-                    onClick={() => setFocusedRun({ id: item.run.id, at: Date.now() })}
+                    onClick={() =>
+                      setFocusedEvent({ id: markerTargetId(item), at: Date.now() })
+                    }
                   />
                 );
               }
@@ -1186,16 +1244,21 @@ const SessionDetail: React.FC<{
         </>
       )}
 
-      {testRuns.length > 0 && (
+      {(hasEvents || events.length > 0) && (
         <>
           <Divider sx={{ my: 3 }} />
-          {/* Keyed by session so opened snapshots and loaded code reset. */}
-          <TestRunsSection
+          {/* Keyed by session so the filter, opened entries and loaded
+              content reset. */}
+          <EventsSection
             key={session.id}
-            runs={testRuns}
-            loadCode={loadSessionCode}
+            events={events}
+            counts={session.eventCounts}
+            loading={eventList.loading}
+            error={eventList.error}
+            onRetry={eventList.retry}
+            loadEvent={loadEventContent}
             formatDate={formatDate}
-            focus={focusedRun}
+            focus={focusedEvent}
           />
         </>
       )}

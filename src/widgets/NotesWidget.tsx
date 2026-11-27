@@ -90,6 +90,7 @@ const Notes = () => {
           onChange={(e) => {
             setText(e.target.value);
           }}
+          data-event-source="notes"
           className="
             w-full
             h-full

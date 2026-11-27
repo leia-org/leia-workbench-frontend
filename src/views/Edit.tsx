@@ -12,6 +12,8 @@ import type { RubricEvaluationResult } from "../components/RubricEvaluationView"
 import NotesWidget from "../widgets/NotesWidget";
 import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
 import PreviousSubmittedSolutionWidget from "../widgets/PreviousSubmittedSolutionWidget";
+import { sessionEvents } from "../lib/sessionEvents";
+import { useSessionEvents } from "../hooks/useSessionEvents";
 import {
   ChatBubbleLeftRightIcon,
   DocumentTextIcon,
@@ -65,6 +67,7 @@ const clearStudentSessionStorage = () => {
     "mermaid_code",
     "editor_width",
     "showReferenceSolution",
+    "eventsEnabled",
   ].forEach((key) => localStorage.removeItem(key));
 };
 
@@ -363,6 +366,10 @@ export const Edit = () => {
     availability: "chat" | "editor" | "both";
   } | null>(null);
   const [showPreviousSubmittedSolution, setShowPreviousSubmittedSolution] = useState<boolean>(false);
+  // Chat stores whether the backend records interaction events, since this
+  // view never loads the LEIA payload itself.
+  const [eventsEnabled, setEventsEnabled] = useState(false);
+  const [consentDeclined, setConsentDeclined] = useState(false);
   const codeRef = useRef(code);
   codeRef.current = code;
   // Load initial data from localStorage
@@ -396,9 +403,11 @@ export const Edit = () => {
     if (savedSessionId) {
       setSessionId(savedSessionId);
     }
+    setEventsEnabled(localStorage.getItem("eventsEnabled") === "true");
     const savedSession = localStorage.getItem("session");
     if (savedSession) {
       const parsedSession = JSON.parse(savedSession);
+      setConsentDeclined(parsedSession.dataUsage?.consentStatus === "declined");
       setStage(parsedSession.stage);
       setStagePlan(parsedSession.stagePlan);
       setSessionFinishedAt(parsedSession.finishedAt || null);
@@ -424,6 +433,12 @@ export const Edit = () => {
     }
 
   }, []);
+
+  useSessionEvents(sessionId, {
+    enabled: eventsEnabled && !sessionFinishedAt,
+    view: "edit",
+    observe: !consentDeclined,
+  });
 
   useEffect(() => {
     localStorage.setItem("mermaid_code", code);
@@ -461,6 +476,8 @@ export const Edit = () => {
     submissionPendingRef.current = true;
     setSubmissionError(null);
     setLoadingEvaluation(true);
+    // Events still queued belong to the session that is about to end.
+    void sessionEvents.flush();
     try {
       const result = codeRef.current;
       const { data } = await axios.post(

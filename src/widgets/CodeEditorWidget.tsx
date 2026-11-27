@@ -237,7 +237,7 @@ export function CodeEditorWidget({ params, onTestRun }: CodeEditorWidgetProps = 
                 )}
             </div>
 
-            <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+            <div style={{ flex: 1, minHeight: 0, position: "relative" }} data-event-source="code_editor">
                 <Editor
                     height="100%"
                     defaultValue={draftRef.current}
