@@ -38,6 +38,8 @@ import NotesWidget from "../widgets/NotesWidget";
 import PreviousConversationWidget from "../widgets/PreviousConversationWidget";
 import PreviousSubmittedSolutionWidget from "../widgets/PreviousSubmittedSolutionWidget";
 import { postTestRun } from "../lib/testRuns";
+import { sessionEvents, testRunEventInput } from "../lib/sessionEvents";
+import { useSessionEvents } from "../hooks/useSessionEvents";
 import type { TestRunReport } from "../widgets/codeEditor/testRunReport";
 
 // Bridge component: registered inside a WidgetsProvider, syncs the live
@@ -310,6 +312,7 @@ type MultiLeiaPayload = {
 
 type LeiaSessionPayload = {
   testRunsEnabled?: boolean;
+  eventsEnabled?: boolean;
   lukeConfig?: Partial<ChatLukeConfig> | null;
   infographic?: StudentInfographic | null;
   leia?: {
@@ -375,6 +378,7 @@ const ChatSession = () => {
   const [retryingMessage, setRetryingMessage] = useState(false);
   const [audioMode, setAudioMode] = useState<"text" | "audio" | "luke">("text");
   const [testRunsEnabled, setTestRunsEnabled] = useState(false);
+  const [eventsEnabled, setEventsEnabled] = useState(false);
   const [lukeConfig, setLukeConfig] = useState<ChatLukeConfig | null>(null);
   const [studentInfographic, setStudentInfographic] =
     useState<StudentInfographic | null>(null);
@@ -412,9 +416,13 @@ const ChatSession = () => {
   const handleTestRun = useCallback(
     (report: TestRunReport) => {
       if (!sessionId) return;
+      if (eventsEnabled) {
+        sessionEvents.track(sessionId, testRunEventInput(report));
+        return;
+      }
       void postTestRun(sessionId, report);
     },
-    [sessionId],
+    [sessionId, eventsEnabled],
   );
 
   // Resolve the configured widgets against the local catalog once per
@@ -478,6 +486,16 @@ const ChatSession = () => {
     session?.dataUsage?.consentStatus !== "not_required" &&
     !session?.finishedAt &&
     !session?.isTest;
+
+  // Interaction events (test runs, clipboard, leaving the page) are only
+  // recorded when the backend offers them, and never before the student has
+  // answered the consent or after the session has ended. A student who
+  // declined is not observed: only test runs are sent.
+  useSessionEvents(sessionId, {
+    enabled: eventsEnabled && !dataUsageConsentPending && !session?.finishedAt,
+    view: "chat",
+    observe: session?.dataUsage?.consentStatus !== "declined",
+  });
 
   const openingPending = session?.conversationDynamics?.leiaSpeaksFirst?.enabled === true &&
     session.conversationDynamics.leiaSpeaksFirst.completed !== true && !messages.some((message) => message.isLeia);
@@ -703,6 +721,11 @@ const ChatSession = () => {
           JSON.stringify(response.data.replication),
         );
         localStorage.setItem("session", JSON.stringify(response.data.session));
+        // /edit does not load the LEIA payload: it reads the flag from here.
+        localStorage.setItem(
+          "eventsEnabled",
+          JSON.stringify(response.data.leia?.eventsEnabled === true),
+        );
         console.log("session", response.data.session);
 
         if (response.data.leia?.audioMode === "realtime") {
@@ -733,6 +756,7 @@ const ChatSession = () => {
         );
         const problemWidgets = getProblemWidgets(responseLeia);
         setTestRunsEnabled(responseLeia?.testRunsEnabled === true);
+        setEventsEnabled(responseLeia?.eventsEnabled === true);
         const runnerLukeConfig = responseLeia?.lukeConfig ?? null;
         const runnerWidgets = Array.isArray(runnerLukeConfig?.widgets)
           ? runnerLukeConfig.widgets
@@ -1151,6 +1175,8 @@ const ChatSession = () => {
     if (finishPending.current || dataUsageConsentPending || !sessionId) return;
     finishPending.current = true;
     setConcluding(true);
+    // Events still queued belong to the session that is about to end.
+    void sessionEvents.flush();
     try {
       const { data } = await axios.post<Session>(
         `${import.meta.env.VITE_APP_BACKEND}/api/v1/interactions/${sessionId}/finish`,
@@ -2065,6 +2091,7 @@ const ChatSession = () => {
                 value={conversationClosed ? "" : newMessageText}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
+                data-event-source="chat_input"
                 placeholder={
                   conversationClosed
                     ? "The conversation has ended"

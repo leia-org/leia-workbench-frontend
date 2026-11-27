@@ -9,6 +9,7 @@ import {
   DocumentTextIcon,
 } from "@heroicons/react/24/outline";
 import { FormatPreview } from "../components/FormatPreview";
+import { clipboardCapture } from "../lib/clipboardCapture";
 
 export interface PreviousSubmittedSolutionPayload {
   stage: {
@@ -159,6 +160,12 @@ const PreviousSubmittedSolutionWidget: React.FC<
     }
     try {
       await navigator.clipboard.writeText(solutionText);
+      // Recorded as a copy, so pasting it later counts as internal.
+      clipboardCapture.recordCopy(sessionId, {
+        source: "previous_solution",
+        method: "button",
+        text: solutionText,
+      });
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {

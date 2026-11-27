@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import axios, { AxiosRequestConfig } from "axios";
 import ReactMarkdown from "react-markdown";
@@ -37,7 +37,19 @@ import { formatTimeAgo } from "../components/admin/RelativeTime";
 import LeiaPreviewDrawer from "../components/admin/LeiaPreview";
 import { writeReplicationName } from "../lib/replicationNames";
 import { appendLiveRun, type TestRunRecord } from "../lib/testRuns";
-import { TestRunsSection } from "../components/admin/TestRunsSection";
+import {
+  countEventGroups,
+  hasAnyEvents,
+  mergeEventCounts,
+  sumEventCounts,
+  type EventCounts,
+  type SessionEventRecord,
+} from "../lib/events";
+import { EventCountsBadge, EventsSection } from "../components/admin/EventsSection";
+import {
+  useSessionEventList,
+  type SessionEventList,
+} from "../components/admin/useSessionEventList";
 import { useAuth } from "../context/useAuth";
 import {
   groupSessionsByRun,
@@ -83,7 +95,11 @@ interface LiveSession {
   } | null;
   supervisorFlags?: SupervisorFlag[];
   supervisorFlagCount?: number;
-  /** Latest code editor test runs, without their code snapshots. */
+  /** Number of tracked events (test runs, clipboard, leaving the page) by
+   *  type. The events themselves are loaded when the session is selected. */
+  eventCounts?: EventCounts | null;
+  /** Kept up to date by the legacy `session:testRun` event only; the view
+   *  goes by `eventCounts`. */
   testRuns?: TestRunRecord[];
   testRunCount?: number;
 }
@@ -210,6 +226,10 @@ export const LiveDashboard = () => {
   const canUseUserAuth = user?.role === "admin" || user?.role === "advanced";
   const [replicationToken, setReplicationToken] = useState<string | null>(null);
   const [tokenReady, setTokenReady] = useState(false);
+  // Adds live events to the list of the session being shown. The list is set
+  // up further down, once the selection is known; the socket goes through
+  // this ref so it does not have to reconnect for it.
+  const appendSessionEventsRef = useRef<SessionEventList["append"]>(() => {});
 
   useEffect(() => {
     if (!replicationId) return;
@@ -457,6 +477,25 @@ export const LiveDashboard = () => {
         );
       }
     );
+    newSocket.on(
+      "session:events",
+      (data: {
+        sessionId: string;
+        events?: SessionEventRecord[];
+        counts?: EventCounts;
+      }) => {
+        // One emission per batch. The counters are session totals and can
+        // arrive out of order, so the highest value seen wins.
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === data.sessionId
+              ? { ...s, eventCounts: mergeEventCounts(s.eventCounts, data.counts) }
+              : s
+          )
+        );
+        appendSessionEventsRef.current(data.sessionId, data.events);
+      }
+    );
     newSocket.on("dashboard:error", (payload: { message?: string }) => {
       setError(payload.message || "Real-time access denied");
     });
@@ -470,15 +509,28 @@ export const LiveDashboard = () => {
     };
   }, [token, canUseUserAuth, replicationId, replicationToken, tokenReady, fetchSessions]);
 
-  // Full test runs of a session, including the code at each run. Fetched
-  // only when a code snapshot is opened.
-  const loadSessionTestRuns = useCallback(
-    async (sessionId: string): Promise<TestRunRecord[]> => {
-      const response = await axios.get<{ testRuns: TestRunRecord[] }>(
-        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${replicationId}/sessions/${sessionId}/test-runs`,
+  // Events of a session, without their content. The list of sessions only
+  // brings counters, so these are fetched when a session is selected.
+  const loadSessionEvents = useCallback(
+    async (sessionId: string): Promise<SessionEventRecord[]> => {
+      const response = await axios.get<{ events: SessionEventRecord[]; total: number }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${replicationId}/sessions/${sessionId}/events`,
         buildRequestConfig()
       );
-      return response.data.testRuns ?? [];
+      return Array.isArray(response.data?.events) ? response.data.events : [];
+    },
+    [replicationId, buildRequestConfig]
+  );
+
+  // One event with its content (the code of a test run or a clipboard text).
+  // Fetched only when it is opened.
+  const loadSessionEvent = useCallback(
+    async (sessionId: string, eventId: string): Promise<SessionEventRecord> => {
+      const response = await axios.get<{ event: SessionEventRecord }>(
+        `${import.meta.env.VITE_APP_BACKEND}/api/v1/replications/${replicationId}/sessions/${sessionId}/events/${eventId}`,
+        buildRequestConfig()
+      );
+      return response.data.event;
     },
     [replicationId, buildRequestConfig]
   );
@@ -544,6 +596,18 @@ export const LiveDashboard = () => {
       selectedGroup.currentSession
     );
   }, [selectedGroup, selectedSessionId]);
+
+  // Events of the session being shown: fetched once it has any, then kept up
+  // to date by `session:events`.
+  const eventList = useSessionEventList(
+    selected?.id,
+    hasAnyEvents(selected?.eventCounts),
+    loadSessionEvents
+  );
+  const appendSessionEvents = eventList.append;
+  useEffect(() => {
+    appendSessionEventsRef.current = appendSessionEvents;
+  }, [appendSessionEvents]);
 
   // Auto-select first run when the list changes and current selection
   // disappears.
@@ -708,7 +772,8 @@ export const LiveDashboard = () => {
               }
               onWatch={() => handleWatch(selected.id)}
               onShare={() => handleShareLink(selected.id, true)}
-              loadTestRuns={loadSessionTestRuns}
+              eventList={eventList}
+              loadEvent={loadSessionEvent}
             />
           ) : (
             <MasterDetailEmptyState
@@ -743,6 +808,8 @@ const SessionRow: React.FC<{
   const item = group.currentSession;
   const totalMessages = group.sessions.reduce((sum, s) => sum + s.messageCount, 0);
   const totalFlags = group.sessions.reduce((sum, s) => sum + (s.supervisorFlagCount || 0), 0);
+  // Tracked events of every stage of the attempt.
+  const eventCounts = sumEventCounts(group.sessions.map((s) => s.eventCounts));
   const stageBadge =
     group.isStaged && group.stageTotal && group.stageTotal > 1
       ? `Stage ${item.stageNumber ?? group.sessions.length}/${group.stageTotal}`
@@ -861,19 +928,11 @@ const SessionRow: React.FC<{
               }}
             />
           ) : null}
-          {item.testRunCount ? (
+          {countEventGroups(eventCounts).total > 0 ? (
             <Chip
               size="small"
-              label={`▶ ${item.testRunCount}`}
-              title={`${item.testRunCount} test run${item.testRunCount === 1 ? "" : "s"}`}
-              sx={{
-                height: 20,
-                fontSize: 11,
-                fontWeight: 600,
-                mt: 0.5,
-                bgcolor: "surfaces.subtle",
-                color: "text.secondary",
-              }}
+              label={<EventCountsBadge counts={eventCounts} />}
+              sx={{ height: 20, bgcolor: "surfaces.subtle" }}
             />
           ) : null}
         </Stack>
@@ -906,10 +965,15 @@ const SessionDetail: React.FC<{
   onOpenLeia?: () => void;
   onWatch: () => void;
   onShare: () => void;
-  loadTestRuns: (sessionId: string) => Promise<TestRunRecord[]>;
-}> = ({ group, item, onSelectStageSession, replicationName, leia, onOpenLeia, onWatch, onShare, loadTestRuns }) => {
+  /** Events of `item`, loaded when it was selected. */
+  eventList: SessionEventList;
+  loadEvent: (sessionId: string, eventId: string) => Promise<SessionEventRecord>;
+}> = ({ group, item, onSelectStageSession, replicationName, leia, onOpenLeia, onWatch, onShare, eventList, loadEvent }) => {
   const sessionId = item.id;
-  const loadSessionCode = useCallback(() => loadTestRuns(sessionId), [loadTestRuns, sessionId]);
+  const loadEventContent = useCallback(
+    (eventId: string) => loadEvent(sessionId, eventId),
+    [loadEvent, sessionId]
+  );
   const duration = useMemo(() => {
     const start = new Date(item.startedAt).getTime();
     const end = item.finishedAt ? new Date(item.finishedAt).getTime() : Date.now();
@@ -1073,14 +1137,18 @@ const SessionDetail: React.FC<{
         </Paper>
       )}
 
-      {item.testRuns && item.testRuns.length > 0 && (
+      {(hasAnyEvents(item.eventCounts) || eventList.events.length > 0) && (
         <Box sx={{ mb: 3 }}>
-          {/* Keyed by session so opened snapshots and loaded code reset. */}
-          <TestRunsSection
+          {/* Keyed by session so the filter, opened entries and loaded
+              content reset. */}
+          <EventsSection
             key={item.id}
-            runs={item.testRuns}
-            totalCount={item.testRunCount}
-            loadCode={loadSessionCode}
+            events={eventList.events}
+            counts={item.eventCounts}
+            loading={eventList.loading}
+            error={eventList.error}
+            onRetry={eventList.retry}
+            loadEvent={loadEventContent}
             formatDate={(s) => new Date(s).toLocaleString()}
           />
         </Box>

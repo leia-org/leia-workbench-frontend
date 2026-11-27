@@ -159,7 +159,7 @@ export const FormatEditor: React.FC<FormatEditorProps> = memo(
     const editorConfig = getEditorConfig(format);
 
     return (
-      <div className="h-full relative">
+      <div className="h-full relative" data-event-source="solution_editor">
         <Editor
           value={value}
           onChange={(val) => onChange(val || "")}
